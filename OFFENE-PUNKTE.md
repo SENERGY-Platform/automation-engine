@@ -36,7 +36,7 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 
 ### device-selection, device-repository, marshaller
 
-- [ ] **Aufgabe:** Die Go-Clients nehmen keinen Kontext an, deshalb geht kein Trace-Kontext weiter. Bei device-selection betrifft das den eigenen Client, bei device-repository und marshaller die Clients aus `external-task-worker/lib` (Tracing, nach M3).
+- [ ] **Aufgabe:** Die Go-Clients nehmen keinen Kontext an, deshalb geht kein Trace-Kontext weiter. Bei device-selection betrifft das den eigenen Client, bei device-repository der Zugriff in `pkg/devices` (bisher aus `external-task-worker/lib`, jetzt im Repo und um einen Kontext erweiterbar), beim marshaller der Client aus `marshaller/lib` (Tracing, nach M3).
 
 ### timescale-wrapper, timescale-rule-manager, timescale-tableworker
 
@@ -54,16 +54,19 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 
 ### external-task-worker, event-worker (Pakete)
 
-- [ ] **Aufgabe:** Einen stabilen Ort für die geteilten Pakete schaffen (CLI-11). Die Engine importiert aus `external-task-worker/lib` die Pakete `messages`, `devicerepository`, `marshaller` und `timescale` sowie aus event-worker `pkg/marshaller`, `devicerepo`, `model` und `configuration`. device-command und live-data-worker importieren ebenfalls aus `external-task-worker/lib`. Ein inkompatibler Bruch dort zeigt sich erst beim nächsten Build der Engine (M3).
+- [x] Die Engine importiert seit 2026-10-12 weder aus external-task-worker noch aus event-worker. Die genutzten Teile liegen in `pkg/devices`, `pkg/tasks/devicecommand` und `pkg/events/unmarshal.go`.
+- [ ] **Aufgabe:** device-command und live-data-worker importieren weiter aus `external-task-worker/lib`. Das Repo bleibt für sie bestehen, bis sie umgestellt sind; die Engine ist davon nicht mehr betroffen.
+- [ ] **Hinweis:** Die Formate von Kommando-Payload und Protokollnachricht sind jetzt zweimal definiert, in `external-task-worker/lib/messages` und in `pkg/tasks/devicecommand/messages.go`. Ändert platform-connector sie, müssen beide Seiten folgen.
 
 ### smart-service-module-worker-lib und die Worker-Repos
 
-- [ ] **Aufgabe:** Die Engine bindet Middleware, Skript-API und Templates der Bibliothek sowie die Handler von `info`, `import`, `export`, `analytics` und `device_repository` als Bibliothek ein (M5). Ihr Camunda-Teil, die Gesundheitsprüfung und die Deployments der Worker werden nicht mehr gebraucht. Ein inkompatibler Bruch in den Handlern oder der Skript-API zeigt sich erst beim nächsten Build der Engine; mit CLI-11 ziehen die Pakete an einen stabilen Ort.
-- [ ] **Frage:** Sollen die gefundenen Fehler in den Handlern dort behoben werden? `info` bricht beim ersten Zusatzfeld, das kein String ist, die übrigen ab (`break`); `analytics` ignoriert den Fehler der Modulsuche und legt dann eine zweite Pipeline an, und sein Undo löscht eine nur aktualisierte Pipeline (die Engine ruft Undo für bestehende Module nicht mehr auf); `persistData` als Boolean wird stillschweigend `false`.
+- [x] Skript-API, Templates und die Handler von `info`, `import`, `export`, `analytics` und `device_repository` sind seit 2026-10-12 im Engine-Repo (`pkg/modules`, `pkg/modules/compat`); `go.mod` nennt die Repos nicht mehr. Die Testfälle der Worker laufen dort als Golden-Tests weiter (`pkg/modules/testdata`).
+- [ ] **Aufgabe:** Die Repos archivieren, sobald die Worker-Deployments stillgelegt sind (siehe Stilllegung). Änderungen an ihnen erreichen die Engine nicht mehr.
+- [x] Die gefundenen Fehler sind in der Engine behoben, nicht in den Repos: `info` liest nach einem Zusatzfeld, das kein String ist, weiter; `analytics` bricht bei einem Fehler der Modulsuche ab, statt eine zweite Pipeline anzulegen; eine nur aktualisierte Pipeline wird beim Rückgängigmachen nicht gelöscht. `persistData` als Boolean bleibt `false` wie bisher.
 
 ### device-repository
 
-- [ ] **Frage:** device-repository hat den Modulpfad `/v3` (bis v3.4.0), external-task-worker, die Worker-Bibliothek und die Worker nutzen `/v2` (v2.2.2). Die Engine kann erst wechseln, wenn diese Bibliotheken wechseln.
+- [ ] **Aufgabe:** device-repository hat den Modulpfad `/v3` (bis v3.4.0), die Engine nutzt den Client von `/v2` (v2.2.2) in Modulen, Event-Unmarshalling und Parametern. Seit external-task-worker keine Abhängigkeit mehr ist, kann die Engine eigenständig wechseln.
 
 ### models (`models/go`)
 
@@ -104,7 +107,7 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 ## Stilllegungen
 
 - [ ] **Aufgabe:** smart-service-engine (Camunda), smart-service-repository mit seiner Mongo, die acht Module-Worker und die `watcher-db` stilllegen, wenn M7 die Daten migriert hat (SMS-01).
-- [ ] **Aufgabe:** event-worker und event-deployment stilllegen; der Event-Worker ist eine Rolle der Engine (`ROLE=event`, M3).
+- [ ] **Aufgabe:** event-worker und event-deployment stilllegen; der Event-Worker ist eine Rolle der Engine (`ROLE=event`, M3). Die Engine importiert event-worker nicht mehr, das Repo kann danach archiviert werden.
 - [ ] **Aufgabe:** Kafka-Topic `process-deployment-done` entfernen, sobald event-deployment aus ist; dazu die Altlasten `deployments_v3`, `camunda_incident` und vermutlich `processmodel` prüfen.
 - [ ] **Aufgabe:** process-sync und mgw-process-sync-client archivieren, wenn die Synchronisation in der Engine läuft (M6).
 - [ ] **Aufgabe:** api-aggregator abschalten.

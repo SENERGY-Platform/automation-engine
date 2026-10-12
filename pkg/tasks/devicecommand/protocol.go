@@ -29,18 +29,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SENERGY-Platform/external-task-worker/lib/devicerepository"
-	devicemodel "github.com/SENERGY-Platform/external-task-worker/lib/devicerepository/model"
-	"github.com/SENERGY-Platform/external-task-worker/lib/marshaller"
-	"github.com/SENERGY-Platform/external-task-worker/lib/messages"
+	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/models/go/models"
+
 	marshallermodel "github.com/SENERGY-Platform/marshaller/lib/marshaller/model"
 	"github.com/SENERGY-Platform/marshaller/lib/marshaller/serialization"
 )
 
 // message creates the protocol message of a command, or an event request when the value is
 // read instead of requested (TASK-08)
-func (this *Type) message(command messages.Command, info messages.TaskInfo, token devicerepository.Impersonate) (*messages.ProtocolMsg, *messages.EventRequest, error) {
-	trace := []messages.Trace{{Timestamp: time.Now().UnixNano(), TimeUnit: "unix_nano", Location: "github.com/SENERGY-Platform/automation-engine device command start"}}
+func (this *Type) message(command Command, info TaskInfo, token devices.Token) (*ProtocolMsg, *EventRequest, error) {
+	trace := []Trace{{Timestamp: time.Now().UnixNano(), TimeUnit: "unix_nano", Location: "github.com/SENERGY-Platform/automation-engine device command start"}}
 	device, service, protocol := command.Device, command.Service, command.Protocol
 	if device == nil {
 		d, err := this.repo.GetDevice(token, command.DeviceId)
@@ -73,8 +72,8 @@ func (this *Type) message(command messages.Command, info messages.TaskInfo, toke
 		inputCharacteristic = command.CharacteristicId
 	} else {
 		outputCharacteristic = command.CharacteristicId
-		if service.Interaction == devicemodel.EVENT || (service.Interaction == devicemodel.EVENT_AND_REQUEST && command.PreferEvent) {
-			return nil, &messages.EventRequest{Device: *device, Service: *service, Protocol: *protocol, CharacteristicId: command.CharacteristicId, FunctionId: command.Function.Id, AspectNodes: command.GetAspects()}, nil
+		if service.Interaction == models.EVENT || (service.Interaction == models.EVENT_AND_REQUEST && command.PreferEvent) {
+			return nil, &EventRequest{Device: *device, Service: *service, Protocol: *protocol, CharacteristicId: command.CharacteristicId, FunctionId: command.Function.Id, AspectNodes: command.GetAspects()}, nil
 		}
 	}
 
@@ -83,17 +82,17 @@ func (this *Type) message(command messages.Command, info messages.TaskInfo, toke
 	if command.Version < 3 {
 		input, err = this.marshaller.MarshalFromServiceAndProtocol(inputCharacteristic, *service, *protocol, command.Input, command.Configurables)
 	} else {
-		data := []marshaller.MarshallingV2RequestData{}
+		data := []MarshallingV2RequestData{}
 		somethingToSet := command.Function.ConceptId != "" || command.Input != nil
 		if somethingToSet && (len(command.InputPaths) > 0 || isControllingFunction(command.Function)) {
-			data = append(data, marshaller.MarshallingV2RequestData{Value: command.Input, CharacteristicId: inputCharacteristic, Paths: command.InputPaths, FunctionId: command.Function.Id, AspectNodes: command.GetAspects()})
+			data = append(data, MarshallingV2RequestData{Value: command.Input, CharacteristicId: inputCharacteristic, Paths: command.InputPaths, FunctionId: command.Function.Id, AspectNodes: command.GetAspects()})
 		}
 		for _, c := range command.ConfigurablesV2 {
 			paths := []string{}
 			if c.Path != "" {
 				paths = []string{c.Path}
 			}
-			data = append(data, marshaller.MarshallingV2RequestData{Value: c.Value, CharacteristicId: c.CharacteristicId, Paths: paths, FunctionId: c.FunctionId, AspectNodes: c.GetAspectNodes()})
+			data = append(data, MarshallingV2RequestData{Value: c.Value, CharacteristicId: c.CharacteristicId, Paths: paths, FunctionId: c.FunctionId, AspectNodes: c.GetAspectNodes()})
 		}
 		start := time.Now()
 		input, err = this.marshaller.MarshalV2(*service, *protocol, data)
@@ -111,12 +110,12 @@ func (this *Type) message(command messages.Command, info messages.TaskInfo, toke
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to marshal command: %w", err)
 	}
-	trace = append(trace, messages.Trace{Timestamp: time.Now().UnixNano(), TimeUnit: "unix_nano", Location: "github.com/SENERGY-Platform/automation-engine device command end"})
+	trace = append(trace, Trace{Timestamp: time.Now().UnixNano(), TimeUnit: "unix_nano", Location: "github.com/SENERGY-Platform/automation-engine device command end"})
 	info.Time = strconv.FormatInt(this.now().Unix(), 10)
-	msg := &messages.ProtocolMsg{
+	msg := &ProtocolMsg{
 		TaskInfo: info,
-		Request:  messages.ProtocolRequest{Input: input},
-		Metadata: messages.Metadata{
+		Request:  ProtocolRequest{Input: input},
+		Metadata: Metadata{
 			Device: *device, Service: *service, Protocol: *protocol,
 			InputCharacteristic: inputCharacteristic, OutputCharacteristic: outputCharacteristic,
 			ContentVariableHints: command.ContentVariableHints, ResponseTo: this.config.ResponseTo, ErrorTo: this.config.ErrorTo,
@@ -134,16 +133,19 @@ func (this *Type) message(command messages.Command, info messages.TaskInfo, toke
 	return msg, nil, nil
 }
 
+// nullCharacteristicId marks a command without output, as in external-task-worker
+const nullCharacteristicId = "null"
+
 // output unmarshals the response of a protocol handler into the characteristic of the task
-func (this *Type) output(msg messages.ProtocolMsg) (any, error) {
-	if msg.Metadata.OutputCharacteristic == devicemodel.NullCharacteristic.Id || msg.Metadata.OutputCharacteristic == "" {
+func (this *Type) output(msg ProtocolMsg) (any, error) {
+	if msg.Metadata.OutputCharacteristic == nullCharacteristicId || msg.Metadata.OutputCharacteristic == "" {
 		return nil, nil
 	}
 	if msg.Metadata.Version < 3 {
 		return this.marshaller.UnmarshalFromServiceAndProtocol(msg.Metadata.OutputCharacteristic, msg.Metadata.Service, msg.Metadata.Protocol, msg.Response.Output, msg.Metadata.ContentVariableHints)
 	}
 	start := time.Now()
-	result, err := this.marshaller.UnmarshalV2(marshaller.UnmarshallingV2Request{
+	result, err := this.marshaller.UnmarshalV2(UnmarshallingV2Request{
 		Service: msg.Metadata.Service, Protocol: msg.Metadata.Protocol, CharacteristicId: msg.Metadata.OutputCharacteristic, Message: msg.Response.Output,
 		Path: msg.Metadata.OutputPath, FunctionId: msg.Metadata.OutputFunctionId, AspectNodes: msg.Metadata.GetOutputAspectNodes(),
 	})
@@ -154,7 +156,7 @@ func (this *Type) output(msg messages.ProtocolMsg) (any, error) {
 }
 
 // lastValue reads the last event value of a service through timescale-wrapper (TASK-08)
-func (this *Type) lastValue(token devicerepository.Impersonate, event messages.EventRequest) (any, error) {
+func (this *Type) lastValue(token devices.Token, event EventRequest) (any, error) {
 	if this.timescale == nil {
 		return nil, errors.New("reading event values needs a timescale-wrapper url")
 	}
@@ -193,23 +195,23 @@ func (this *Type) lastValue(token devicerepository.Impersonate, event messages.E
 			return nil, err
 		}
 	}
-	return this.marshaller.UnmarshalV2(marshaller.UnmarshallingV2Request{
+	return this.marshaller.UnmarshalV2(UnmarshallingV2Request{
 		Service: event.Service, Protocol: event.Protocol, CharacteristicId: event.CharacteristicId, Message: message, FunctionId: event.FunctionId, AspectNodes: event.AspectNodes,
 	})
 }
 
-func timescaleRequest(device devicemodel.Device, service devicemodel.Service) (result []messages.TimescaleRequest) {
+func timescaleRequest(device models.Device, service models.Service) (result []TimescaleRequest) {
 	for _, content := range service.Outputs {
 		for _, p := range contentPaths(nil, content.ContentVariable) {
-			result = append(result, messages.TimescaleRequest{Device: device, Service: service, ColumnName: p})
+			result = append(result, TimescaleRequest{Device: device, Service: service, ColumnName: p})
 		}
 	}
 	return result
 }
 
 // contentPaths lists the leaf paths of a content variable; lists are skipped
-func contentPaths(current []string, variable devicemodel.ContentVariable) (result []string) {
-	if variable.Name == "" || variable.Type == devicemodel.List {
+func contentPaths(current []string, variable models.ContentVariable) (result []string) {
+	if variable.Name == "" || variable.Type == models.List {
 		return nil
 	}
 	if len(variable.SubContentVariables) == 0 {
@@ -243,7 +245,7 @@ func setPath(orig map[string]any, path []string, value any) map[string]any {
 	return orig
 }
 
-func segmentName(protocol devicemodel.Protocol, id string) string {
+func segmentName(protocol models.Protocol, id string) string {
 	for _, segment := range protocol.ProtocolSegments {
 		if segment.Id == id {
 			return segment.Name

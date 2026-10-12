@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"html"
 	"io"
 	"log/slog"
@@ -29,15 +28,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/models/go/models"
+
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
-	"github.com/SENERGY-Platform/external-task-worker/lib/devicerepository"
-	devicemodel "github.com/SENERGY-Platform/external-task-worker/lib/devicerepository/model"
-	"github.com/SENERGY-Platform/external-task-worker/lib/marshaller"
-	"github.com/SENERGY-Platform/external-task-worker/lib/messages"
 	"github.com/google/uuid"
 )
 
@@ -49,67 +47,67 @@ const controlling = "urn:infai:ses:controlling-function:set-on"
 // --- fakes ---
 
 type fakeRepo struct {
-	devices     map[string]devicemodel.Device
-	deviceTypes map[string]devicemodel.DeviceType
-	groups      map[string]devicemodel.DeviceGroup
+	devices     map[string]models.Device
+	deviceTypes map[string]models.DeviceType
+	groups      map[string]models.DeviceGroup
 }
 
-func (this *fakeRepo) GetToken(user string) (devicerepository.Impersonate, error) {
-	return devicerepository.Impersonate("Bearer " + user), nil
+func (this *fakeRepo) GetToken(user string) (devices.Token, error) {
+	return devices.Token("Bearer " + user), nil
 }
-func (this *fakeRepo) GetDevice(_ devicerepository.Impersonate, id string) (devicemodel.Device, error) {
+func (this *fakeRepo) GetDevice(_ devices.Token, id string) (models.Device, error) {
 	d, ok := this.devices[id]
 	if !ok {
 		return d, errors.New("device not found")
 	}
 	return d, nil
 }
-func (this *fakeRepo) GetService(_ devicerepository.Impersonate, device devicemodel.Device, id string) (devicemodel.Service, error) {
+func (this *fakeRepo) GetService(_ devices.Token, device models.Device, id string) (models.Service, error) {
 	for _, s := range this.deviceTypes[device.DeviceTypeId].Services {
 		if s.Id == id {
 			return s, nil
 		}
 	}
-	return devicemodel.Service{}, errors.New("service not found")
+	return models.Service{}, errors.New("service not found")
 }
-func (this *fakeRepo) GetProtocol(_ devicerepository.Impersonate, id string) (devicemodel.Protocol, error) {
-	return devicemodel.Protocol{Id: id, Handler: "connector", ProtocolSegments: []devicemodel.ProtocolSegment{{Id: "seg", Name: "data"}}}, nil
+func (this *fakeRepo) GetProtocol(_ devices.Token, id string) (models.Protocol, error) {
+	return models.Protocol{Id: id, Handler: "connector", ProtocolSegments: []models.ProtocolSegment{{Id: "seg", Name: "data"}}}, nil
 }
-func (this *fakeRepo) GetDeviceType(_ devicerepository.Impersonate, id string) (devicemodel.DeviceType, error) {
+func (this *fakeRepo) GetDeviceType(_ devices.Token, id string) (models.DeviceType, error) {
 	return this.deviceTypes[id], nil
 }
-func (this *fakeRepo) GetDeviceGroup(_ devicerepository.Impersonate, id string) (devicemodel.DeviceGroup, error) {
+func (this *fakeRepo) GetDeviceGroup(_ devices.Token, id string) (models.DeviceGroup, error) {
 	return this.groups[id], nil
 }
 
-func service(id string, interaction devicemodel.Interaction, functionId string) devicemodel.Service {
-	variable := devicemodel.Content{ProtocolSegmentId: "seg", Serialization: "json", ContentVariable: devicemodel.ContentVariable{Name: "value", Type: devicemodel.Float, FunctionId: functionId}}
-	s := devicemodel.Service{Id: id, ProtocolId: "p", Interaction: interaction}
+func service(id string, interaction models.Interaction, functionId string) models.Service {
+	variable := models.Content{ProtocolSegmentId: "seg", Serialization: "json", ContentVariable: models.ContentVariable{Name: "value", Type: models.Float, FunctionId: functionId}}
+	s := models.Service{Id: id, ProtocolId: "p", Interaction: interaction}
 	if functionId == measuring {
-		s.Outputs = []devicemodel.Content{variable}
+		s.Outputs = []models.Content{variable}
 	} else {
-		s.Inputs = []devicemodel.Content{variable}
+		s.Inputs = []models.Content{variable}
 	}
 	return s
 }
 
 func newRepo() *fakeRepo {
 	return &fakeRepo{
-		devices: map[string]devicemodel.Device{
+		devices: map[string]models.Device{
 			"d1": {Id: "d1", DeviceTypeId: "dt"}, "d2": {Id: "d2", DeviceTypeId: "dt"}, "e1": {Id: "e1", DeviceTypeId: "et"},
 		},
-		deviceTypes: map[string]devicemodel.DeviceType{
-			"dt": {Id: "dt", Services: []devicemodel.Service{service("s-get", devicemodel.REQUEST, measuring), service("s-set", devicemodel.REQUEST, controlling)}},
-			"et": {Id: "et", Services: []devicemodel.Service{service("s-event", devicemodel.EVENT, measuring)}},
+		deviceTypes: map[string]models.DeviceType{
+			"dt": {Id: "dt", Services: []models.Service{service("s-get", models.REQUEST, measuring), service("s-set", models.REQUEST, controlling)}},
+			"et": {Id: "et", Services: []models.Service{service("s-event", models.EVENT, measuring)}},
 		},
-		groups: map[string]devicemodel.DeviceGroup{"g": {Id: "g", DeviceIds: []string{"d1", "d2"}}},
+		groups: map[string]models.DeviceGroup{"g": {Id: "g", DeviceIds: []string{"d1", "d2"}}},
 	}
 }
 
 // fakeMarshaller writes the input value to the segment "data" and reads it back from there
 type fakeMarshaller struct{}
 
-func (fakeMarshaller) MarshalV2(_ devicemodel.Service, _ devicemodel.Protocol, data []marshaller.MarshallingV2RequestData) (map[string]string, error) {
+func (fakeMarshaller) MarshalV2(_ models.Service, _ models.Protocol, data []MarshallingV2RequestData) (map[string]string, error) {
 	result := map[string]string{}
 	for _, d := range data {
 		raw, _ := json.Marshal(d.Value)
@@ -117,24 +115,24 @@ func (fakeMarshaller) MarshalV2(_ devicemodel.Service, _ devicemodel.Protocol, d
 	}
 	return result, nil
 }
-func (fakeMarshaller) UnmarshalV2(request marshaller.UnmarshallingV2Request) (any, error) {
+func (fakeMarshaller) UnmarshalV2(request UnmarshallingV2Request) (any, error) {
 	var v any
 	err := json.Unmarshal([]byte(request.Message["data"]), &v)
 	return v, err
 }
-func (this fakeMarshaller) MarshalFromServiceAndProtocol(_ string, service devicemodel.Service, protocol devicemodel.Protocol, data any, _ []marshaller.Configurable) (map[string]string, error) {
-	return this.MarshalV2(service, protocol, []marshaller.MarshallingV2RequestData{{Value: data}})
+func (this fakeMarshaller) MarshalFromServiceAndProtocol(_ string, service models.Service, protocol models.Protocol, data any, _ []Configurable) (map[string]string, error) {
+	return this.MarshalV2(service, protocol, []MarshallingV2RequestData{{Value: data}})
 }
-func (this fakeMarshaller) UnmarshalFromServiceAndProtocol(_ string, _ devicemodel.Service, _ devicemodel.Protocol, message map[string]string, _ []string) (any, error) {
-	return this.UnmarshalV2(marshaller.UnmarshallingV2Request{Message: message})
+func (this fakeMarshaller) UnmarshalFromServiceAndProtocol(_ string, _ models.Service, _ models.Protocol, message map[string]string, _ []string) (any, error) {
+	return this.UnmarshalV2(UnmarshallingV2Request{Message: message})
 }
 
 type fakeTimescale struct{}
 
-func (fakeTimescale) Query(_ string, request []messages.TimescaleRequest, _ time.Duration) ([]messages.TimescaleResponse, error) {
-	result := []messages.TimescaleResponse{}
+func (fakeTimescale) Query(_ string, request []TimescaleRequest, _ time.Duration) ([]TimescaleResponse, error) {
+	result := []TimescaleResponse{}
 	for range request {
-		result = append(result, messages.TimescaleResponse{Value: 21.5})
+		result = append(result, TimescaleResponse{Value: 21.5})
 	}
 	return result, nil
 }
@@ -142,7 +140,7 @@ func (fakeTimescale) Query(_ string, request []messages.TimescaleRequest, _ time
 type sent struct {
 	topic string
 	key   string
-	msg   messages.ProtocolMsg
+	msg   ProtocolMsg
 }
 
 type fakeProducer struct {
@@ -151,7 +149,7 @@ type fakeProducer struct {
 }
 
 func (this *fakeProducer) Produce(_ context.Context, topic string, key string, payload []byte) error {
-	var msg messages.ProtocolMsg
+	var msg ProtocolMsg
 	if err := json.Unmarshal(payload, &msg); err != nil {
 		return err
 	}
@@ -206,8 +204,8 @@ func newEnv(t *testing.T, scheduler string) *env {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	this.e = engine.New(s, config, namespaces{}, logger)
 	this.e.SetClock(this.now)
-	aspects := devices.NewAspectNodesWith(func(_ devicerepository.Impersonate, id string) (devicemodel.AspectNode, error) {
-		return devicemodel.AspectNode{Id: id, RootId: id}, nil
+	aspects := devices.NewAspectNodesWith(func(_ devices.Token, id string) (models.AspectNode, error) {
+		return models.AspectNode{Id: id, RootId: id}, nil
 	})
 	this.dc = New(Config{GroupScheduler: scheduler, ResponseTo: "response", ErrorTo: "errors"}, s, newRepo(), aspects, fakeMarshaller{}, fakeTimescale{}, this.producer, this.metrics, logger)
 	this.dc.SetCompleter(this.e)

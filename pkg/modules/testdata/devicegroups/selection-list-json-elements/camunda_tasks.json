@@ -1,0 +1,15 @@
+[
+    {
+        "id": "task1",
+        "processInstanceId": "process-instance-1",
+        "processDefinitionId": "process-definition-1",
+        "variables": {
+            "device_repository.create_device_group": {
+                "value": ["{\"device_selection\":  {\"device_id\": \"urn:infai:ses:device:device-1\"}}", "{\"device_selection\":  {\"device_id\": \"urn:infai:ses:device:device-2\"}}"]
+            },
+            "device_repository.name": {
+                "value": "dg-test-name"
+            }
+        }
+    }
+]

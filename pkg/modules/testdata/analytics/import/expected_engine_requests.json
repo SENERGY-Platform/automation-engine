@@ -1,0 +1,7 @@
+[
+    {
+        "method": "POST",
+        "endpoint": "/pipeline",
+        "message": "{\"flowId\":\"flow-id-1\",\"name\":\"selected-name\",\"description\":\"some description\",\"windowTime\":1,\"mergeStrategy\":\"inner\",\"nodes\":[{\"nodeId\":\"373808f2-848a-4446-8062-abd973dc96d3\",\"inputs\":[{\"filterIds\":\"import_2\",\"filterType\":\"ImportId\",\"topicName\":\"import_2_topic\",\"values\":[{\"name\":\"port-name\",\"path\":\"root.value\"}]}],\"config\":[{\"name\":\"num\",\"value\":\"42\"},{\"name\":\"str\",\"value\":\"foobar\"}]}]}"
+    }
+]

@@ -27,7 +27,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
-	libmodel "github.com/SENERGY-Platform/smart-service-module-worker-lib/pkg/model"
 )
 
 const (
@@ -49,31 +48,11 @@ type Namespaces interface {
 	Get(name string) (model.Namespace, bool)
 }
 
-// extras carry what the library's module type cannot: resources of the engine and messages
-type extras struct {
-	resources map[string]model.ResourceRef
-	messages  []string
-}
-
-type extrasKey struct{}
-
-func withExtras(ctx context.Context) (context.Context, *extras) {
-	result := &extras{resources: map[string]model.ResourceRef{}}
-	return context.WithValue(ctx, extrasKey{}, result), result
-}
-
-func extrasOf(ctx context.Context) *extras {
-	if result, ok := ctx.Value(extrasKey{}).(*extras); ok {
-		return result
-	}
-	return &extras{resources: map[string]model.ResourceRef{}}
-}
-
 // AddProcessModules registers process_deployment (TASK-20) and process_deployment_start (TASK-21).
 func (this *Runtime) AddProcessModules(processes Processes, namespaces Namespaces) {
 	p := &processModules{runtime: this, processes: processes, namespaces: namespaces}
-	this.types[TypeProcessDeployment] = &moduleType{runtime: this, name: TypeProcessDeployment, handler: &deployHandler{p}}
-	this.types[TypeProcessDeploymentStart] = &moduleType{runtime: this, name: TypeProcessDeploymentStart, handler: &startHandler{p}}
+	this.add(TypeProcessDeployment, &deployHandler{p})
+	this.add(TypeProcessDeploymentStart, &startHandler{p})
 	this.AddCheck(TypeProcessDeployment, p.checkDeployment)
 	this.AddCheck(TypeProcessDeploymentStart, p.checkInstance)
 }
@@ -84,25 +63,25 @@ type processModules struct {
 	namespaces Namespaces
 }
 
-// input reads a task variable; values that are not strings are given as JSON, like the worker did
-func input(task libmodel.CamundaExternalTask, name string) (string, bool) {
-	v, ok := task.Variables[name]
-	if !ok || v.Value == nil {
+// input reads a task input; values that are not strings are given as JSON, like the worker did
+func input(task Task, name string) (string, bool) {
+	v, ok := task.Inputs[name]
+	if !ok || v == nil {
 		return "", false
 	}
-	if s, ok := v.Value.(string); ok {
+	if s, ok := v.(string); ok {
 		return s, true
 	}
-	raw, _ := json.Marshal(v.Value)
+	raw, _ := json.Marshal(v)
 	return string(raw), true
 }
 
-func boolInput(task libmodel.CamundaExternalTask, name string) (value bool, given bool) {
-	v, ok := task.Variables[name]
+func boolInput(task Task, name string) (value bool, given bool) {
+	v, ok := task.Inputs[name]
 	if !ok {
 		return false, false
 	}
-	switch b := v.Value.(type) {
+	switch b := v.(type) {
 	case bool:
 		return b, true
 	case string:
@@ -119,9 +98,9 @@ type processTask struct {
 	namespace string
 }
 
-func (this *processModules) begin(ctx context.Context, task libmodel.CamundaExternalTask, requested string) (result processTask, err error) {
+func (this *processModules) begin(ctx context.Context, task Task, requested string) (result processTask, err error) {
 	err = this.runtime.store.Tx(ctx, func(tx *store.Tx) error {
-		result.root, err = (&repository{store: this.runtime.store}).root(tx, task.ProcessInstanceId)
+		result.root, err = tx.GetInstance(task.RootInstanceId, false)
 		return err
 	})
 	if err != nil {
@@ -136,11 +115,9 @@ func (this *processModules) begin(ctx context.Context, task libmodel.CamundaExte
 	if result.namespace == "" || !slices.Contains(ns.ReferencedNamespaces, result.namespace) {
 		return result, fmt.Errorf("namespace %v may not create resources in namespace %q (NS-08)", result.root.Namespace, result.namespace)
 	}
-	token, err := this.runtime.auth.ExchangeUserToken(result.owner)
-	if err != nil {
+	if result.token, err = this.runtime.token(result.owner); err != nil {
 		return result, fmt.Errorf("token of %v: %w", result.owner, err)
 	}
-	result.token = token.Token
 	return result, nil
 }
 
@@ -153,7 +130,7 @@ const deployPrefix = TypeProcessDeployment + "."
 // Do deploys a process like the process deployment worker, internally instead of over the
 // prepared deployment of process-deployment (TASK-20). With a key, an existing deployment of
 // the instance is updated instead, e.g. by a maintenance procedure.
-func (this *deployHandler) Do(ctx context.Context, task libmodel.CamundaExternalTask) (modules []libmodel.Module, outputs map[string]interface{}, err error) {
+func (this *deployHandler) Do(ctx context.Context, task Task) (modules []model.Module, outputs map[string]any, err error) {
 	namespace, _ := input(task, deployPrefix+"namespace")
 	p, err := this.begin(ctx, task, namespace)
 	if err != nil {
@@ -198,19 +175,19 @@ func (this *deployHandler) Do(ctx context.Context, task libmodel.CamundaExternal
 		_ = json.Unmarshal([]byte(raw), &moduleData)
 	}
 	key, hasKey := input(task, deployPrefix+"key")
-	moduleId := task.ProcessInstanceId + "." + task.Id
+	moduleId := task.ModuleId()
 	var result model.Deployment
 	existing := ""
 	if hasKey && key != "" {
-		existingModules, err := (&repository{store: this.runtime.store}).ListExistingModules(ctx, task.ProcessInstanceId, libmodel.ModulQuery{KeyFilter: &key, TypeFilter: ptr(TypeProcessDeployment)})
+		existingModules, err := this.runtime.existing(ctx, task, key, TypeProcessDeployment)
 		if err != nil {
 			return nil, nil, err
 		}
 		if len(existingModules) > 0 {
-			existing, _ = existingModules[0].ModuleData["process_deployment_id"].(string)
+			existing, _ = existingModules[0].Data["process_deployment_id"].(string)
 			if existing != "" {
 				moduleId = existingModules[0].Id
-				for k, v := range existingModules[0].ModuleData {
+				for k, v := range existingModules[0].Data {
 					if _, set := moduleData[k]; !set {
 						moduleData[k] = v
 					}
@@ -236,20 +213,17 @@ func (this *deployHandler) Do(ctx context.Context, task libmodel.CamundaExternal
 	if hasKey && key != "" {
 		keys = []string{key}
 	}
+	// the deployment is complete now; the runtime delivers the done event as soon as the
+	// instance waits for it (SMS-04)
 	done := "deployment_done_" + result.Id
-	x := extrasOf(ctx)
-	x.resources[moduleId] = model.ResourceRef{Kind: model.ResourceDeployment, Namespace: p.namespace, Id: result.Id}
-	// the deployment is complete now; the instance gets the message as soon as it waits (SMS-04)
-	x.messages = append(x.messages, done)
-	modules = []libmodel.Module{{Id: moduleId, ProcesInstanceId: task.ProcessInstanceId, SmartServiceModuleInit: libmodel.SmartServiceModuleInit{
-		ModuleType: TypeProcessDeployment, ModuleData: moduleData, Keys: keys,
-	}}}
+	modules = []model.Module{{Id: moduleId, ModuleType: TypeProcessDeployment, Data: moduleData, Keys: keys,
+		DeleteInfo: &model.ModuleDeleteInfo{UserId: p.owner, Resource: &model.ResourceRef{Kind: model.ResourceDeployment, Namespace: p.namespace, Id: result.Id}}}}
 	// no gateway deployments before M6: prefer_fog_deployment deploys in the cloud
-	return modules, map[string]interface{}{"process_deployment_id": result.Id, "done_event": done, "is_fog_deployment": false, "fog_hub": ""}, nil
+	return modules, map[string]any{"process_deployment_id": result.Id, "done_event": done, "is_fog_deployment": false, "fog_hub": ""}, nil
 }
 
 // elementInputs reads the selections and overrides per element (TASK-20)
-func (this *deployHandler) elementInputs(task libmodel.CamundaExternalTask, proc *bpmn.Process, deployment *model.DeploymentInput) error {
+func (this *deployHandler) elementInputs(task Task, proc *bpmn.Process, deployment *model.DeploymentInput) error {
 	for _, e := range proc.Ordered() {
 		prefix := deployPrefix + e.Id + "."
 		if raw, ok := input(task, prefix+"selection"); ok {
@@ -268,7 +242,7 @@ func (this *deployHandler) elementInputs(task libmodel.CamundaExternalTask, proc
 				params.Inputs[m.Name] = value
 			}
 		}
-		for name := range task.Variables {
+		for name := range task.Inputs {
 			if variable, ok := strings.CutPrefix(name, prefix+"variables."); ok {
 				value, _ := input(task, name)
 				if params.Variables == nil {
@@ -349,26 +323,6 @@ func selectionOf(raw string) (result model.Selection, err error) {
 	return result, nil
 }
 
-// Undo removes deployments the handler created for a result the engine could not apply
-func (this *deployHandler) Undo(ctx context.Context, modules []libmodel.Module, _ error) {
-	this.remove(ctx, modules, "process_deployment_id", model.ResourceDeployment)
-}
-
-func (this *processModules) remove(ctx context.Context, modules []libmodel.Module, field string, kind model.ResourceKind) {
-	for _, m := range modules {
-		id, _ := m.ModuleData[field].(string)
-		if id == "" {
-			continue
-		}
-		err := this.runtime.store.Tx(ctx, func(tx *store.Tx) error {
-			return tx.RemoveResource(model.ResourceRef{Kind: kind, Id: id})
-		})
-		if err != nil {
-			this.runtime.logger.WarnContext(ctx, "unable to undo a module", "module_id", m.Id, "error", err)
-		}
-	}
-}
-
 type startHandler struct {
 	*processModules
 }
@@ -376,18 +330,14 @@ type startHandler struct {
 const startPrefix = TypeProcessDeploymentStart + "."
 
 // Do starts an instance of a deployment, normally one the instance deployed before (TASK-21).
-func (this *startHandler) Do(ctx context.Context, task libmodel.CamundaExternalTask) (modules []libmodel.Module, outputs map[string]interface{}, err error) {
+func (this *startHandler) Do(ctx context.Context, task Task) (modules []model.Module, outputs map[string]any, err error) {
 	deploymentId, _ := input(task, startPrefix+"process_deployment_id")
 	if deploymentId == "" {
 		return nil, nil, fmt.Errorf("missing process_deployment_id")
 	}
 	namespace := ""
 	err = this.runtime.store.Tx(ctx, func(tx *store.Tx) error {
-		root, err := (&repository{store: this.runtime.store}).root(tx, task.ProcessInstanceId)
-		if err != nil {
-			return err
-		}
-		deployed, err := tx.ModulesOfInstance(root.Id, "", TypeProcessDeployment)
+		deployed, err := tx.ModulesOfInstance(task.RootInstanceId, "", TypeProcessDeployment)
 		for _, m := range deployed {
 			if m.Data["process_deployment_id"] == deploymentId && m.DeleteInfo != nil && m.DeleteInfo.Resource != nil {
 				namespace = m.DeleteInfo.Resource.Namespace
@@ -403,9 +353,8 @@ func (this *startHandler) Do(ctx context.Context, task libmodel.CamundaExternalT
 		return nil, nil, err
 	}
 	variables := map[string]any{}
-	for name := range task.Variables {
+	for name, value := range task.Inputs {
 		if variable, ok := strings.CutPrefix(name, startPrefix+"input."); ok {
-			value := task.Variables[name].Value
 			if s, ok := value.(string); ok {
 				var parsed any
 				if json.Unmarshal([]byte(s), &parsed) == nil {
@@ -419,18 +368,11 @@ func (this *startHandler) Do(ctx context.Context, task libmodel.CamundaExternalT
 	if err != nil {
 		return nil, nil, err
 	}
-	moduleId := task.ProcessInstanceId + "." + task.Id
-	extrasOf(ctx).resources[moduleId] = model.ResourceRef{Kind: model.ResourceInstance, Namespace: p.namespace, Id: inst.Id}
 	// the instance id serves as business key of the former engine wrapper
 	data := map[string]any{"process_instance_id": inst.Id, "business_key": inst.Id}
-	modules = []libmodel.Module{{Id: moduleId, ProcesInstanceId: task.ProcessInstanceId, SmartServiceModuleInit: libmodel.SmartServiceModuleInit{
-		ModuleType: TypeProcessDeploymentStart, ModuleData: data, Keys: []string{},
-	}}}
-	return modules, map[string]interface{}{"process_instance_id": inst.Id, "business_key": inst.Id}, nil
-}
-
-func (this *startHandler) Undo(ctx context.Context, modules []libmodel.Module, _ error) {
-	this.remove(ctx, modules, "process_instance_id", model.ResourceInstance)
+	modules = []model.Module{{Id: task.ModuleId(), ModuleType: TypeProcessDeploymentStart, Data: data, Keys: []string{},
+		DeleteInfo: &model.ModuleDeleteInfo{UserId: p.owner, Resource: &model.ResourceRef{Kind: model.ResourceInstance, Namespace: p.namespace, Id: inst.Id}}}}
+	return modules, map[string]any{"process_instance_id": inst.Id, "business_key": inst.Id}, nil
 }
 
 // checkDeployment reports a deployment that no longer exists
@@ -470,8 +412,4 @@ func (this *processModules) checkResource(ctx context.Context, m model.Module, c
 		return err
 	})
 	return problem, err
-}
-
-func ptr[T any](v T) *T {
-	return &v
 }

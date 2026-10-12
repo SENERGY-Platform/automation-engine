@@ -107,7 +107,7 @@ Abgelehnt: `DefaultPermissions` wörtlich zu nehmen, weil dann eine Freigabe fü
 
 **Stufen.** a) Gerätekommandos mit Geräteauswahl und Vorbereitungs-API, b) Process-IO, Benachrichtigung, HTTP-Aufruf, Zeitpläne, c) Event-Worker und Kafka-Signale.
 
-**Wiederverwendung von external-task-worker v0.1.2 (entschieden).** Importiert werden die Vertragstypen (`lib/messages`: `Command`, `ProtocolMsg`, `TaskInfo`), der device-repository-Zugriff mit Token-Exchange und Cache (`lib/devicerepository`), der Marshaller-Client (`lib/marshaller`) und der Timescale-Client (`lib/timescale`). Die Orchestrierung (Protokollnachricht, Teilaufgaben für Gruppen, Eingaben auf Pfaden, Auswertung der Antwort) sitzt dort in Methoden des Camunda-Workers und wird an das Job-Modell der Engine portiert; die Herkunft steht in den Dateien. Sobald CLI-11 einen stabilen Ort schafft, wechseln die Importe dorthin.
+**Wiederverwendung von external-task-worker v0.1.2 (entschieden).** Importiert werden die Vertragstypen (`lib/messages`: `Command`, `ProtocolMsg`, `TaskInfo`), der device-repository-Zugriff mit Token-Exchange und Cache (`lib/devicerepository`), der Marshaller-Client (`lib/marshaller`) und der Timescale-Client (`lib/timescale`). Die Orchestrierung (Protokollnachricht, Teilaufgaben für Gruppen, Eingaben auf Pfaden, Auswertung der Antwort) sitzt dort in Methoden des Camunda-Workers und wird an das Job-Modell der Engine portiert; die Herkunft steht in den Dateien. Sobald CLI-11 einen stabilen Ort schafft, wechseln die Importe dorthin. Abgelöst am 2026-10-12: Die genutzten Teile sind ins Repo gezogen, siehe „Nach M5“.
 
 **Modellformat Gerätekommando.** `senergy:taskType="device_command"`, `senergy:completionStrategy` (`optimistic` oder `pessimistic`, Vorgabe pessimistic). Die Task-Definition bleibt das `payload`-JSON im Modell wie heute; die Geräteauswahl steht typisiert je Element in der Deployment-Version (DEP-05) und wird bei der Ausführung eingesetzt.
 
@@ -133,7 +133,7 @@ Abgelehnt: `DefaultPermissions` wörtlich zu nehmen, weil dann eine Freigabe fü
 
 - Bei `update_strategy=drain` gelten die Eventbeschreibungen der aktuellen Version. Instanzen einer alten Version, die auf ein in der neuen Version entferntes oder geändertes Geräteevent warten, bekommen es nicht mehr.
 - Fog (MQTT statt Kafka für Kommandos und Gerätedaten) folgt mit M6; `MODE=fog` wählt bisher nur die HTTP-Richtlinie.
-- Die Importe aus external-task-worker v0.1.2 und event-worker v1.2.0 bleiben, bis CLI-11 einen stabilen Ort schafft.
+- Die Importe aus external-task-worker v0.1.2 und event-worker v1.2.0 sind seit 2026-10-12 durch Code im Repo ersetzt (siehe „Nach M5“).
 - `PERMISSIONS_KAFKA_TOPIC` ist ohne Wert abgeschaltet; ohne das Signal bleibt ein in permissions-v2 entzogenes Administrationsrecht des Owners dort entzogen. Zugriff in der Engine behält der Owner trotzdem, weil sie den Owner lokal prüft.
 
 ## Nach M3 (2026-10-12)
@@ -183,7 +183,7 @@ Grundlage sind die Analysen der acht Worker, von `smart-service-module-worker-li
 
 **Kompatibilität der Module (entschieden: voll).** Jede Zeichenkette in den Eingaben eines Modul-Tasks wird wie heute als Go-Template gegen die Variablen gerendert (`{{.param}}`, `brl`/`brr`), `prescript*`- und `postscript*`-Eingaben laufen mit derselben Skript-API (`variables`, `inputs`, `outputs`, `util`, `deviceRepo`, `console`). Bestehende Designs laufen ohne Umschreiben.
 
-**Wiederverwendung statt Portierung.** Middleware, Skriptumgebung und Templates kommen aus `smart-service-module-worker-lib`, die Handler von `info`, `import`, `export`, `analytics` und `device_repository` aus den Worker-Repos (Pseudo-Versionen auf `origin/main` vom 2026-10-06). Sie nehmen nur kleine Schnittstellen (`GetInstanceUser`, `ListExistingModules`, `UseModuleDeleteInfo`), die die Engine gegen ihre eigene Datenbank erfüllt. Ihr Camunda-Teil bleibt ungenutzt. Neu geschrieben werden `process_deployment`, `process_deployment_start` und `watcher`, weil sie Dienste ansprechen, die die Engine ersetzt (process-deployment, process-engine-wrapper, watcher-db). Die Bibliotheken bleiben Abhängigkeit, bis CLI-11 einen Ort für sie schafft; der Preis ist eine Build-Kopplung an sechs Repos.
+**Wiederverwendung statt Portierung.** Middleware, Skriptumgebung und Templates kommen aus `smart-service-module-worker-lib`, die Handler von `info`, `import`, `export`, `analytics` und `device_repository` aus den Worker-Repos (Pseudo-Versionen auf `origin/main` vom 2026-10-06). Sie nehmen nur kleine Schnittstellen (`GetInstanceUser`, `ListExistingModules`, `UseModuleDeleteInfo`), die die Engine gegen ihre eigene Datenbank erfüllt. Ihr Camunda-Teil bleibt ungenutzt. Neu geschrieben werden `process_deployment`, `process_deployment_start` und `watcher`, weil sie Dienste ansprechen, die die Engine ersetzt (process-deployment, process-engine-wrapper, watcher-db). Die Bibliotheken bleiben Abhängigkeit, bis CLI-11 einen Ort für sie schafft; der Preis ist eine Build-Kopplung an sechs Repos. Abgelöst am 2026-10-12: Der Code ist ins Repo gezogen, siehe „Nach M5“.
 
 **Module (SMS-12).** Tabelle `modules` an der Instanz, Schlüssel in `module_keys`. Löschinfo entweder eine URL (DELETE mit Token des Owners, 2xx und 404 gelten als gelöscht, wie heute) oder eine Ressource der Engine (Deployment, Instanz, Beobachtung). Gelöscht wird über die Outbox `module_removals` mit Wiederholung, nicht im Request: es bleibt nichts verwaist (SMS-06). Instanzen mit Modulen fallen nicht unter die Aufbewahrung, weil ihre Ressourcen weiterlaufen.
 
@@ -208,7 +208,7 @@ Grundlage sind die Analysen der acht Worker, von `smart-service-module-worker-li
 - **Module** (SMS-12): Tabelle `modules` mit Schlüsseln, API zum Auflisten, Lesen und Löschen, Löschen der Ressourcen über die Outbox `module_removals` (URL mit Owner-Token oder Ressource der Engine im passenden Namespace). Instanzen mit Modulen fallen nicht unter die Aufbewahrung; beim Löschen eines Nutzers werden keine Entfernungen eingereiht.
 - **Effekte von Aufgaben**: Module, Variablen der Wurzelinstanz und vorgemerkte Nachrichten entstehen in der Transaktion, die den Job abschließt. Kann die Engine ein Ergebnis nicht übernehmen (Instanz inzwischen gestoppt, Commit gescheitert), macht der Aufgabentyp die Ressourcen rückgängig; vorher bestehende Module bleiben dabei unberührt.
 - **Neuer Lauf entfernt Module** und Wartungsprozeduren des vorigen (SMS-03, SMS-09); `forbid_cycles` lehnt Schleifen in `smart-services` ab.
-- **Laufzeit der Module** (`pkg/modules`): Middleware, Skript-API und Templates der Worker-Bibliothek; `info`, `import`, `export`, `analytics`, `device_repository` mit den unveränderten Handlern; `process_deployment`, `process_deployment_start` und `watcher` neu gegen die Engine. Gesundheitsprüfung stündlich je Typ.
+- **Laufzeit der Module** (`pkg/modules`): Middleware, Skript-API und Templates der Worker-Bibliothek; `info`, `import`, `export`, `analytics`, `device_repository` mit dem Verhalten der Worker (seit 2026-10-12 im Repo, siehe unten); `process_deployment`, `process_deployment_start` und `watcher` neu gegen die Engine. Gesundheitsprüfung stündlich je Typ.
 - **Status** (SMS-11) an jeder Instanz, Format der Modulfehler wie bisher.
 - **Wartungsprozeduren** (SMS-13) mit geteilten Variablen und Modulen; Message-Starts in `smart-services` nur über die Instanz.
 - **Startparameter** (SMS-08) mit Optionen aus device-selection, Werteformat der Releases, `auto_select_all`; `json_string_parameters` speichert Listen in String-Feldern als JSON wie Camunda.
@@ -222,7 +222,28 @@ Grundlage sind die Analysen der acht Worker, von `smart-service-module-worker-li
 - Die alte REST-API von smart-service-repository (Releases, Designs, `/instances-by-process-id`) folgt mit der `deprecated/`-Schicht in M7, ebenso die Migration bestehender Designs, Releases, Instanzen und Module.
 - Module heißen `<instanz>.<job>` statt `<prozessinstanz>.<camunda-task>`; die Migration muss bestehende Module übernehmen, ohne ihre IDs zu ändern.
 - Wie bisher sind `import` und `export` nicht idempotent: stürzt die Engine zwischen dem Anlegen beim Dienst und dem Commit ab, bleibt die Ressource dort ohne Modul.
-- Die Fehler der Worker-Handler werden mit übernommen, etwa das `break` in `info` bei einem Feld, das kein String ist (siehe OFFENE-PUNKTE.md).
+- Die Fehler der Worker-Handler wurden zunächst mit übernommen; mit der Integration sind zwei behoben (siehe unten).
 - Generische Beobachtungen (`watch_request`) laufen unter der HTTP-Richtlinie des Namespace statt über den isolierten Client des Watchers; in der Cloud ist sie standardmäßig aus.
 - `process_deployment_start` vermerkt `state: completed` nicht mehr in den Moduldaten; der Status der gestarteten Instanz ist über die Engine abrufbar.
 - Startwerte ab 3000 Zeichen wurden bisher durch Platzhalter ersetzt (Grenze von Camunda); die Engine speichert sie direkt bis zur Variablengrenze.
+
+## Nach M5: Worker-Code integriert (2026-10-12)
+
+**Entscheidung.** Die Repos der Module-Worker (`smart-service-module-worker-lib`, `-info`, `-import`, `-export`, `-analytics`, `-device-repository`) und der event-worker werden abgeschafft. Ihr Code steht nicht mehr in `go.mod`, er ist hier neu implementiert oder übernommen. Damit entfällt die Build-Kopplung an sechs Repos, die M5 für die Wiederverwendung in Kauf genommen hatte. Ebenso ersetzt sind die Pakete aus external-task-worker v0.1.2, die M3 importiert hatte; dieses Repo nutzen aber device-command und live-data-worker weiter.
+
+**Wo.**
+- `pkg/modules/compat`: Skript-API (`variables`, `inputs`, `outputs`, `util`, `deviceRepo`, `console`), Templates und Modellformate der Worker-Bibliothek.
+- `pkg/modules/{info,imports,export,analytics,devicegroups}.go`: die Handler, als `Handler` über `Task` ohne Camunda-Typen. Undo ist generisch in `runtime.go`: bestehende Module bleiben, neue werden über ihre Löschinfo entfernt.
+- `pkg/events/unmarshal.go`: Marshaller und gecachter Zugriff auf device-repository mit Client-Credentials und den Cache-Invalidierungssignalen von service-commons.
+- `pkg/devices/repository.go`, `modifier.go`: Zugriff auf Geräte, Gerätetypen, Protokolle und Gerätegruppen mit dem Token des Owners und Cache (bisher `lib/devicerepository`), `SplitModifier` (bisher `lib/devicegroups`). Die Modelltypen kommen direkt aus `models/go`, `lib/devicerepository/model` waren nur Aliase darauf.
+- `pkg/tasks/devicecommand/{messages,marshaller,timescale}.go`: Kommando-Payload und Protokollnachricht (bisher `lib/messages`, Felder und JSON-Namen maschinell gegen das Original abgeglichen), Client des marshaller-Dienstes, letzte Werte über timescale-wrapper.
+
+**Nachweis.** Die Testfälle der Worker liegen unter `pkg/modules/testdata` (analytics 13, device_repository 14, info 9) und laufen als Golden-Tests durch die Engine: dieselben Anfragen an flow-engine, device-manager und device-selection, dieselben Module und Variablen. Die Tests von Marshaller und Device-Repo des event-worker sind nach `pkg/events/unmarshal_test.go` übertragen. Für `export` gab es keine Tests; `export_test.go` prüft das Verhalten aus dem Quelltext. Aus external-task-worker sind die Aspekt-Tests von `lib/messages` übertragen; Repo-Zugriff, `SplitModifier` und die timescale-Abfrage haben eigene Tests. Die Kommandoausführung selbst war schon seit M3 portiert und getestet.
+
+**Abweichungen vom Verhalten der Worker.**
+- `info` überspringt ein Zusatzfeld, das kein String ist, und liest die übrigen weiter; der Worker brach bei ihm ab (`break`).
+- `analytics` mit Schlüssel bricht mit dem Fehler ab, wenn die Modulsuche scheitert; der Worker ignorierte den Fehler und legte eine zweite Pipeline an. Die Meldung zu einer `pipeline_id`, die kein String ist, nennt jetzt die Pipeline statt der Gerätegruppe.
+- `analytics` liest Gerätegruppe und Geräte für die Dienstkriterien nicht ein zweites Mal; das Ergebnis ist dasselbe.
+- `persistData` bleibt nur als JSON-Text wirksam, ein Boolean gilt wie beim Worker als `false`.
+- Gerätekommandos: Eine Antwort von device-repository außer 2xx ist ein Fehler mit Pfad und Status. Bisher wurde der Inhalt trotzdem gelesen, und es folgten Folgefehler wie ein leeres Gerät oder „service not found“.
+- Gerätekommandos mit `prefer_event`: Liefert timescale-wrapper weniger Abfragen oder Spalten zurück als angefragt, ist das ein Fehler. Bisher lief der Zugriff in einen Panic.

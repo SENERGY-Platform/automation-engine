@@ -23,14 +23,13 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/script"
-	ewmodel "github.com/SENERGY-Platform/event-worker/pkg/model"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
 // Unmarshaller converts a device or import message into the characteristic of the event; the
-// event-worker marshaller does this in the process (EVT-04).
+// Marshaller does this as the event-worker did (EVT-04).
 type Unmarshaller interface {
-	Unmarshal(desc ewmodel.EventMessageDesc) (value interface{}, err error)
+	Unmarshal(desc MessageDesc) (value any, err error)
 }
 
 // Evaluator applies the evaluation of the event-worker: unmarshalling, then the condition
@@ -57,15 +56,8 @@ func (this *Evaluator) Evaluate(d model.EventDescription, message map[string]any
 			return result, fmt.Errorf("invalid service of event description: %w", err)
 		}
 	}
-	desc := ewmodel.EventMessageDesc{
-		EventDesc: ewmodel.EventDesc{
-			UserId: d.Owner, DeploymentId: d.DeploymentId, DeviceGroupId: d.DeviceGroupId, DeviceId: d.DeviceId, ServiceId: d.ServiceId, ImportId: d.ImportId,
-			Script: d.Script, ValueVariable: d.ValueVariable, Variables: d.Variables, Qos: d.Qos, EventId: d.MessageName,
-			CharacteristicId: d.CharacteristicId, FunctionId: d.FunctionId, AspectIds: d.AspectIds, Path: d.Path, ServiceForMarshaller: service,
-		},
-		Message: message,
-	}
-	result.Value, err = this.unmarshaller.Unmarshal(desc)
+	result.Value, err = this.unmarshaller.Unmarshal(MessageDesc{Service: service, CharacteristicId: d.CharacteristicId, FunctionId: d.FunctionId,
+		AspectIds: d.AspectIds, Path: d.Path, Message: message})
 	if err != nil {
 		return result, fmt.Errorf("unable to read the value: %w", err)
 	}

@@ -1,0 +1,41 @@
+[
+    {
+        "device_type_id": "dt1",
+        "service_path_options": {
+            "dt1.s1": [
+                {
+                    "service_id": "dt1.s1",
+                    "path": "path.to.dt1.s1.value"
+                }
+            ]
+        }
+    },
+    {
+        "device_type_id": "dt2",
+        "service_path_options": {
+            "dt2.s1": [
+                {
+                    "service_id": "dt2.s1",
+                    "path": "path.to.dt2.s1.value"
+                }
+            ],
+            "dt2.s2": [
+                {
+                    "service_id": "dt2.s2",
+                    "path": "path.to.dt2.s2.value"
+                }
+            ]
+        }
+    },
+    {
+        "device_type_id": "dt3",
+        "service_path_options": {
+            "dt3.s1": [
+                {
+                    "service_id": "dt3.s1",
+                    "path": "path.to.dt3.s1.value"
+                }
+            ]
+        }
+    }
+]

@@ -1,0 +1,62 @@
+[
+    {
+        "id":"373808f2-848a-4446-8062-abd973dc96d3",
+        "name":"event-equal",
+        "deploymentType":"cloud",
+        "inPorts":[
+            "port-name"
+        ],
+        "outPorts":[
+            "void"
+        ],
+        "type":"senergy.NodeElement",
+        "source":{
+
+        },
+        "target":{
+
+        },
+        "image":"ghcr.io/senergy-platform/event-operator-equal:prod",
+        "config":[
+            {
+                "name":"num",
+                "type":"int"
+            },
+            {
+                "name":"str",
+                "type":"string"
+            }
+        ],
+        "operatorId":"5f476a848debff52d5abb2fa"
+    },
+    {
+        "id":"173808f2-848a-4446-8062-abd973dc96d4",
+        "name":"event-equal",
+        "deploymentType":"cloud",
+        "inPorts":[
+            "port-name-2"
+        ],
+        "outPorts":[
+            "void"
+        ],
+        "type":"senergy.NodeElement",
+        "source":{
+
+        },
+        "target":{
+
+        },
+        "image":"ghcr.io/senergy-platform/event-operator-equal:prod",
+        "config":[
+            {
+                "name":"num2",
+                "type":"int"
+            },
+            {
+                "name":"str",
+                "type":"string"
+            }
+        ],
+        "operatorId":"5f476a848debff52d5abb2fa"
+    }
+]

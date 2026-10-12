@@ -1,0 +1,22 @@
+[
+    {
+        "method": "GET",
+        "endpoint": "/instances-by-process-id/process-instance-1",
+        "message": ""
+    },
+    {
+        "method": "GET",
+        "endpoint": "/instances-by-process-id/process-instance-1/variables-map",
+        "message": ""
+    },
+    {
+        "method": "GET",
+        "endpoint": "/instances-by-process-id/process-instance-1/modules?key=42",
+        "message": ""
+    },
+    {
+        "method": "PUT",
+        "endpoint": "/instances-by-process-id/process-instance-1/modules/process-instance-1.task1",
+        "message": "{\"delete_info\":null,\"module_type\":\"info\",\"module_data\":{\"foo\":\"bar\"},\"keys\":[\"42\"]}\n"
+    }
+]

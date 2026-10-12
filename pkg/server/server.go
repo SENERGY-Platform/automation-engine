@@ -28,7 +28,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
@@ -57,10 +56,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/processio"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
-	"github.com/SENERGY-Platform/external-task-worker/lib/devicerepository"
-	"github.com/SENERGY-Platform/external-task-worker/lib/marshaller"
-	"github.com/SENERGY-Platform/external-task-worker/lib/timescale"
-	"github.com/SENERGY-Platform/external-task-worker/util"
 	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/invalidator"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
@@ -94,10 +89,10 @@ type Dependencies struct {
 	// tokens of other users; the Keycloak token exchange if not given
 	UserToken auth.UserTokenSource
 	// device command dependencies; set together, they enable device commands without URLs
-	DeviceRepository devicerepository.RepoInterface
+	DeviceRepository devices.Repository
 	AspectNodes      *devices.AspectNodes
-	Marshaller       marshaller.Interface
-	Timescale        timescale.Interface
+	Marshaller       devicecommand.Marshaller
+	Timescale        devicecommand.Timescale
 	Producer         messaging.Producer
 	// event debugging: stored device messages and their unmarshalling (EVT-10, DBG-18)
 	EventSeries       events.Series
@@ -132,18 +127,22 @@ func engineConfig(config configuration.Config) (engine.Config, error) {
 	return result, nil
 }
 
-// deviceRepository builds the device-repository access with token exchange and its aspect node
+// deviceRepository builds the device-repository access with the user tokens and its aspect node
 // resolver; nil if neither configured nor given
-func deviceRepository(config configuration.Config, deps Dependencies) (devicerepository.RepoInterface, *devices.AspectNodes, error) {
+func deviceRepository(config configuration.Config, deps Dependencies, userToken auth.UserTokenSource) (devices.Repository, *devices.AspectNodes, error) {
 	repo, aspects := deps.DeviceRepository, deps.AspectNodes
 	if repo == nil {
 		if config.DeviceRepositoryUrl == "" {
 			return nil, nil, nil
 		}
-		iot, err := devicerepository.NewIot(util.Config{
-			DeviceRepoUrl: config.DeviceRepositoryUrl, AuthEndpoint: config.AuthEndpoint, AuthClientId: config.AuthClientId,
-			AuthClientSecret: config.AuthClientSecret.Value(), CacheTimeout: config.DeviceCacheTimeout,
-		})
+		timeout := time.Minute
+		if config.DeviceCacheTimeout != "" && config.DeviceCacheTimeout != "-" {
+			var err error
+			if timeout, err = time.ParseDuration(config.DeviceCacheTimeout); err != nil {
+				return nil, nil, fmt.Errorf("invalid device_cache_timeout: %w", err)
+			}
+		}
+		iot, err := devices.NewRepository(config.DeviceRepositoryUrl, userToken, timeout)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -210,13 +209,9 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	httpCalls := httpcall.New(registry, config.Mode)
 	e.RegisterTaskType(httpcall.TaskType, httpCalls)
 	moduleSettings := moduleSettings(config)
-	runtime, err := modules.NewRuntime(ctx, &sync.WaitGroup{}, s, moduleSettings, logger)
-	if err != nil {
-		s.Close()
-		return nil, err
-	}
+	runtime := modules.NewRuntime(s, moduleSettings, userToken, logger)
 
-	repo, aspects, err := deviceRepository(config, deps)
+	repo, aspects, err := deviceRepository(config, deps, userToken)
 	if err != nil {
 		s.Close()
 		return nil, err
@@ -273,7 +268,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		series = events.NewTimescale(config.TimescaleWrapperUrl)
 	}
 	if series != nil && unmarshaller == nil && config.DeviceRepositoryUrl != "" {
-		if unmarshaller, err = newUnmarshaller(ctx, &sync.WaitGroup{}, config); err != nil {
+		if unmarshaller, err = newUnmarshaller(config); err != nil {
 			s.Close()
 			return nil, err
 		}
@@ -292,16 +287,16 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 }
 
 // deviceCommands creates the task type device_command if its services are configured (TASK-01)
-func deviceCommands(ctx context.Context, config configuration.Config, deps Dependencies, repo devicerepository.RepoInterface, aspects *devices.AspectNodes, s *store.Store, m *metrics.Metrics, logger *slog.Logger) (*devicecommand.Type, error) {
+func deviceCommands(ctx context.Context, config configuration.Config, deps Dependencies, repo devices.Repository, aspects *devices.AspectNodes, s *store.Store, m *metrics.Metrics, logger *slog.Logger) (*devicecommand.Type, error) {
 	mar, ts, producer := deps.Marshaller, deps.Timescale, deps.Producer
 	if repo == nil || (mar == nil && config.MarshallerUrl == "") {
 		return nil, nil
 	}
 	if mar == nil {
-		mar = marshaller.New(config.MarshallerUrl)
+		mar = devicecommand.NewMarshaller(config.MarshallerUrl)
 	}
 	if ts == nil && config.TimescaleWrapperUrl != "" {
-		ts = timescale.NewTimescale(config.TimescaleWrapperUrl)
+		ts = devicecommand.NewTimescale(config.TimescaleWrapperUrl)
 	}
 	if producer == nil {
 		producer = messaging.New(ctx, config.KafkaUrl)
@@ -480,7 +475,6 @@ func moduleSettings(config configuration.Config) modules.Settings {
 	return modules.Settings{
 		DeviceRepositoryUrl: config.DeviceRepositoryUrl, DeviceSelectionUrl: config.DeviceSelectionUrl, DeviceManagerUrl: config.DeviceManagerUrl,
 		FlowEngineUrl: config.FlowEngineUrl, FlowParserUrl: config.FlowParserUrl, ImportDeployUrl: config.ImportDeployUrl, ServingServiceUrl: config.ServingServiceUrl,
-		AuthEndpoint: config.AuthEndpoint, AuthClientId: config.AuthClientId, AuthClientSecret: config.AuthClientSecret.Value(), LogLevel: config.LogLevel,
 		AnalyticsEnableMultiplePaths: config.AnalyticsEnableMultiplePaths, AnalyticsDevicePathPrefix: config.AnalyticsDevicePathPrefix,
 		AnalyticsGroupPathPrefix: config.AnalyticsGroupPathPrefix, AnalyticsImportPathPrefix: config.AnalyticsImportPathPrefix,
 		AnalyticsRemoveImportPathRoot: config.AnalyticsRemoveImportPathRoot, DeviceGroupNamePrefix: config.DeviceGroupNamePrefix,

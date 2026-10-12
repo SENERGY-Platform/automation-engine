@@ -21,8 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/SENERGY-Platform/external-task-worker/lib/devicerepository"
-	devicemodel "github.com/SENERGY-Platform/external-task-worker/lib/devicerepository/model"
+	"github.com/SENERGY-Platform/models/go/models"
 )
 
 // AspectNodes resolves aspect node ids to full nodes, which the marshaller needs to match
@@ -32,30 +31,29 @@ type AspectNodes struct {
 	ttl     time.Duration
 	mux     sync.Mutex
 	cache   map[string]cachedNode
-	fetch   func(token devicerepository.Impersonate, id string) (devicemodel.AspectNode, error)
+	fetch   func(token Token, id string) (models.AspectNode, error)
 }
 
 type cachedNode struct {
-	node    devicemodel.AspectNode
+	node    models.AspectNode
 	expires time.Time
 }
 
 // NewAspectNodesWith uses fetch to load nodes, e.g. in tests.
-func NewAspectNodesWith(fetch func(token devicerepository.Impersonate, id string) (devicemodel.AspectNode, error)) *AspectNodes {
+func NewAspectNodesWith(fetch func(token Token, id string) (models.AspectNode, error)) *AspectNodes {
 	return &AspectNodes{ttl: 10 * time.Minute, cache: map[string]cachedNode{}, fetch: fetch}
 }
 
 func NewAspectNodes(repoUrl string) *AspectNodes {
 	result := &AspectNodes{repoUrl: repoUrl, ttl: 10 * time.Minute, cache: map[string]cachedNode{}}
-	result.fetch = func(token devicerepository.Impersonate, id string) (node devicemodel.AspectNode, err error) {
-		err = token.GetJSON(result.repoUrl+"/aspect-nodes/"+url.PathEscape(id), &node)
-		return node, err
+	result.fetch = func(token Token, id string) (node models.AspectNode, err error) {
+		return node, getJson(defaultClient, token, result.repoUrl, "/aspect-nodes/"+url.PathEscape(id), &node)
 	}
 	return result
 }
 
-func (this *AspectNodes) ResolveIds(token devicerepository.Impersonate, ids []string) ([]devicemodel.AspectNode, error) {
-	result := make([]devicemodel.AspectNode, 0, len(ids))
+func (this *AspectNodes) ResolveIds(token Token, ids []string) ([]models.AspectNode, error) {
+	result := make([]models.AspectNode, 0, len(ids))
 	for _, id := range ids {
 		node, err := this.get(token, id)
 		if err != nil {
@@ -67,8 +65,8 @@ func (this *AspectNodes) ResolveIds(token devicerepository.Impersonate, ids []st
 }
 
 // resolve completes nodes that carry only their id, e.g. the aspects of a modeled payload
-func (this *AspectNodes) Resolve(token devicerepository.Impersonate, nodes []devicemodel.AspectNode) ([]devicemodel.AspectNode, error) {
-	result := make([]devicemodel.AspectNode, 0, len(nodes))
+func (this *AspectNodes) Resolve(token Token, nodes []models.AspectNode) ([]models.AspectNode, error) {
+	result := make([]models.AspectNode, 0, len(nodes))
 	for _, n := range nodes {
 		if n.RootId != "" || n.Id == "" {
 			result = append(result, n)
@@ -83,7 +81,7 @@ func (this *AspectNodes) Resolve(token devicerepository.Impersonate, nodes []dev
 	return result, nil
 }
 
-func (this *AspectNodes) get(token devicerepository.Impersonate, id string) (devicemodel.AspectNode, error) {
+func (this *AspectNodes) get(token Token, id string) (models.AspectNode, error) {
 	this.mux.Lock()
 	cached, ok := this.cache[id]
 	this.mux.Unlock()

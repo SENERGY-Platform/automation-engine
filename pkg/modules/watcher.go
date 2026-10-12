@@ -34,7 +34,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
-	libmodel "github.com/SENERGY-Platform/smart-service-module-worker-lib/pkg/model"
 )
 
 const TypeWatcher = "watcher"
@@ -61,7 +60,7 @@ type WatcherSettings struct {
 func (this *Runtime) AddWatcher(maintenance Maintenance, generic GenericHttp, settings WatcherSettings) {
 	w := &watcher{runtime: this, maintenance: maintenance, generic: generic, settings: settings, http: &http.Client{Timeout: 5 * time.Second}}
 	this.watcher = w
-	this.types[TypeWatcher] = &moduleType{runtime: this, name: TypeWatcher, handler: w}
+	this.add(TypeWatcher, w)
 }
 
 type watcher struct {
@@ -74,10 +73,10 @@ type watcher struct {
 
 const watchPrefix = TypeWatcher + "."
 
-func (this *watcher) Do(ctx context.Context, task libmodel.CamundaExternalTask) (modules []libmodel.Module, outputs map[string]interface{}, err error) {
+func (this *watcher) Do(ctx context.Context, task Task) (modules []model.Module, outputs map[string]any, err error) {
 	var root store.Instance
 	err = this.runtime.store.Tx(ctx, func(tx *store.Tx) error {
-		root, err = (&repository{store: this.runtime.store}).root(tx, task.ProcessInstanceId)
+		root, err = tx.GetInstance(task.RootInstanceId, false)
 		return err
 	})
 	if err != nil {
@@ -88,9 +87,8 @@ func (this *watcher) Do(ctx context.Context, task libmodel.CamundaExternalTask) 
 		return nil, nil, fmt.Errorf("missing variable: %vmaintenance_procedure", watchPrefix)
 	}
 	parameters := map[string]any{}
-	for name, v := range task.Variables {
+	for name, value := range task.Inputs {
 		if id, ok := strings.CutPrefix(name, watchPrefix+"maintenance_procedure_inputs."); ok {
-			value := v.Value
 			if s, ok := value.(string); ok {
 				var parsed any
 				if json.Unmarshal([]byte(s), &parsed) == nil {
@@ -115,7 +113,7 @@ func (this *watcher) Do(ctx context.Context, task libmodel.CamundaExternalTask) 
 	if err != nil {
 		return nil, nil, err
 	}
-	id := task.ProcessInstanceId + "." + task.Id
+	id := task.ModuleId()
 	now := this.runtime.now()
 	err = this.runtime.store.Tx(ctx, func(tx *store.Tx) error {
 		return tx.SaveWatch(store.Watch{Id: id, InstanceId: root.Id, Namespace: root.Namespace, Owner: root.Owner, Procedure: procedure, Parameters: parameters,
@@ -124,16 +122,14 @@ func (this *watcher) Do(ctx context.Context, task libmodel.CamundaExternalTask) 
 	if err != nil {
 		return nil, nil, err
 	}
-	extrasOf(ctx).resources[id] = model.ResourceRef{Kind: model.ResourceWatch, Namespace: root.Namespace, Id: id}
-	modules = []libmodel.Module{{Id: id, ProcesInstanceId: task.ProcessInstanceId, SmartServiceModuleInit: libmodel.SmartServiceModuleInit{
-		ModuleType: TypeWatcher, ModuleData: map[string]any{"watcher_id": id}, Keys: []string{},
-	}}}
-	return modules, map[string]interface{}{"watcher_id": id}, nil
+	modules = []model.Module{{Id: id, ModuleType: TypeWatcher, Data: map[string]any{"watcher_id": id}, Keys: []string{},
+		DeleteInfo: &model.ModuleDeleteInfo{UserId: root.Owner, Resource: &model.ResourceRef{Kind: model.ResourceWatch, Namespace: root.Namespace, Id: id}}}}
+	return modules, map[string]any{"watcher_id": id}, nil
 }
 
 // request reads what to watch: devices matching criteria through device-selection, or a
 // generic request if allowed; the first variable present wins, as with the worker
-func (this *watcher) request(task libmodel.CamundaExternalTask) (model.WatchRequest, error) {
+func (this *watcher) request(task Task) (model.WatchRequest, error) {
 	selectables := func(raw string, query string) (model.WatchRequest, error) {
 		var criteria []map[string]any
 		if err := json.Unmarshal([]byte(raw), &criteria); err != nil {
@@ -160,17 +156,6 @@ func (this *watcher) request(task libmodel.CamundaExternalTask) (model.WatchRequ
 		return model.WatchRequest{Method: request.Method, Endpoint: request.Endpoint, Body: request.Body, AddAuthToken: request.AddAuthToken, Generic: true}, nil
 	}
 	return model.WatchRequest{}, fmt.Errorf("missing variable: no known watch request found")
-}
-
-func (this *watcher) Undo(ctx context.Context, modules []libmodel.Module, _ error) {
-	for _, m := range modules {
-		err := this.runtime.store.Tx(ctx, func(tx *store.Tx) error {
-			return tx.DeleteWatch(m.Id)
-		})
-		if err != nil {
-			this.runtime.logger.WarnContext(ctx, "unable to undo a watch", "module_id", m.Id, "error", err)
-		}
-	}
 }
 
 // RunWatches checks due watches until ctx is done.
@@ -235,11 +220,11 @@ func (this *watcher) check(ctx context.Context, w store.Watch) (hash string, mes
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if w.Request.AddAuthToken {
-		token, err := this.runtime.auth.ExchangeUserToken(w.Owner)
+		token, err := this.runtime.token(w.Owner)
 		if err != nil {
 			return "", "token: " + err.Error()
 		}
-		req.Header.Set("Authorization", token.Token)
+		req.Header.Set("Authorization", token)
 	}
 	var resp *http.Response
 	if w.Request.Generic {

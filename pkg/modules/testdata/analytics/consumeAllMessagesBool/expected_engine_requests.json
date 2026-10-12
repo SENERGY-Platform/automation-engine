@@ -1,0 +1,7 @@
+[
+    {
+        "method":"POST",
+        "endpoint":"/pipeline",
+        "message":"{\"flowId\":\"flow-id-1\",\"name\":\"selected-name\",\"description\":\"some description\",\"windowTime\":1,\"consumeAllMessages\":true,\"mergeStrategy\":\"inner\",\"nodes\":[{\"nodeId\":\"373808f2-848a-4446-8062-abd973dc96d3\",\"inputs\":[{\"filterIds\":\"device_1\",\"filterType\":\"deviceId\",\"topicName\":\"s1\",\"values\":[{\"name\":\"port-name\",\"path\":\"value.root.value_s1.v1\"}]}],\"config\":[{\"name\":\"num\",\"value\":\"42\"},{\"name\":\"str\",\"value\":\"foobar\"}]}]}"
+    }
+]

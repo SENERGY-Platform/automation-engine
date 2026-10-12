@@ -1,0 +1,15 @@
+[
+    {
+        "id": "task1",
+        "processInstanceId": "process-instance-1",
+        "processDefinitionId": "process-definition-1",
+        "variables": {
+            "device_repository.create_device_group": {
+                "value": ["urn:infai:ses:device:device-1", "ignored", "urn:infai:ses:group:ignored", "urn:infai:ses:device:device-2"]
+            },
+            "device_repository.name": {
+                "value": "dg-test-name"
+            }
+        }
+    }
+]

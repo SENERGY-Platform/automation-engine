@@ -17,31 +17,25 @@
 package modules
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
-	"slices"
-	"sync"
+	"strings"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/modules/compat"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	devicerepository "github.com/SENERGY-Platform/device-repository/v2/lib/client"
-	analytics "github.com/SENERGY-Platform/smart-service-module-worker-analytics/pkg/analytics"
-	analyticsdevices "github.com/SENERGY-Platform/smart-service-module-worker-analytics/pkg/devices"
-	analyticsimports "github.com/SENERGY-Platform/smart-service-module-worker-analytics/pkg/imports"
-	devicegroups "github.com/SENERGY-Platform/smart-service-module-worker-device-repository/pkg/worker"
-	"github.com/SENERGY-Platform/smart-service-module-worker-export/pkg/export"
-	"github.com/SENERGY-Platform/smart-service-module-worker-import/pkg/imports"
-	info "github.com/SENERGY-Platform/smart-service-module-worker-info/pkg"
-	libauth "github.com/SENERGY-Platform/smart-service-module-worker-lib/pkg/auth"
-	"github.com/SENERGY-Platform/smart-service-module-worker-lib/pkg/camunda"
-	libconfig "github.com/SENERGY-Platform/smart-service-module-worker-lib/pkg/configuration"
-	"github.com/SENERGY-Platform/smart-service-module-worker-lib/pkg/middleware"
-	libmodel "github.com/SENERGY-Platform/smart-service-module-worker-lib/pkg/model"
 )
 
 // Settings are the configuration values of the former module workers (TASK-29). The parameter
@@ -54,10 +48,6 @@ type Settings struct {
 	FlowParserUrl       string
 	ImportDeployUrl     string
 	ServingServiceUrl   string
-	AuthEndpoint        string
-	AuthClientId        string
-	AuthClientSecret    string
-	LogLevel            string
 
 	AnalyticsEnableMultiplePaths  bool
 	AnalyticsDevicePathPrefix     string
@@ -71,7 +61,7 @@ type Settings struct {
 	InfoAdditionalModuleDataFields bool
 }
 
-// Task types of the former module workers whose handlers are reused unchanged.
+// Task types of the former module workers (TASK-22 to TASK-26).
 const (
 	TypeInfo             = "info"
 	TypeImport           = "import"
@@ -80,15 +70,46 @@ const (
 	TypeDeviceRepository = "device_repository"
 )
 
-// Runtime runs module handlers like the worker library did: string inputs are rendered as
+// Task is a module task as a handler sees it: the inputs after the templates were rendered.
+type Task struct {
+	// the job; module ids are "<instance>.<job>", as "<process instance>.<task>" before
+	Id             string
+	InstanceId     string
+	RootInstanceId string
+	DeploymentId   string
+	ElementId      string
+	Namespace      string
+	Owner          string
+	Inputs         map[string]any
+}
+
+// ModuleId is the id of a module the task creates; suffixes tell several apart.
+func (this Task) ModuleId(suffix ...string) string {
+	return strings.Join(append([]string{this.InstanceId, this.Id}, suffix...), ".")
+}
+
+// String reads an input that has to be a string.
+func (this Task) String(name string) (string, bool) {
+	value, ok := this.Inputs[name].(string)
+	return value, ok
+}
+
+// Handler implements a module task type. Modules it returns become effects of the task; the
+// runtime removes new ones again if the engine cannot apply the result.
+type Handler interface {
+	Do(ctx context.Context, task Task) (modules []model.Module, outputs map[string]any, err error)
+}
+
+// Runtime runs module handlers like the module workers did: string inputs are rendered as
 // templates against the variables, prescripts and postscripts run with the script API of the
-// library, and modules and variable changes become effects of the task (TASK-28).
+// worker library, and modules and variable changes become effects of the task (TASK-28).
 type Runtime struct {
 	store    *store.Store
 	settings Settings
-	lib      libconfig.Config
-	auth     *libauth.Auth
+	tokens   auth.UserTokenSource
 	iot      devicerepository.Interface
+	scripts  compat.Scripts
+	http     *http.Client
 	logger   *slog.Logger
 	types    map[string]*moduleType
 	// health checks per module type (SMS-11)
@@ -98,41 +119,22 @@ type Runtime struct {
 	now     func() time.Time
 }
 
-func NewRuntime(ctx context.Context, wg *sync.WaitGroup, s *store.Store, settings Settings, logger *slog.Logger) (*Runtime, error) {
-	lib := libconfig.Config{
-		DeviceRepositoryUrl: settings.DeviceRepositoryUrl, AuthEndpoint: settings.AuthEndpoint, AuthClientId: settings.AuthClientId,
-		AuthClientSecret: settings.AuthClientSecret, TokenCacheDefaultExpirationInSeconds: 60, LogLevel: settings.LogLevel,
-	}
-	result := &Runtime{store: s, settings: settings, lib: lib, auth: libauth.New(lib), iot: devicerepository.NewClient(settings.DeviceRepositoryUrl, nil), logger: logger,
+// NewRuntime creates the runtime; tokens gives the tokens of owners, e.g. the token exchange.
+func NewRuntime(s *store.Store, settings Settings, tokens auth.UserTokenSource, logger *slog.Logger) *Runtime {
+	iot := devicerepository.NewClient(settings.DeviceRepositoryUrl, nil)
+	result := &Runtime{store: s, settings: settings, tokens: tokens, iot: iot, logger: logger, http: &http.Client{Timeout: 30 * time.Second},
 		types: map[string]*moduleType{}, checks: map[string]Check{}, now: time.Now}
+	result.scripts = compat.Scripts{Logger: logger, Tokens: result.token, Iot: iot}
 	result.addExternalChecks()
-	repo := &repository{store: s, userToken: userTokens(result.auth)}
-	// the handlers name their modules and errors after the worker topic, now the task type
-	topic := func(name string) libconfig.Config {
-		c := lib
-		c.CamundaWorkerTopic, c.CamundaWorkerId = name, name
-		return c
-	}
-	result.add(TypeInfo, info.New(info.Config{WorkerParamPrefix: TypeInfo + ".", EnableAdditionalModuleDataFields: settings.InfoAdditionalModuleDataFields}, topic(TypeInfo), repo))
-	result.add(TypeImport, imports.New(imports.Config{ImportDeployUrl: settings.ImportDeployUrl, WorkerParamPrefix: TypeImport + "."}, topic(TypeImport), result.auth, repo))
-	result.add(TypeExport, export.New(export.Config{ServingServiceUrl: settings.ServingServiceUrl, WorkerParamPrefix: TypeExport + "."}, topic(TypeExport), result.auth, repo))
-	result.add(TypeAnalytics, analytics.New(analytics.Config{
-		WorkerParamPrefix: TypeAnalytics + ".", FlowEngineUrl: settings.FlowEngineUrl, FlowParserUrl: settings.FlowParserUrl, ImportDeployUrl: settings.ImportDeployUrl,
-		DeviceRepositoryUrl: settings.DeviceRepositoryUrl, EnableMultiplePaths: settings.AnalyticsEnableMultiplePaths, DevicePathPrefix: settings.AnalyticsDevicePathPrefix,
-		GroupPathPrefix: settings.AnalyticsGroupPathPrefix, ImportPathPrefix: settings.AnalyticsImportPathPrefix, RemoveImportPathRoot: settings.AnalyticsRemoveImportPathRoot,
-	}, topic(TypeAnalytics), result.auth, repo, analyticsimports.New(settings.ImportDeployUrl), analyticsdevices.New(settings.DeviceRepositoryUrl)))
-	groups, err := devicegroups.New(ctx, wg, devicegroups.Config{
-		DeviceManagerUrl: settings.DeviceManagerUrl, DeviceSelectionUrl: settings.DeviceSelectionUrl, WorkerParamPrefix: TypeDeviceRepository + ".",
-		CreateDeviceGroupModuleType: "device_repository_create_device_group", DefaultNamePrefix: settings.DeviceGroupNamePrefix, AttributeOrigin: settings.DeviceGroupAttributeOrigin,
-	}, topic(TypeDeviceRepository), result.auth, repo)
-	if err != nil {
-		return nil, err
-	}
-	result.add(TypeDeviceRepository, groups)
-	return result, nil
+	result.add(TypeInfo, &infoHandler{runtime: result})
+	result.add(TypeImport, &importHandler{runtime: result})
+	result.add(TypeExport, &exportHandler{runtime: result})
+	result.add(TypeAnalytics, &analyticsHandler{runtime: result})
+	result.add(TypeDeviceRepository, &deviceGroupHandler{runtime: result})
+	return result
 }
 
-func (this *Runtime) add(name string, handler camunda.Handler) {
+func (this *Runtime) add(name string, handler Handler) {
 	this.types[name] = &moduleType{runtime: this, name: name, handler: handler}
 }
 
@@ -156,194 +158,181 @@ func (this *Runtime) Register(e *engine.Engine, settings Settings) {
 	}
 }
 
-// Wrap runs a handler of this package with the template and script handling of the library,
-// for the task types the engine implements itself (process_deployment, watcher ...).
-func (this *Runtime) Wrap(name string, handler camunda.Handler) engine.TaskType {
-	return &moduleType{runtime: this, name: name, handler: handler}
+// token returns a token of a user, the owner of the instance in general
+func (this *Runtime) token(userId string) (string, error) {
+	if this.tokens == nil {
+		return "", fmt.Errorf("no token source for user %v", userId)
+	}
+	return this.tokens(userId)
+}
+
+// existing lists the modules of the root instance of a task with a key and a type; an empty
+// type selects every type
+func (this *Runtime) existing(ctx context.Context, task Task, key string, moduleType string) (result []model.Module, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		result, err = tx.ModulesOfInstance(task.RootInstanceId, key, moduleType)
+		return err
+	})
+	return result, err
 }
 
 type moduleType struct {
 	runtime *Runtime
 	name    string
-	handler camunda.Handler
+	handler Handler
 }
 
 func (this *moduleType) Execute(ctx context.Context, task engine.Task) (engine.TaskResult, error) {
-	ctx, x := withExtras(ctx)
-	variables := &variables{store: this.runtime.store, task: task}
-	lib := this.runtime.lib
-	lib.CamundaWorkerTopic = this.name
-	m := middleware.New(lib, this.handler, variables, this.runtime.auth, this.runtime.iot)
-	modules, outputs, err := m.Do(ctx, externalTask(task))
+	rt := this.runtime
+	variables := map[string]any{}
+	err := rt.store.Tx(ctx, func(tx *store.Tx) error {
+		list, err := tx.GetVariables(task.RootInstanceId)
+		for _, v := range list {
+			variables[v.Name] = v.Value
+		}
+		return err
+	})
+	if err != nil {
+		return engine.TaskResult{}, err
+	}
+	// the order of the worker library: prescripts on the raw inputs, templates against the
+	// variables they changed, the handler, postscripts with all outputs
+	changes, outputs, err := rt.scripts.Run(ctx, task.Owner, compat.PreScriptPrefix, task.Input, nil, variables)
+	if err != nil {
+		return engine.TaskResult{}, err
+	}
+	maps.Copy(variables, changes)
+	inputs, err := compat.Render(task.Input, variables)
+	if err != nil {
+		return engine.TaskResult{}, err
+	}
+	moduleTask := Task{Id: task.JobId, InstanceId: task.InstanceId, RootInstanceId: task.RootInstanceId, DeploymentId: task.DeploymentId,
+		ElementId: task.ElementId, Namespace: task.Namespace, Owner: task.Owner, Inputs: inputs}
+	modules, handlerOutputs, err := this.handler.Do(ctx, moduleTask)
 	if err != nil {
 		// an incident of the instance (TASK-28); the worker library stopped the process instead
 		return engine.TaskResult{}, err
 	}
-	effects := &engine.Effects{Variables: variables.changes, Messages: x.messages}
-	// a done event of a module, e.g. permission_done_<group> of device_repository, arrives once
-	// the instance waits for it; nothing sends it otherwise (SMS-04, SMS-05)
-	if done, ok := outputs["done_event"].(string); ok && done != "" && !slices.Contains(effects.Messages, done) {
-		effects.Messages = append(effects.Messages, done)
+	maps.Copy(outputs, handlerOutputs)
+	postChanges, outputs, err := rt.scripts.Run(ctx, task.Owner, compat.PostScriptPrefix, task.Input, outputs, variables)
+	if err != nil {
+		return engine.TaskResult{}, err
 	}
-	for _, module := range modules {
-		m := fromLib(module)
-		if ref, ok := x.resources[m.Id]; ok {
-			m.DeleteInfo = &model.ModuleDeleteInfo{Resource: &ref, UserId: task.Owner}
-		}
-		effects.Modules = append(effects.Modules, m)
+	maps.Copy(changes, postChanges)
+	effects := &engine.Effects{Modules: modules}
+	if len(changes) > 0 {
+		effects.Variables = changes
+	}
+	// a done event, e.g. deployment_done_<id> or permission_done_<group>, arrives once the
+	// instance waits for it; nothing sends it otherwise (SMS-04, SMS-05)
+	if done, ok := outputs["done_event"].(string); ok && done != "" {
+		effects.Messages = append(effects.Messages, done)
 	}
 	return engine.TaskResult{Output: outputs, Effects: effects}, nil
 }
 
-// Undo reverts the modules of a result the engine could not apply. Modules that existed before
-// are left alone: a handler that updated one by its key would otherwise remove a resource that
-// is still in use (the analytics worker deletes the pipeline it only updated).
+// Undo removes the resources of modules a result created that the engine could not apply.
+// Modules that existed before stay: a handler that updated one by its key would otherwise
+// remove a resource that is still in use.
 func (this *moduleType) Undo(ctx context.Context, task engine.Task, effects *engine.Effects, reason error) {
-	var created []libmodel.Module
-	err := this.runtime.store.Tx(ctx, func(tx *store.Tx) error {
-		for _, m := range effects.Modules {
-			if _, err := tx.GetModule(m.Id); errors.Is(err, model.ErrNotFound) {
-				created = append(created, toLib(m, task.RootInstanceId))
-			} else if err != nil {
-				return err
+	rt := this.runtime
+	for _, m := range effects.Modules {
+		var exists bool
+		err := rt.store.Tx(ctx, func(tx *store.Tx) error {
+			_, err := tx.GetModule(m.Id)
+			exists = err == nil
+			if errors.Is(err, model.ErrNotFound) {
+				err = nil
 			}
+			return err
+		})
+		if err != nil || exists || m.DeleteInfo == nil {
+			continue
 		}
-		return nil
-	})
+		if m.DeleteInfo.Resource != nil {
+			ref := *m.DeleteInfo.Resource
+			err = rt.store.Tx(ctx, func(tx *store.Tx) error {
+				return tx.RemoveResource(ref)
+			})
+		} else if m.DeleteInfo.Url != "" {
+			err = Delete(ctx, rt.http, rt.tokens, *m.DeleteInfo)
+		}
+		if err != nil {
+			rt.logger.WarnContext(ctx, "unable to undo a module", "task_type", this.name, "module_id", m.Id, "reason", reason, "error", err)
+		}
+	}
+}
+
+// moduleData reads the input <prefix>module_data, a JSON object; anything else gives an empty
+// object, as with the workers
+func moduleData(task Task, prefix string) map[string]any {
+	result := map[string]any{}
+	if raw, ok := task.String(prefix + "module_data"); ok {
+		if json.Unmarshal([]byte(raw), &result) != nil {
+			return map[string]any{}
+		}
+	}
+	return result
+}
+
+// moduleUpdateVersion counts updates of a module by its key, as the workers did
+const moduleUpdateVersion = "module_update_version"
+
+func setModuleUpdateVersion(m *model.Module) {
+	version, _ := m.Data[moduleUpdateVersion].(float64)
+	m.Data[moduleUpdateVersion] = version + 1
+}
+
+// request sends a request to a platform service with the token of the owner; with result, a
+// JSON answer is decoded
+func (this *Runtime) request(ctx context.Context, client *http.Client, method string, target string, owner string, userIdHeader bool, body any, result any) error {
+	token, err := this.token(owner)
 	if err != nil {
-		this.runtime.logger.WarnContext(ctx, "unable to undo modules", "task_type", this.name, "job_id", task.JobId, "error", err)
-		return
-	}
-	if len(created) > 0 {
-		this.handler.Undo(ctx, created, reason)
-	}
-}
-
-// externalTask presents a job like the external task the handlers were written for. The
-// process instance id is the instance of the task; module ids become "<instance>.<job>".
-func externalTask(task engine.Task) libmodel.CamundaExternalTask {
-	input := map[string]libmodel.CamundaVariable{}
-	for name, value := range task.Input {
-		input[name] = libmodel.CamundaVariable{Value: value}
-	}
-	return libmodel.CamundaExternalTask{
-		Id: task.JobId, Variables: input, ActivityId: task.ElementId, Retries: int64(task.Retries - task.Attempt + 1), ExecutionId: task.JobId,
-		ProcessInstanceId: task.InstanceId, ProcessDefinitionId: task.DeploymentId,
-	}
-}
-
-func fromLib(m libmodel.Module) model.Module {
-	result := model.Module{Id: m.Id, ModuleType: m.ModuleType, Data: maps.Clone(m.ModuleData), Keys: m.Keys}
-	if result.Keys == nil {
-		result.Keys = []string{}
-	}
-	if m.DeleteInfo != nil {
-		result.DeleteInfo = &model.ModuleDeleteInfo{Url: m.DeleteInfo.Url, UserId: m.DeleteInfo.UserId}
-	}
-	return result
-}
-
-func toLib(m model.Module, processInstanceId string) libmodel.Module {
-	result := libmodel.Module{Id: m.Id, ProcesInstanceId: processInstanceId, SmartServiceModuleInit: libmodel.SmartServiceModuleInit{ModuleType: m.ModuleType, ModuleData: m.Data, Keys: m.Keys}}
-	if m.DeleteInfo != nil && m.DeleteInfo.Url != "" {
-		result.DeleteInfo = &libmodel.ModuleDeleteInfo{Url: m.DeleteInfo.Url, UserId: m.DeleteInfo.UserId}
-	}
-	return result
-}
-
-func toLibModule(m model.Module) libmodel.SmartServiceModule {
-	return libmodel.SmartServiceModule{
-		SmartServiceModuleBase: libmodel.SmartServiceModuleBase{Id: m.Id, UserId: m.Owner, InstanceId: m.InstanceId, LastUpdate: m.UpdatedAt.Unix(), Error: m.Error},
-		SmartServiceModuleInit: toLib(m, "").SmartServiceModuleInit,
-	}
-}
-
-// variables are the variables of the root instance (SMS-13); changes become effects of the task
-type variables struct {
-	store   *store.Store
-	task    engine.Task
-	changes map[string]any
-}
-
-func (this *variables) GetVariables(ctx context.Context, _ string) (result map[string]interface{}, err error) {
-	result = map[string]any{}
-	err = this.store.Tx(ctx, func(tx *store.Tx) error {
-		list, err := tx.GetVariables(this.task.RootInstanceId)
-		for _, v := range list {
-			result[v.Name] = v.Value
-		}
 		return err
-	})
-	return result, err
-}
-
-func (this *variables) SetVariables(_ context.Context, _ string, changes map[string]interface{}) error {
-	if this.changes == nil {
-		this.changes = map[string]any{}
 	}
-	maps.Copy(this.changes, changes)
-	return nil
-}
-
-func (this *variables) GetCachedSmartServiceInstance(_ context.Context, _ string) (libmodel.SmartServiceInstance, error) {
-	return libmodel.SmartServiceInstance{Id: this.task.RootInstanceId, UserId: this.task.Owner, ReleaseId: this.task.DeploymentId}, nil
-}
-
-// repository answers the handlers' questions to smart-service-repository from the database
-type repository struct {
-	store     *store.Store
-	userToken func(userId string) (string, error)
-}
-
-func (this *repository) root(tx *store.Tx, instanceId string) (store.Instance, error) {
-	inst, err := tx.GetInstance(instanceId, false)
-	if err != nil || inst.ParentId == "" {
-		return inst, err
-	}
-	return tx.GetInstance(inst.ParentId, false)
-}
-
-func (this *repository) GetInstanceUser(ctx context.Context, instanceId string) (userId string, err error) {
-	err = this.store.Tx(ctx, func(tx *store.Tx) error {
-		inst, err := tx.GetInstance(instanceId, false)
-		userId = inst.Owner
-		return err
-	})
-	return userId, err
-}
-
-func (this *repository) ListExistingModules(ctx context.Context, instanceId string, query libmodel.ModulQuery) (result []libmodel.SmartServiceModule, err error) {
-	result = []libmodel.SmartServiceModule{}
-	err = this.store.Tx(ctx, func(tx *store.Tx) error {
-		root, err := this.root(tx, instanceId)
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
 		if err != nil {
 			return err
 		}
-		key, moduleType := "", ""
-		if query.KeyFilter != nil {
-			key = *query.KeyFilter
-		}
-		if query.TypeFilter != nil {
-			moduleType = *query.TypeFilter
-		}
-		modules, err := tx.ModulesOfInstance(root.Id, key, moduleType)
-		for _, m := range modules {
-			result = append(result, toLibModule(m))
-		}
-		return err
-	})
-	return result, err
-}
-
-// UseModuleDeleteInfo removes a resource at once; the handlers call it when they undo
-func (this *repository) UseModuleDeleteInfo(ctx context.Context, info libmodel.ModuleDeleteInfo) error {
-	return Delete(ctx, &http.Client{Timeout: 30 * time.Second}, this.userToken, model.ModuleDeleteInfo{Url: info.Url, UserId: info.UserId})
-}
-
-// userTokens adapts the token exchange of the worker library
-func userTokens(a *libauth.Auth) func(userId string) (string, error) {
-	return func(userId string) (string, error) {
-		token, err := a.ExchangeUserToken(userId)
-		return token.Token, err
+		reader = bytes.NewReader(raw)
 	}
+	req, err := http.NewRequestWithContext(ctx, method, target, reader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", token)
+	if userIdHeader {
+		req.Header.Set("X-UserId", owner)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if err = tracing.Inject(ctx, req); err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return &statusError{method: method, target: target, status: resp.StatusCode, body: strings.TrimSpace(string(raw))}
+	}
+	if result == nil {
+		return nil
+	}
+	return json.NewDecoder(resp.Body).Decode(result)
+}
+
+type statusError struct {
+	method, target string
+	status         int
+	body           string
+}
+
+func (this *statusError) Error() string {
+	return fmt.Sprintf("%v %v: unexpected status %v: %v", this.method, this.target, this.status, this.body)
 }

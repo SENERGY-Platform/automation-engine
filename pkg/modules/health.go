@@ -95,7 +95,7 @@ func (this *Runtime) CheckModules(ctx context.Context, interval time.Duration) e
 func (this *Runtime) addExternalChecks() {
 	client := &http.Client{Timeout: 30 * time.Second}
 	get := func(ctx context.Context, owner string, target string, result any) (int, error) {
-		token, err := this.auth.ExchangeUserToken(owner)
+		token, err := this.token(owner)
 		if err != nil {
 			return 0, err
 		}
@@ -103,7 +103,7 @@ func (this *Runtime) addExternalChecks() {
 		if err != nil {
 			return 0, err
 		}
-		req.Header.Set("Authorization", token.Token)
+		req.Header.Set("Authorization", token)
 		req.Header.Set("X-UserId", owner)
 		if err = tracing.Inject(ctx, req); err != nil {
 			return 0, err

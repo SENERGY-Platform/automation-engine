@@ -31,15 +31,14 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
-	"github.com/SENERGY-Platform/external-task-worker/lib/devicerepository"
 	"github.com/SENERGY-Platform/models/go/models"
 	"github.com/google/uuid"
 )
 
 // Imports reads import instances and types with the token of the deployment owner.
 type Imports interface {
-	Instance(token devicerepository.Impersonate, id string) (models.Import, error)
-	Type(token devicerepository.Impersonate, id string) (models.ImportType, error)
+	Instance(token devices.Token, id string) (models.Import, error)
+	Type(token devices.Token, id string) (models.ImportType, error)
 }
 
 type httpImports struct {
@@ -52,12 +51,12 @@ func NewImports(importDeployUrl string, importRepositoryUrl string) Imports {
 	return &httpImports{deployUrl: importDeployUrl, repositoryUrl: importRepositoryUrl}
 }
 
-func (this *httpImports) Instance(token devicerepository.Impersonate, id string) (result models.Import, err error) {
+func (this *httpImports) Instance(token devices.Token, id string) (result models.Import, err error) {
 	err = token.GetJSON(this.deployUrl+"/instances/"+url.PathEscape(id), &result)
 	return result, err
 }
 
-func (this *httpImports) Type(token devicerepository.Impersonate, id string) (result models.ImportType, err error) {
+func (this *httpImports) Type(token devices.Token, id string) (result models.ImportType, err error) {
 	err = token.GetJSON(this.repositoryUrl+"/import-types/"+url.PathEscape(id), &result)
 	return result, err
 }
@@ -66,18 +65,18 @@ func (this *httpImports) Type(token devicerepository.Impersonate, id string) (re
 // event-deployment v0.2.0: a device group becomes device × matching service, a device without
 // service all its matching services, an import one description with an artificial service.
 type Describer struct {
-	repo    devicerepository.RepoInterface
+	repo    devices.Repository
 	aspects *devices.AspectNodes
 	imports Imports
 }
 
-func NewDescriber(repo devicerepository.RepoInterface, aspects *devices.AspectNodes, imports Imports) *Describer {
+func NewDescriber(repo devices.Repository, aspects *devices.AspectNodes, imports Imports) *Describer {
 	return &Describer{repo: repo, aspects: aspects, imports: imports}
 }
 
 // Describe returns the descriptions and the device groups they depend on.
 func (this *Describer) Describe(deployment model.Deployment, version int, process *bpmn.Process, selections map[string]model.Selection) (result []model.EventDescription, groups []string, err error) {
-	var token devicerepository.Impersonate
+	var token devices.Token
 	for _, element := range process.Ordered() {
 		selection, ok := selections[element.Id]
 		if !element.IsDeviceEvent() || !ok {
@@ -156,7 +155,7 @@ func baseDescription(deployment model.Deployment, version int, element *bpmn.Ele
 	return d, nil
 }
 
-func (this *Describer) deviceDescriptions(token devicerepository.Impersonate, base model.EventDescription, deviceId string, serviceId string) ([]model.EventDescription, error) {
+func (this *Describer) deviceDescriptions(token devices.Token, base model.EventDescription, deviceId string, serviceId string) ([]model.EventDescription, error) {
 	device, err := this.repo.GetDevice(token, deviceId)
 	if err != nil {
 		return nil, fmt.Errorf("device %v: %w", deviceId, err)
@@ -205,7 +204,7 @@ func (this *Describer) deviceDescriptions(token devicerepository.Impersonate, ba
 	return result, nil
 }
 
-func (this *Describer) importDescription(token devicerepository.Impersonate, base model.EventDescription, selection model.Selection) ([]model.EventDescription, error) {
+func (this *Describer) importDescription(token devices.Token, base model.EventDescription, selection model.Selection) ([]model.EventDescription, error) {
 	if this.imports == nil {
 		return nil, model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: "import events are not configured"}})
 	}

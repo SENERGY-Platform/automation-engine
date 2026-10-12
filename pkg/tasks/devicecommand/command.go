@@ -27,17 +27,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/models/go/models"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
-	"github.com/SENERGY-Platform/external-task-worker/lib/devicerepository"
-	devicemodel "github.com/SENERGY-Platform/external-task-worker/lib/devicerepository/model"
-	"github.com/SENERGY-Platform/external-task-worker/lib/marshaller"
-	"github.com/SENERGY-Platform/external-task-worker/lib/messages"
 )
 
 // command builds the command of a task: the payload of the model, the device selection of the
 // deployment (DEP-05), then the runtime inputs overwrite, inputs and incident (TASK-09)
-func (this *Type) command(task engine.Task, token devicerepository.Impersonate) (command messages.Command, err error) {
+func (this *Type) command(task engine.Task, token devices.Token) (command Command, err error) {
 	if incident, ok := task.Input["incident"].(string); ok {
 		return command, &engine.PermanentError{Message: "user triggered incident: " + incident}
 	}
@@ -55,7 +54,7 @@ func (this *Type) command(task engine.Task, token devicerepository.Impersonate) 
 		}
 	}
 	if overwrite, ok := task.Input["overwrite"]; ok {
-		var o messages.Overwrite
+		var o Overwrite
 		if err = decodeJson(overwrite, &o); err != nil {
 			return command, &engine.PermanentError{Message: "invalid overwrite: " + err.Error()}
 		}
@@ -85,7 +84,7 @@ func decodeJson(value any, target any) error {
 	return json.Unmarshal([]byte(raw), target)
 }
 
-func (this *Type) applySelection(command *messages.Command, selection model.Selection, token devicerepository.Impersonate) error {
+func (this *Type) applySelection(command *Command, selection model.Selection, token devices.Token) error {
 	if selection.DeviceGroupId != "" {
 		command.DeviceGroupId = selection.DeviceGroupId
 		command.DeviceId, command.ServiceId = "", ""
@@ -104,13 +103,13 @@ func (this *Type) applySelection(command *messages.Command, selection model.Sele
 		} else {
 			command.OutputPath = selection.Path.Path
 		}
-		configurables := []marshaller.ConfigurableV2{}
+		configurables := []ConfigurableV2{}
 		for _, c := range selection.Path.Configurables {
 			nodes, err := this.aspects.ResolveIds(token, c.AspectNodeIds)
 			if err != nil {
 				return err
 			}
-			configurable := marshaller.ConfigurableV2{Path: c.Path, CharacteristicId: c.CharacteristicId, AspectNodes: nodes, FunctionId: c.FunctionId, Value: c.Value, Type: c.Type}
+			configurable := ConfigurableV2{Path: c.Path, CharacteristicId: c.CharacteristicId, AspectNodes: nodes, FunctionId: c.FunctionId, Value: c.Value, Type: c.Type}
 			if len(nodes) > 0 {
 				configurable.AspectNode = nodes[0]
 			}
@@ -127,7 +126,7 @@ func (this *Type) applySelection(command *messages.Command, selection model.Sele
 
 // setInputs applies the inputs "inputs" and "inputs.<path>" to the command input; string values
 // are read as JSON where possible. A parameter that does not fit is ignored, as before.
-func setInputs(command *messages.Command, input map[string]any, logger interface{ Warn(string, ...any) }) {
+func setInputs(command *Command, input map[string]any, logger interface{ Warn(string, ...any) }) {
 	for key, value := range input {
 		path := strings.SplitN(key, ".", 2)
 		if path[0] != "inputs" {
@@ -234,10 +233,10 @@ func convert(element any, value any) (any, error) {
 	return value, errors.New(fmt.Sprintf("unable to convert %T to %T", value, element))
 }
 
-func isControllingFunction(function devicemodel.Function) bool {
-	return function.RdfType == devicemodel.SES_ONTOLOGY_CONTROLLING_FUNCTION || strings.HasPrefix(function.Id, devicemodel.CONTROLLING_FUNCTION_PREFIX)
+func isControllingFunction(function models.Function) bool {
+	return function.RdfType == models.SES_ONTOLOGY_CONTROLLING_FUNCTION || strings.HasPrefix(function.Id, models.CONTROLLING_FUNCTION_PREFIX)
 }
 
 func isMeasuringFunctionId(id string) bool {
-	return strings.HasPrefix(id, devicemodel.MEASURING_FUNCTION_PREFIX)
+	return strings.HasPrefix(id, models.MEASURING_FUNCTION_PREFIX)
 }

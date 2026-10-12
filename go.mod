@@ -3,11 +3,10 @@ module github.com/SENERGY-Platform/automation-engine
 go 1.27
 
 require (
+	github.com/SENERGY-Platform/converter v0.0.12
 	github.com/SENERGY-Platform/developer-notifications v0.0.6
 	github.com/SENERGY-Platform/device-repository/v2 v2.2.2
 	github.com/SENERGY-Platform/device-selection/v2 v2.0.3
-	github.com/SENERGY-Platform/event-worker v1.2.0
-	github.com/SENERGY-Platform/external-task-worker v0.1.2
 	github.com/SENERGY-Platform/gin-middleware v0.14.1
 	github.com/SENERGY-Platform/go-service-base/config-hdl v1.2.0
 	github.com/SENERGY-Platform/go-service-base/struct-logger v0.8.1
@@ -15,15 +14,10 @@ require (
 	github.com/SENERGY-Platform/models/go v0.0.0-20260911075423-f01521c01da2
 	github.com/SENERGY-Platform/permissions-v2 v1.0.0
 	github.com/SENERGY-Platform/service-commons v0.0.0-20260915085610-4949c31a01ef
-	github.com/SENERGY-Platform/smart-service-module-worker-analytics v0.2.1
-	github.com/SENERGY-Platform/smart-service-module-worker-device-repository v0.1.2
-	github.com/SENERGY-Platform/smart-service-module-worker-export v0.1.2
-	github.com/SENERGY-Platform/smart-service-module-worker-import v0.1.2
-	github.com/SENERGY-Platform/smart-service-module-worker-info v0.2.1
-	github.com/SENERGY-Platform/smart-service-module-worker-lib v0.0.0-20261006080333-b6af9a5986cb
 	github.com/beevik/etree v1.8.1
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20261011204819-0c9fae1b959d
+	github.com/go-playground/validator/v10 v10.30.2
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prometheus/client_golang v1.21.1
@@ -44,12 +38,9 @@ require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/RyanCarrier/dijkstra v1.4.0 // indirect
-	github.com/SENERGY-Platform/converter v0.0.12 // indirect
 	github.com/SENERGY-Platform/go-env-loader v0.5.3 // indirect
 	github.com/SENERGY-Platform/mgw-cloud-proxy/cert-manager/lib v0.0.4 // indirect
-	github.com/SENERGY-Platform/process-incident-api v0.0.12 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bradfitz/gomemcache v0.0.0-20230905024940-24af94b03874 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic v1.15.1 // indirect
 	github.com/bytedance/sonic/loader v0.5.1 // indirect
@@ -89,7 +80,6 @@ require (
 	github.com/go-openapi/swag/yamlutils v0.25.4 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.30.2 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
@@ -135,7 +125,6 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/segmentio/kafka-go v0.4.50 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect

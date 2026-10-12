@@ -1,0 +1,22 @@
+[
+  {
+    "method": "GET",
+    "endpoint": "/instances-by-process-id/process-instance-1",
+    "message": ""
+  },
+  {
+    "method": "GET",
+    "endpoint": "/instances-by-process-id/process-instance-1/variables-map",
+    "message": ""
+  },
+  {
+    "method": "GET",
+    "endpoint": "/instances-by-process-id/process-instance-1/modules?key=updatekey&module_type=analytics",
+    "message": ""
+  },
+  {
+    "method": "PUT",
+    "endpoint": "/instances-by-process-id/process-instance-1/modules/process-instance-1.task1",
+    "message": "{\"delete_info\":{\"url\":\"http://localhost/pipeline/1e138d25-d5ee-4a89-9a83-630f4308941a\",\"user_id\":\"ebbad927-4c39-4d12-8690-89b067dd4ce7\"},\"module_type\":\"analytics\",\"module_data\":{\"additional-info\":42,\"module_update_version\":1,\"pipeline\":{\"description\":\"some description\",\"id\":\"1e138d25-d5ee-4a89-9a83-630f4308941a\",\"name\":\"selected-name\"},\"pipeline_id\":\"1e138d25-d5ee-4a89-9a83-630f4308941a\"},\"keys\":[\"updatekey\"]}\n"
+  }
+]

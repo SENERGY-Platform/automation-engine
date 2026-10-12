@@ -1,0 +1,10 @@
+{
+    "POST": {
+        "/device-groups": [
+            {
+                "status_code": 200,
+                "message": "{\"id\": \"urn:infai:ses:device-group:1\"}"
+            }
+        ]
+    }
+}

@@ -1,0 +1,17 @@
+[
+    {
+        "id": "process-instance-1.task1.create_device_group_updated",
+        "delete_info": {
+            "url": "http://localhost/device-groups/urn:infai:ses:device-group:1",
+            "user_id": "ebbad927-4c39-4d12-8690-89b067dd4ce7"
+        },
+        "module_type": "device_repository_create_device_group",
+        "module_data": {
+            "device_group_id": "urn:infai:ses:device-group:1",
+            "device_group_iot_option": "{\"device_group_selection\":{\"id\":\"urn:infai:ses:device-group:1\"}}"
+        },
+        "keys": [
+            "devicegroupupdatekey"
+        ]
+    }
+]

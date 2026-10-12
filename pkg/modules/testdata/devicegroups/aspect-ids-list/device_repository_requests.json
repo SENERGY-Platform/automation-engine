@@ -1,0 +1,7 @@
+[
+    {
+        "method": "POST",
+        "endpoint": "/device-groups",
+        "message": "{\"id\":\"\",\"name\":\"dg-test-name\",\"image\":\"\",\"criteria\":[{\"interaction\":\"\",\"function_id\":\"fid\",\"aspect_id\":\"\",\"aspect_ids\":[\"aid1\",\"aid2\"],\"device_class_id\":\"\"},{\"interaction\":\"\",\"function_id\":\"fid2\",\"aspect_id\":\"aid1\",\"aspect_ids\":[\"aid1\"],\"device_class_id\":\"\"}],\"device_ids\":[\"urn:infai:ses:device:device-1\",\"urn:infai:ses:device:device-2\"],\"attributes\":[{\"key\":\"platform/generated\",\"value\":\"true\",\"origin\":\"smart-service\"},{\"key\":\"platform/smart_service_task\",\"value\":\"task1\",\"origin\":\"smart-service\"},{\"key\":\"platform/smart_service_instance\",\"value\":\"process-instance-1\",\"origin\":\"smart-service\"},{\"key\":\"platform/smart_service_definition\",\"value\":\"process-definition-1\",\"origin\":\"smart-service\"}],\"auto_generated_by_device\":\"\"}\n"
+    }
+]

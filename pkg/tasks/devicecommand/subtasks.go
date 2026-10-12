@@ -23,21 +23,19 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/SENERGY-Platform/models/go/models"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
-	"github.com/SENERGY-Platform/external-task-worker/lib/devicegroups"
-	"github.com/SENERGY-Platform/external-task-worker/lib/devicerepository"
-	devicemodel "github.com/SENERGY-Platform/external-task-worker/lib/devicerepository/model"
-	"github.com/SENERGY-Platform/external-task-worker/lib/messages"
 )
 
 type child struct {
 	subId   string
-	command messages.Command
+	command Command
 }
 
 // subtasks expands a device group to device × matching service and a device without service
 // to its matching services; ids are <job>_<device index>_<service index> (TASK-06)
-func (this *Type) subtasks(token devicerepository.Impersonate, command messages.Command, jobId string) ([]child, error) {
+func (this *Type) subtasks(token devices.Token, command Command, jobId string) ([]child, error) {
 	var result []child
 	switch {
 	case command.DeviceGroupId != "":
@@ -63,18 +61,18 @@ func (this *Type) subtasks(token devicerepository.Impersonate, command messages.
 	}
 	for i, c := range result {
 		if c.command.Device != nil {
-			c.command.Device.Id, _ = devicegroups.SplitModifier(c.command.Device.Id)
-			c.command.Device.DeviceTypeId, _ = devicegroups.SplitModifier(c.command.Device.DeviceTypeId)
+			c.command.Device.Id, _ = devices.SplitModifier(c.command.Device.Id)
+			c.command.Device.DeviceTypeId, _ = devices.SplitModifier(c.command.Device.DeviceTypeId)
 		}
 		if c.command.DeviceId != "" {
-			c.command.DeviceId, _ = devicegroups.SplitModifier(c.command.DeviceId)
+			c.command.DeviceId, _ = devices.SplitModifier(c.command.DeviceId)
 		}
 		result[i] = c
 	}
 	return result, nil
 }
 
-func (this *Type) serviceChildren(token devicerepository.Impersonate, command messages.Command, jobId string, deviceIndex int, deviceId string) ([]child, error) {
+func (this *Type) serviceChildren(token devices.Token, command Command, jobId string, deviceIndex int, deviceId string) ([]child, error) {
 	device, err := this.repo.GetDevice(token, deviceId)
 	if err != nil {
 		return nil, err
@@ -100,20 +98,20 @@ func (this *Type) serviceChildren(token devicerepository.Impersonate, command me
 
 // filterServices keeps services whose inputs (outputs for measuring functions) serve the
 // function and all aspects; event-only services are dropped when no last values can be read
-func (this *Type) filterServices(command messages.Command, services []devicemodel.Service) []devicemodel.Service {
-	index := map[string]devicemodel.Service{}
+func (this *Type) filterServices(command Command, services []models.Service) []models.Service {
+	index := map[string]models.Service{}
 	aspects := command.GetAspects()
 	for _, service := range services {
 		contents := service.Inputs
 		if isMeasuringFunctionId(command.Function.Id) {
 			contents = service.Outputs
 		}
-		isEvent := isMeasuringFunctionId(command.Function.Id) && service.Interaction == devicemodel.EVENT
+		isEvent := isMeasuringFunctionId(command.Function.Id) && service.Interaction == models.EVENT
 		if devices.ContentsMatch(contents, command.Function.Id, aspects) && (this.timescale != nil || !isEvent) {
 			index[service.Id] = service
 		}
 	}
-	result := make([]devicemodel.Service, 0, len(index))
+	result := make([]models.Service, 0, len(index))
 	for _, s := range index {
 		result = append(result, s)
 	}

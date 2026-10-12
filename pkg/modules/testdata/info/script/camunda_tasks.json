@@ -1,0 +1,15 @@
+[
+    {
+        "id": "task1",
+        "processInstanceId": "process-instance-1",
+        "processDefinitionId": "process-definition-1",
+        "variables": {
+            "prescript": {
+                "value": "variables.write(\"widget\", JSON.stringify({\"hello\": \"world\"}))"
+            },
+            "info.module_data": {
+                "value": "{{.widget}}"
+            }
+        }
+    }
+]

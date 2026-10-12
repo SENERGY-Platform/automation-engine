@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -26,15 +27,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/metrics"
 	"github.com/SENERGY-Platform/automation-engine/pkg/namespaces"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
-	ewconfig "github.com/SENERGY-Platform/event-worker/pkg/configuration"
-	ewdevicerepo "github.com/SENERGY-Platform/event-worker/pkg/devicerepo"
-	ewmarshaller "github.com/SENERGY-Platform/event-worker/pkg/marshaller"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/invalidator"
 	"github.com/SENERGY-Platform/service-commons/pkg/kafka"
 )
@@ -57,18 +56,19 @@ type EventServer struct {
 	wg      sync.WaitGroup
 }
 
-// newUnmarshaller builds the unmarshalling of the event-worker, shared by the event role and
-// the event debugging of the engine role (EVT-10)
-func newUnmarshaller(ctx context.Context, wg *sync.WaitGroup, config configuration.Config) (events.Unmarshaller, error) {
-	ew := ewconfig.Config{
-		DeviceRepoUrl: config.DeviceRepositoryUrl, DeviceRepoCacheDuration: config.DeviceCacheTimeout,
-		AuthEndpoint: config.AuthEndpoint, AuthClientId: config.AuthClientId, AuthClientSecret: config.AuthClientSecret.Value(), AuthExpirationTimeBuffer: 2,
+// newUnmarshaller builds the unmarshalling of events, shared by the event role and the event
+// debugging of the engine role (EVT-10)
+func newUnmarshaller(config configuration.Config) (events.Unmarshaller, error) {
+	duration, err := time.ParseDuration(config.DeviceCacheTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("invalid device_cache_timeout: %w", err)
 	}
-	repo, err := ewdevicerepo.New(ctx, wg, ew, nil)
+	token := auth.ClientCredentials(config.AuthEndpoint, config.AuthClientId, config.AuthClientSecret.Value())
+	repo, err := events.NewCachedDeviceRepo(config.DeviceRepositoryUrl, token, duration)
 	if err != nil {
 		return nil, err
 	}
-	return ewmarshaller.New(ctx, wg, ew, repo)
+	return events.NewMarshaller(repo)
 }
 
 func NewEventServer(ctx context.Context, config configuration.Config, logger *slog.Logger, deps EventDependencies) (*EventServer, error) {
@@ -95,7 +95,7 @@ func NewEventServer(ctx context.Context, config configuration.Config, logger *sl
 
 	unmarshaller := deps.Unmarshaller
 	if unmarshaller == nil {
-		if unmarshaller, err = newUnmarshaller(ctx, &result.wg, config); err != nil {
+		if unmarshaller, err = newUnmarshaller(config); err != nil {
 			s.Close()
 			return nil, err
 		}

@@ -39,9 +39,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
-	ewmodel "github.com/SENERGY-Platform/event-worker/pkg/model"
-	"github.com/SENERGY-Platform/external-task-worker/lib/devicerepository"
-	devicemodel "github.com/SENERGY-Platform/external-task-worker/lib/devicerepository/model"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
@@ -51,47 +48,47 @@ const measuring = "urn:infai:ses:measuring-function:temperature"
 
 type fakeRepo struct {
 	mux    sync.Mutex
-	groups map[string]devicemodel.DeviceGroup
+	groups map[string]models.DeviceGroup
 }
 
-func (this *fakeRepo) GetToken(user string) (devicerepository.Impersonate, error) {
-	return devicerepository.Impersonate("Bearer " + user), nil
+func (this *fakeRepo) GetToken(user string) (devices.Token, error) {
+	return devices.Token("Bearer " + user), nil
 }
-func (this *fakeRepo) GetDevice(_ devicerepository.Impersonate, id string) (devicemodel.Device, error) {
-	return devicemodel.Device{Id: id, DeviceTypeId: "dt"}, nil
+func (this *fakeRepo) GetDevice(_ devices.Token, id string) (models.Device, error) {
+	return models.Device{Id: id, DeviceTypeId: "dt"}, nil
 }
-func (this *fakeRepo) GetService(_ devicerepository.Impersonate, _ devicemodel.Device, id string) (devicemodel.Service, error) {
-	return devicemodel.Service{Id: id}, nil
+func (this *fakeRepo) GetService(_ devices.Token, _ models.Device, id string) (models.Service, error) {
+	return models.Service{Id: id}, nil
 }
-func (this *fakeRepo) GetProtocol(devicerepository.Impersonate, string) (devicemodel.Protocol, error) {
-	return devicemodel.Protocol{}, nil
+func (this *fakeRepo) GetProtocol(devices.Token, string) (models.Protocol, error) {
+	return models.Protocol{}, nil
 }
-func (this *fakeRepo) GetDeviceType(devicerepository.Impersonate, string) (devicemodel.DeviceType, error) {
-	output := []devicemodel.Content{{ContentVariable: devicemodel.ContentVariable{Name: "value", FunctionId: measuring, AspectId: "air"}}}
-	return devicemodel.DeviceType{Id: "dt", Services: []devicemodel.Service{
-		{Id: "urn:infai:ses:service:event", Interaction: devicemodel.EVENT, Outputs: output},
-		{Id: "s-request", Interaction: devicemodel.REQUEST, Outputs: output},
-		{Id: "s-other", Interaction: devicemodel.EVENT},
+func (this *fakeRepo) GetDeviceType(devices.Token, string) (models.DeviceType, error) {
+	output := []models.Content{{ContentVariable: models.ContentVariable{Name: "value", FunctionId: measuring, AspectId: "air"}}}
+	return models.DeviceType{Id: "dt", Services: []models.Service{
+		{Id: "urn:infai:ses:service:event", Interaction: models.EVENT, Outputs: output},
+		{Id: "s-request", Interaction: models.REQUEST, Outputs: output},
+		{Id: "s-other", Interaction: models.EVENT},
 	}}, nil
 }
-func (this *fakeRepo) GetDeviceGroup(_ devicerepository.Impersonate, id string) (devicemodel.DeviceGroup, error) {
+func (this *fakeRepo) GetDeviceGroup(_ devices.Token, id string) (models.DeviceGroup, error) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
 	return this.groups[id], nil
 }
 
 func aspects() *devices.AspectNodes {
-	return devices.NewAspectNodesWith(func(_ devicerepository.Impersonate, id string) (devicemodel.AspectNode, error) {
-		return devicemodel.AspectNode{Id: id, RootId: id}, nil
+	return devices.NewAspectNodesWith(func(_ devices.Token, id string) (models.AspectNode, error) {
+		return models.AspectNode{Id: id, RootId: id}, nil
 	})
 }
 
 type fakeImports struct{}
 
-func (fakeImports) Instance(devicerepository.Impersonate, string) (models.Import, error) {
+func (fakeImports) Instance(devices.Token, string) (models.Import, error) {
 	return models.Import{Id: "imp", ImportTypeId: "type", KafkaTopic: "urn_infai_ses_import_imp"}, nil
 }
-func (fakeImports) Type(devicerepository.Impersonate, string) (models.ImportType, error) {
+func (fakeImports) Type(devices.Token, string) (models.ImportType, error) {
 	return models.ImportType{Id: "type", Name: "weather", Output: models.ImportContentVariable{SubContentVariables: []models.ImportContentVariable{{Name: "value", Type: "https://schema.org/Float"}}}}, nil
 }
 
@@ -105,7 +102,7 @@ func eventProcess() string {
 }
 
 func TestDescribeExpandsGroupsDevicesAndImports(t *testing.T) {
-	repo := &fakeRepo{groups: map[string]devicemodel.DeviceGroup{"g": {Id: "g", DeviceIds: []string{"d1", "d2"}}}}
+	repo := &fakeRepo{groups: map[string]models.DeviceGroup{"g": {Id: "g", DeviceIds: []string{"d1", "d2"}}}}
 	describer := events.NewDescriber(repo, aspects(), fakeImports{})
 	process, _, err := bpmn.Parse(eventProcess())
 	if err != nil {
@@ -161,7 +158,7 @@ func TestDescribeExpandsGroupsDevicesAndImports(t *testing.T) {
 // fakeUnmarshaller reads the field value of the message, or fails for "broken"
 type fakeUnmarshaller struct{}
 
-func (fakeUnmarshaller) Unmarshal(desc ewmodel.EventMessageDesc) (any, error) {
+func (fakeUnmarshaller) Unmarshal(desc events.MessageDesc) (any, error) {
 	if desc.Message["value"] == "broken" {
 		return nil, errors.New("cannot unmarshal")
 	}
@@ -245,7 +242,7 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(cancel)
 	config := configuration.Default()
 	config.SqlitePath = storetest.MemoryDsn()
-	repo := &fakeRepo{groups: map[string]devicemodel.DeviceGroup{"g": {Id: "g", DeviceIds: []string{"d1"}}}}
+	repo := &fakeRepo{groups: map[string]models.DeviceGroup{"g": {Id: "g", DeviceIds: []string{"d1"}}}}
 	series := &fakeSeries{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv, err := server.New(ctx, config, logger, server.Dependencies{DeviceRepository: repo, AspectNodes: aspects(),
@@ -383,7 +380,7 @@ func TestDeviceGroupChangeRecomputesDescriptions(t *testing.T) {
 		t.Fatalf("one device in the group: %+v", list)
 	}
 	e.repo.mux.Lock()
-	e.repo.groups["g"] = devicemodel.DeviceGroup{Id: "g", DeviceIds: []string{"d1", "d2"}}
+	e.repo.groups["g"] = models.DeviceGroup{Id: "g", DeviceIds: []string{"d1", "d2"}}
 	e.repo.mux.Unlock()
 	if err = c.RecomputeDeviceGroup(ctx, "g"); err != nil {
 		t.Fatal(err)

@@ -1,0 +1,7 @@
+[
+    {
+        "method":"POST",
+        "endpoint":"/device-group-helper",
+        "message":"[\"urn:infai:ses:device:device-1\",\"urn:infai:ses:device:device-2\"]\n"
+    }
+]

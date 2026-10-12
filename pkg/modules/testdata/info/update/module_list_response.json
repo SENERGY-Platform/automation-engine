@@ -1,0 +1,12 @@
+[
+    {
+        "id": "process-instance-1.task1.update",
+        "module_type": "widget",
+        "module_data": {
+            "batz": "42"
+        },
+        "keys": [
+            "42"
+        ]
+    }
+]

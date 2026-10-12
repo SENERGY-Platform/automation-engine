@@ -1,0 +1,10 @@
+{
+    "POST": {
+        "/device-group-helper": [
+            {
+                "status_code": 200,
+                "message": "{\"criteria\": [{\"function_id\": \"fid\"}]}"
+            }
+        ]
+    }
+}

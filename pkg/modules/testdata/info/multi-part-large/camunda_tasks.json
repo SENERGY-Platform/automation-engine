@@ -1,0 +1,53 @@
+[
+    {
+        "id": "task1",
+        "processInstanceId": "process-instance-1",
+        "processDefinitionId": "process-definition-1",
+        "variables": {
+            "info.key": {
+                "type": "Null"
+            },
+            "info.module_data_1": {
+                "type": "String",
+                "value": "{\n \"widget_key\": \"month_bar\",\n \"widget_type\": \"column\",\n \"widget_data\": {\n \"children\": [\n {\n \"widget_type\": \"text\",\n \"widget_data\": {\n \"text\": \"Electricity Consumption Last Month\"\n }\n },\n {\n \"widget_type\": \"pie_chart\",\n \"widget_data\": {\n \"titles\": [\"Leiste Drucker etc. / sensor.ENERGY.Total\",\"Leiste Kühlschrank \u0026 Backofen / sensor.ENERGY.Total\",\"Leiste Monitor \u0026 Lautsprecher / sensor.ENERGY.Total\",\"Leiste Nachttisch / sensor.ENERGY.Total\",\"Leiste PCs / sensor.ENERGY.Today\",\"Leiste PCs / sensor.ENERGY.Total\",\"Leiste TV \u0026 Verstärker / sensor.ENERGY.Today\",\"Leiste TV \u0026 Verstärker / sensor.ENERGY.Total\",\"Plug Mikrowelle\",\"Plug Waschmaschine\",\"Shelly PV (Tasmota) / sensor.ENERGY.Total\"],\n \"request\": {\n \"method\": \"POST\",\n \"need_token\": true,\n \"url\": \"https://api.senergy.infai.org/db/v3/queries?format=table\u0026order_column_index=0\u0026order_direction=asc\",\n \"body\":"
+            },
+            "info.module_data_200": {
+                "type": "String",
+                "value": "[{\"columns\":[{\"name\":\"sensor.ENERGY.Total\",\"groupType\":\"difference-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\",\"deviceId\":\"urn:infai:ses:device:1cae07c7-db1e-4b6b-936e-7d4d1e874b39\"},{\"columns\":[{\"name\":\"sensor.ENERGY.Total\",\"groupType\":\"difference-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\",\"deviceId\":\"urn:infai:ses:device:229ad0db-b68c-4122-b86f-29b5b5792ab6\"},{\"columns\":[{\"name\":\"sensor.ENERGY.Total\",\"groupType\":\"difference-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\",\"deviceId\":\"urn:infai:ses:device:8cc3b88b-1bc1-45b5-80ba-808d13167ae7\"},{\"columns\":[{\"name\":\"sensor.ENERGY.Total\",\"groupType\":\"difference-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:8"
+            },
+            "info.module_data_201": {
+                "type": "String",
+                "value": "a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\",\"deviceId\":\"urn:infai:ses:device:afe403f1-0413-48ca-a822-fab71c7d0456\"},{\"columns\":[{\"name\":\"sensor.ENERGY.Today\",\"groupType\":\"difference-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\",\"deviceId\":\"urn:infai:ses:device:732748b9-6e70-4756-b49f-d325388c74df\"},{\"columns\":[{\"name\":\"sensor.ENERGY.Total\",\"groupType\":\"difference-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\",\"deviceId\":\"urn:infai:ses:device:732748b9-6e70-4756-b49f-d325388c74df\"},{\"columns\":[{\"name\":\"sensor.ENERGY.Today\",\"groupType\":\"difference-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\",\"deviceId\":\"urn:infai:ses:device:53496037-5b8b-4b98-bb0d-47278279a54d\"},{\"columns\":[{\"name\":\"sensor.ENERGY.Total\",\"groupType\":\"diffe"
+            },
+            "info.module_data_202": {
+                "type": "String",
+                "value": "rence-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\",\"deviceId\":\"urn:infai:ses:device:53496037-5b8b-4b98-bb0d-47278279a54d\"},{\"columns\":[{\"name\":\"root.total\",\"groupType\":\"difference-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:db70ca08-8c55-4432-8c0d-e2cd96f7e95b\",\"deviceId\":\"urn:infai:ses:device:fedacc31-783c-4ce4-a115-4d9ee352df33\"},{\"columns\":[{\"name\":\"root.value\",\"groupType\":\"difference-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:f171a0b5-0bb1-438f-8ea8-720b156b13a1\",\"deviceId\":\"urn:infai:ses:device:f5543003-7811-44ab-8d13-bd592958ffa4\"},{\"columns\":[{\"name\":\"sensor.ENERGY.Total\",\"groupType\":\"difference-last\"}],\"groupTime\":\"1months\",\"time\":{\"last\":\"1months\"},\"limit\":1,\"serviceId\":\"urn:infai:ses:service:97805820-ca0a-46c5-9dcf-16c2e386b050\",\"deviceId\":\"urn:infai:ses:device:b06a0104-"
+            },
+            "info.module_data_203": {
+                "type": "String",
+                "value": "95ae-4d8d-8811-af4bcff455e5\"}]"
+            },
+            "info.module_data_3": {
+                "type": "String",
+                "value": "}\n }\n }\n ]\n }\n}"
+            },
+            "info.module_type": {
+                "type": "String",
+                "value": "widget"
+            },
+            "labels": {
+                "type": "String",
+                "value": "[\"Leiste Drucker etc. / sensor.ENERGY.Total\",\"Leiste Kühlschrank \u0026 Backofen / sensor.ENERGY.Total\",\"Leiste Monitor \u0026 Lautsprecher / sensor.ENERGY.Total\",\"Leiste Nachttisch / sensor.ENERGY.Total\",\"Leiste PCs / sensor.ENERGY.Today\",\"Leiste PCs / sensor.ENERGY.Total\",\"Leiste TV \u0026 Verstärker / sensor.ENERGY.Today\",\"Leiste TV \u0026 Verstärker / sensor.ENERGY.Total\",\"Plug Mikrowelle\",\"Plug Waschmaschine\",\"Shelly PV (Tasmota) / sensor.ENERGY.Total\"]"
+            },
+            "meters": {
+                "type": "String",
+                "value": "[\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:1cae07c7-db1e-4b6b-936e-7d4d1e874b39\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\\\",\\\"path\\\":\\\"sensor.ENERGY.Total\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Leiste Drucker etc. / sensor.ENERGY.Total\\\"}\",\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:229ad0db-b68c-4122-b86f-29b5b5792ab6\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\\\",\\\"path\\\":\\\"sensor.ENERGY.Total\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Leiste Kühlschrank \\\\u0026 Backofen / sensor.ENERGY.Total\\\"}\",\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:8cc3b88b-1bc1-45b5-80ba-808d13167ae7\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\\\",\\\"path\\\":\\\"sensor.ENERGY.Total\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Leiste Monitor \\\\u0026 Lautsprecher / sensor.ENERGY.Total\\\"}\",\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:afe403f1-0413-48ca-a822-fab71c7d0456\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\\\",\\\"path\\\":\\\"sensor.ENERGY.Total\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Leiste Nachttisch / sensor.ENERGY.Total\\\"}\",\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:732748b9-6e70-4756-b49f-d325388c74df\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\\\",\\\"path\\\":\\\"sensor.ENERGY.Today\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Leiste PCs / sensor.ENERGY.Today\\\"}\",\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:732748b9-6e70-4756-b49f-d325388c74df\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\\\",\\\"path\\\":\\\"sensor.ENERGY.Total\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Leiste PCs / sensor.ENERGY.Total\\\"}\",\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:53496037-5b8b-4b98-bb0d-47278279a54d\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\\\",\\\"path\\\":\\\"sensor.ENERGY.Today\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Leiste TV \\\\u0026 Verstärker / sensor.ENERGY.Today\\\"}\",\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:53496037-5b8b-4b98-bb0d-47278279a54d\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:8a0fbce8-6b03-41af-b4b0-4f3455b8b4a3\\\",\\\"path\\\":\\\"sensor.ENERGY.Total\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Leiste TV \\\\u0026 Verstärker / sensor.ENERGY.Total\\\"}\",\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:fedacc31-783c-4ce4-a115-4d9ee352df33\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:db70ca08-8c55-4432-8c0d-e2cd96f7e95b\\\",\\\"path\\\":\\\"root.total\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Plug Mikrowelle\\\"}\",\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:f5543003-7811-44ab-8d13-bd592958ffa4\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:f171a0b5-0bb1-438f-8ea8-720b156b13a1\\\",\\\"path\\\":\\\"root.value\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Plug Waschmaschine\\\"}\",\"{\\\"device_selection\\\":{\\\"device_id\\\":\\\"urn:infai:ses:device:b06a0104-95ae-4d8d-8811-af4bcff455e5\\\",\\\"service_id\\\":\\\"urn:infai:ses:service:97805820-ca0a-46c5-9dcf-16c2e386b050\\\",\\\"path\\\":\\\"sensor.ENERGY.Total\\\",\\\"characteristic_id\\\":\\\"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e\\\"},\\\"label\\\":\\\"Shelly PV (Tasmota) / sensor.ENERGY.Total\\\"}\"]"
+            },
+            "stats": {
+                "type": "String",
+                "value": "[\"monthly\"]"
+            }
+        }
+    }
+]
+

@@ -1,0 +1,25 @@
+[
+    {
+        "id": "task1",
+        "processInstanceId": "process-instance-1",
+        "processDefinitionId": "process-definition-1",
+        "variables": {
+            "info.module_data_1": {
+                "value": "{\n    "
+            },
+            "info.module_data_3": {
+                "value": "\n    \"d\": 4\n}"
+            },
+            "info.module_data_200": {
+                "value": "\"a\": 1,"
+            },
+            "info.module_data_201": {
+                "value": "\n    \"b\": 2,"
+            },
+            "info.module_data_253": {
+                "value": "\n    \"c\": 3,"
+            }
+        }
+    }
+]
+

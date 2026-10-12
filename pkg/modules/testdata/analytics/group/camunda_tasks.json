@@ -1,0 +1,39 @@
+[
+    {
+        "id": "task1",
+        "processInstanceId": "process-instance-1",
+        "processDefinitionId": "process-definition-1",
+        "variables": {
+            "foo": {
+                "value": "bar"
+            },
+            "analytics.flow_id": {
+                "value": "flow-id-1"
+            },
+            "analytics.name": {
+                "value": "selected-name"
+            },
+            "analytics.module_data": {
+                "value": "{\"additional-info\": 42}"
+            },
+            "analytics.window_time": {
+                "value": 1
+            },
+            "analytics.desc": {
+                "value": "some description"
+            },
+            "analytics.selection.373808f2-848a-4446-8062-abd973dc96d3.port-name": {
+                "value": "{\"device_group_selection\":{\"id\":\"group_1\"}}"
+            },
+            "analytics.conf.373808f2-848a-4446-8062-abd973dc96d3.num": {
+                "value": "42"
+            },
+            "analytics.conf.373808f2-848a-4446-8062-abd973dc96d3.str": {
+                "value": "foobar"
+            },
+            "analytics.criteria.373808f2-848a-4446-8062-abd973dc96d3.port-name": {
+                "value": "[{\"function_id\":\"foo\"}]"
+            }
+        }
+    }
+]

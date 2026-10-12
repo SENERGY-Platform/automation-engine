@@ -1,0 +1,12 @@
+[
+    {
+        "id": "task1",
+        "processInstanceId": "process-instance-1",
+        "processDefinitionId": "process-definition-1",
+        "variables": {
+            "info.module_data": {
+                "value": "{\"foo\":\"bar\"}"
+            }
+        }
+    }
+]

@@ -1,0 +1,10 @@
+{
+    "PUT": {
+        "/device-groups/urn:infai:ses:device-group:1": [
+            {
+                "status_code": 200,
+                "message": "{\"id\": \"urn:infai:ses:device-group:1\"}"
+            }
+        ]
+    }
+}

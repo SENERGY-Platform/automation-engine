@@ -24,19 +24,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"log/slog"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/messaging"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
-	"github.com/SENERGY-Platform/external-task-worker/lib/devicerepository"
-	"github.com/SENERGY-Platform/external-task-worker/lib/marshaller"
-	"github.com/SENERGY-Platform/external-task-worker/lib/messages"
-	"github.com/SENERGY-Platform/external-task-worker/lib/timescale"
 	"github.com/google/uuid"
 )
 
@@ -75,11 +72,11 @@ type Metrics interface {
 type Type struct {
 	config     Config
 	store      *store.Store
-	repo       devicerepository.RepoInterface
+	repo       devices.Repository
 	aspects    *devices.AspectNodes
-	marshaller marshaller.Interface
+	marshaller Marshaller
 	// nil: values of event services cannot be read
-	timescale timescale.Interface
+	timescale Timescale
 	producer  messaging.Producer
 	completer Completer
 	metrics   Metrics
@@ -88,7 +85,7 @@ type Type struct {
 	now       func() time.Time
 }
 
-func New(config Config, s *store.Store, repo devicerepository.RepoInterface, aspects *devices.AspectNodes, m marshaller.Interface, ts timescale.Interface, producer messaging.Producer, metrics Metrics, logger *slog.Logger) *Type {
+func New(config Config, s *store.Store, repo devices.Repository, aspects *devices.AspectNodes, m Marshaller, ts Timescale, producer messaging.Producer, metrics Metrics, logger *slog.Logger) *Type {
 	if config.GroupScheduler == "" {
 		config.GroupScheduler = Sequential
 	}
@@ -112,7 +109,7 @@ func strategy(task engine.Task) string {
 
 // Defaults takes the retries of the payload, as the external-task-worker did (TASK-07).
 func (this *Type) Defaults(input map[string]any) (*int, *time.Duration) {
-	var command messages.Command
+	var command Command
 	if payload, ok := input["payload"]; ok && decodeJson(payload, &command) == nil && command.Retries > 0 {
 		retries := int(command.Retries)
 		return &retries, nil
@@ -133,7 +130,7 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 	if err != nil {
 		return engine.TaskResult{}, err
 	}
-	info := messages.TaskInfo{
+	info := TaskInfo{
 		WorkerId: this.workerId, ProcessInstanceId: task.InstanceId,
 		// carries the deployment id; connectors mirror it back (DATA-04)
 		ProcessDefinitionId: task.DeploymentId,
@@ -175,7 +172,7 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 // advance sends the next sub-tasks without result: all of them in parallel mode, one at a time
 // otherwise. Values read from timescale count as results at once. done reports that every
 // sub-task has a result. Without resend, parallel sub-tasks still in flight are not sent again.
-func (this *Type) advance(ctx context.Context, jobId string, version int64, token devicerepository.Impersonate, resend bool) (done bool, result any, err error) {
+func (this *Type) advance(ctx context.Context, jobId string, version int64, token devices.Token, resend bool) (done bool, result any, err error) {
 	for {
 		var subtasks []store.Subtask
 		err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
@@ -205,8 +202,8 @@ func (this *Type) advance(ctx context.Context, jobId string, version int64, toke
 		}
 		readValues := false
 		for _, s := range pending {
-			var command messages.Command
-			var info messages.TaskInfo
+			var command Command
+			var info TaskInfo
 			if err = json.Unmarshal(s.Command, &command); err != nil {
 				return false, nil, err
 			}
@@ -241,7 +238,7 @@ type readValue struct {
 }
 
 // send sends the command of a sub-task, or reads the last value for an event service
-func (this *Type) send(ctx context.Context, token devicerepository.Impersonate, command messages.Command, info messages.TaskInfo) (*readValue, error) {
+func (this *Type) send(ctx context.Context, token devices.Token, command Command, info TaskInfo) (*readValue, error) {
 	msg, event, err := this.message(command, info, token)
 	if err != nil {
 		return nil, err
@@ -290,7 +287,7 @@ func jobIdOf(subId string) string {
 // HandleResponse processes an answer of a protocol handler from Kafka or HTTP (TASK-05). An
 // answer for an unknown or finished task is dropped, so that every task completes at most once.
 func (this *Type) HandleResponse(ctx context.Context, raw []byte) error {
-	var msg messages.ProtocolMsg
+	var msg ProtocolMsg
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		this.logger.Warn("drop unreadable device response", "error", err)
 		return nil
@@ -313,7 +310,7 @@ func (this *Type) HandleResponse(ctx context.Context, raw []byte) error {
 	if err != nil || !known {
 		return err
 	}
-	var command messages.Command
+	var command Command
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		subtasks, err := tx.ListSubtasks(jobId)
 		if err != nil || len(subtasks) == 0 {
@@ -341,7 +338,7 @@ func (this *Type) HandleResponse(ctx context.Context, raw []byte) error {
 
 // HandleError processes an error of a protocol handler; the task is retried or becomes an incident.
 func (this *Type) HandleError(ctx context.Context, raw []byte) error {
-	var msg messages.ProtocolMsg
+	var msg ProtocolMsg
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		this.logger.Warn("drop unreadable device error", "error", err)
 		return nil
@@ -362,7 +359,7 @@ func (this *Type) OnTimeout(ctx context.Context, tx *store.Tx, task engine.Task)
 	if err != nil || len(subtasks) < 2 {
 		return nil, err
 	}
-	var command messages.Command
+	var command Command
 	if err = json.Unmarshal(subtasks[0].Command, &command); err != nil {
 		return nil, err
 	}

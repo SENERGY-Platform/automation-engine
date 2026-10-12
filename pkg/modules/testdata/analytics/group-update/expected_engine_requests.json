@@ -1,0 +1,7 @@
+[
+    {
+        "method":"PUT",
+        "endpoint":"/pipeline",
+        "message":"{\"id\":\"1e138d25-d5ee-4a89-9a83-630f4308941a\",\"flowId\":\"flow-id-1\",\"name\":\"selected-name\",\"description\":\"some description\",\"windowTime\":1,\"mergeStrategy\":\"inner\",\"nodes\":[{\"nodeId\":\"373808f2-848a-4446-8062-abd973dc96d3\",\"inputs\":[{\"filterIds\":\"d1,d2\",\"filterType\":\"deviceId\",\"topicName\":\"dt1.s1\",\"values\":[{\"name\":\"port-name\",\"path\":\"value.path.to.dt1.s1.value\"}]},{\"filterIds\":\"d3\",\"filterType\":\"deviceId\",\"topicName\":\"dt2.s1\",\"values\":[{\"name\":\"port-name\",\"path\":\"value.path.to.dt2.s1.value\"}]},{\"filterIds\":\"d3\",\"filterType\":\"deviceId\",\"topicName\":\"dt2.s2\",\"values\":[{\"name\":\"port-name\",\"path\":\"value.path.to.dt2.s2.value\"}]}],\"config\":[{\"name\":\"num\",\"value\":\"42\"},{\"name\":\"str\",\"value\":\"foobar\"}]}]}"
+    }
+]
