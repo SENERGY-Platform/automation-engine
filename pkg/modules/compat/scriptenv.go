@@ -84,6 +84,12 @@ func (this *ScriptEnv) GetVm() *goja.Runtime {
 	return this.vm
 }
 
+// Namespaces are the global objects a script sees, with the Go values behind them; the script
+// documentation in docs/scripts is generated from their methods.
+func Namespaces() map[string]interface{} {
+	return (&ScriptEnv{}).environment()
+}
+
 func (this *ScriptEnv) environment() map[string]interface{} {
 	return map[string]interface{}{
 		"variables":  NewVariablesScriptEnv(this),

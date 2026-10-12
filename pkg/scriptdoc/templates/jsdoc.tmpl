@@ -1,0 +1,21 @@
+{{template "license"}}
+{{template "generated" .notes}}
+{{range .namespaces}}
+/**
+ * @namespace {{.}}
+ */
+{{end}}{{range .methods}}
+/**{{range .CommentLines}}
+ * {{.}}{{end}}
+ * @function {{.Namespace}}#{{.Name}}
+{{range .Params}} * @param { {{.Type}} } {{.Name}}
+{{end}}{{if .Result}} * @returns { {{.Result.Type}} }
+{{end}} * @example
+ * {{.Namespace}}.{{.Name}}({{.ParamsStr}})
+ */
+{{end}}{{range .typedefs}}
+/**
+ * @typedef {Object} {{.Name}}
+{{range .Fields}} * @property { {{.Type}} } {{.Name}}{{if .Deprecated}} deprecated{{if .DeprecationNote}}: {{.DeprecationNote}}{{end}}{{end}}
+{{end}} */
+{{end}}

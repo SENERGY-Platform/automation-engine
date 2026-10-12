@@ -1,0 +1,17 @@
+{{template "license"}}
+{{template "generated" .notes}}
+{{range .interfaces}}
+interface {{.Name}} {
+{{range .Properties}}{{if .Deprecated}}    /** @deprecated{{if .DeprecationNote}} {{.DeprecationNote}}{{end}} */
+{{end}}    {{.Name}}: {{.Type}};
+{{end}}}
+{{end}}{{range .namespaces}}
+{{if .Interface}}interface {{.Interface}} {{"{"}}{{else}}declare const {{.Name}}: {{"{"}}{{end}}
+{{range .Methods}}{{if .Comment}}    /**
+{{range .Comment}}     * {{.}}
+{{end}}     */
+{{end}}    {{.Name}}({{.Params}}): {{.Result}};
+{{end}}{{if .Interface}}}
+declare var {{.Name}}: {{.Interface}};
+{{else}}};
+{{end}}{{end}}

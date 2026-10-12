@@ -1,0 +1,8 @@
+{{template "license"}}
+{{template "generated" .notes}}
+{{range .globals}}
+/**
+{{range .Doc}} * {{.}}
+{{end}} */
+{{.Declaration}}
+{{end}}

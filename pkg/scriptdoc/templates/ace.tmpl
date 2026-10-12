@@ -1,0 +1,28 @@
+{{template "license"}}
+{{template "generated" .notes}}
+const completer = {
+    // eslint-disable-next-line @typescript-eslint/naming-convention
+    getCompletions(_: any, session: any, pos: any, ___: any, callback: any) {
+        const line = session.doc.$lines[pos.row].slice(0, pos.column-1);
+        const isNewStatement = line.trim().length === 0 || line.trim().endsWith(';');
+        if(isNewStatement){
+            callback(null, [{{range $i, $m := .assignments}}{{if $i}},{{end}}
+                {
+                    caption: '{{$m.Namespace}}.{{$m.Name}}',
+                    value: 'var {{$m.Result.NameWithType}} = {{$m.Namespace}}.{{$m.Name}}({{$m.ParamsStr}});',
+                    meta: 'static'
+                }{{end}}
+            ]);
+        } else {
+            callback(null, [{{range $i, $m := .statements}}{{if $i}},{{end}}
+                {
+                    caption: '{{$m.Namespace}}.{{$m.Name}}',
+                    value: '{{$m.Namespace}}.{{$m.Name}}({{$m.ParamsStr}})',
+                    meta: 'static'
+                }{{end}}
+            ]);
+        }
+    }
+};
+
+export {completer};

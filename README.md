@@ -25,7 +25,7 @@ Für den Plattformbetrieb kommen dazu:
 ## Smart Services und Module
 
 Smart Services sind der Namespace `smart-services`. Ihre Aufgabentypen ersetzen die acht Module-Worker:
-- `info`, `import`, `export`, `analytics`, `device_repository`: das Verhalten der bisherigen Worker, im Repo implementiert und gegen deren Testfälle geprüft (`pkg/modules/testdata`). Eingaben mit Präfix `<typ>.`, Go-Templates gegen die Instanzvariablen (`{{.param}}`), `prescript*`/`postscript*` mit `variables`, `inputs`, `outputs`, `util`, `deviceRepo`.
+- `info`, `import`, `export`, `analytics`, `device_repository`: das Verhalten der bisherigen Worker, im Repo implementiert und gegen deren Testfälle geprüft (`pkg/modules/testdata`). Eingaben mit Präfix `<typ>.`, Go-Templates gegen die Instanzvariablen (`{{.param}}`), `prescript*`/`postscript*` mit `variables`, `inputs`, `outputs`, `util`, `deviceRepo`. Die Skript-API beider JavaScript-Umgebungen (Modul-Skripte und BPMN-Skripte) steht in [docs/scripts](docs/scripts/README.md), als TypeScript-Deklarationen, JSDoc und Ace-Vervollständigung; erzeugt mit `go generate ./pkg/scriptdoc`.
 - `process_deployment`, `process_deployment_start`: deployen bzw. starten Prozesse im referenzierten Namespace (`processes`) mit dem Token des Owners. Das Deployment verweist auf die verwaltende Instanz (`managed_by`). Den Abschluss meldet die Engine mit der Nachricht `deployment_done_<id>`, die die Instanz beim nächsten Warten darauf sofort erhält; Wartepunkte nennen ihren Namen mit `senergy:messageName` (JavaScript).
 - `watcher`: prüft Geräteauswahlen (oder mit `ALLOW_GENERIC_WATCH_REQUESTS` beliebige Anfragen unter der HTTP-Richtlinie des Namespace) in Abständen und startet bei einer Änderung eine Wartungsprozedur.
 

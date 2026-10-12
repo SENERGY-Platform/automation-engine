@@ -1,0 +1,48 @@
+<!-- generated with: go generate ./pkg/scriptdoc - do not edit by hand -->
+
+# Skript-Umgebungen
+
+Die Engine führt JavaScript mit [goja](https://github.com/dop251/goja) aus (ECMAScript 5.1 mit Teilen von ES6), an zwei Stellen mit verschiedenen Globals. Diese Referenz und die Dateien daneben werden aus dem Go-Quelltext erzeugt: Methoden und Beschreibungen aus `pkg/modules/compat`, Typen und Feldnamen per Reflection mit der Namensabbildung der Laufzeit (JSON-Tags), Abkündigungen aus den Kommentaren der Modelle. Ein Test schlägt fehl, wenn die Dateien nicht zum Code passen.
+
+| Datei | Inhalt |
+|---|---|
+| `engine/script-env.d.ts` | TypeScript-Deklarationen der BPMN-Skripte und -Ausdrücke |
+| `modules/script-env.d.ts` | TypeScript-Deklarationen der Pre- und Postscripts von Modul-Aufgaben, für Editoren mit Typprüfung (Monaco, VS Code) |
+| `modules/jsdoc.js` | dieselbe API als JSDoc |
+| `modules/ace-code-completer.ts` | Vervollständigung für den Ace-Editor des web-ui, wie bisher aus smart-service-module-worker-lib |
+
+## BPMN-Skripte und -Ausdrücke
+
+Gilt für Script Tasks, Bedingungen an Sequenzflüssen, Ein- und Ausgabe-Mappings, Timer-Werte, `senergy:messageName` und die Bedingungen von Geräte- und Import-Events (`senergy:script`).
+
+- Die Variablen der Instanz und die lokalen Variablen des Elements sind Globals. In Event-Bedingungen sind es der Wert unter `senergy:value_variable_name` und die Variablen aus `senergy:variables`.
+- Das Ergebnis ist der Wert des letzten Ausdrucks. Bedingungen müssen einen Boolean liefern.
+- Werte sind JSON: Zahlen sind Double, fehlende Werte `null`.
+- Grenzen je Auswertung: Laufzeit `SCRIPT_TIMEOUT` (Vorgabe 2 s, bei Event-Bedingungen fest 2 s), Ergebnis bis `MAX_VARIABLE_BYTES` (Vorgabe 1 MiB), 100 Logeinträge, Aufruftiefe 1000. Kein Zugriff auf Netz, Dateisystem oder Engine-Interna.
+{{range .globals}}
+### `{{.Signature}}`
+
+{{join .Doc " "}}
+{{end}}
+## Pre- und Postscripts von Modul-Aufgaben
+
+Gilt für die Eingaben `prescript*` und `postscript*` der Aufgabentypen `info`, `import`, `export`, `analytics`, `device_repository`, `process_deployment`, `process_deployment_start` und `watcher`. Teile mit demselben Präfix werden nach Namen sortiert zusammengesetzt.
+
+- Ablauf: Prescripts mit den rohen Eingaben, dann werden die String-Eingaben als Go-Template gegen die Variablen gerendert (`{{"{{"}}.name{{"}}"}}`), dann läuft die Aufgabe, dann Postscripts mit allen Ausgaben.
+- Variablen sind die der Instanz, bei Wartungsprozeduren die der Elterninstanz. Geschriebene Variablen gelten nach dem Skript.
+- `deviceRepo` fragt device-repository mit dem Token des Owners.
+- Laufzeit höchstens 2 s je Skript.
+- `console` schreibt in das Log der Engine, nicht in den Verlauf der Instanz.
+{{range .namespaces}}
+### `{{.Name}}`
+{{range .Methods}}
+- `{{.Name}}({{.Params}}): {{.Result}}`{{if .Comment}}<br>{{join .Comment " "}}{{end}}
+{{- end}}
+{{end}}
+### Typen
+{{range .interfaces}}
+#### `{{.Name}}`
+{{range .Properties}}
+- `{{.Name}}: {{.Type}}`{{if .Deprecated}} (abgekündigt{{if .DeprecationNote}}: {{.DeprecationNote}}{{end}}){{end}}
+{{- end}}
+{{end}}
