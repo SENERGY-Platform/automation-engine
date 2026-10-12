@@ -94,6 +94,8 @@ type Controller struct {
 	series    events.Series
 	evaluator *events.Evaluator
 	userToken auth.UserTokenSource
+	// nil without synchronisation with gateways (DEP-09)
+	networks Networks
 }
 
 // SetIo enables the process-io API (IO-02).
@@ -143,7 +145,12 @@ func (this *Controller) planSelections(ctx context.Context, user jwt.Token, ns m
 	if this.describer == nil {
 		return plan, nil
 	}
-	plan.descriptions, plan.groups, err = this.describer.Describe(deployment, version, process, input.Selections)
+	describer := this.describer
+	if deployment.NetworkId != "" {
+		// the events of a gateway are read on its broker (FOG-06)
+		describer = describer.Local()
+	}
+	plan.descriptions, plan.groups, err = describer.Describe(deployment, version, process, input.Selections)
 	return plan, err
 }
 

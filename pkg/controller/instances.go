@@ -50,9 +50,10 @@ func (this *Controller) startInstance(ctx context.Context, token string, namespa
 	if input.DeploymentId == "" {
 		return model.Instance{}, model.BadRequest("deployment_id is required")
 	}
+	var deployment model.Deployment
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		// starting needs the execute right; on a shared deployment the starting user becomes owner (SEC-12)
-		_, err := this.readDeployment(ctx, tx, token, namespace, input.DeploymentId, Execute, false)
+		deployment, err = this.readDeployment(ctx, tx, token, namespace, input.DeploymentId, Execute, false)
 		if err != nil {
 			return err
 		}
@@ -78,6 +79,9 @@ func (this *Controller) startInstance(ctx context.Context, token string, namespa
 	variables, err := this.withAutoSelected(ctx, token, input.DeploymentId, input.DeploymentVersion, "", input.Variables)
 	if err != nil {
 		return model.Instance{}, err
+	}
+	if deployment.NetworkId != "" {
+		return this.startOnNetwork(ctx, user, deployment, id, instanceOwner, variables)
 	}
 	result, _, err := this.engine.StartInstance(ctx, engine.StartRequest{
 		DeploymentId: input.DeploymentId, DeploymentVersion: input.DeploymentVersion, InstanceId: id, Owner: instanceOwner, Variables: variables,
@@ -187,14 +191,20 @@ func (this *Controller) DeleteInstances(ctx context.Context, token string, names
 	if err := this.checkAll(ctx, token, namespace, ids, Administrate); err != nil {
 		return err
 	}
-	return this.store.Tx(ctx, func(tx *store.Tx) error {
+	err := this.store.Tx(ctx, func(tx *store.Tx) error {
 		for _, id := range ids {
 			// the lock waits for a running step of the instance
-			if _, err := tx.GetInstance(id, true); err != nil {
+			inst, err := tx.GetInstance(id, true)
+			if err != nil {
 				if isNotFound(err) {
 					continue
 				}
 				return err
+			}
+			if inst.NetworkId != "" && this.networks != nil {
+				if err = this.desireInstance(tx, inst.Instance, true); err != nil {
+					return err
+				}
 			}
 			if err := tx.DeleteInstance(id); err != nil {
 				return err
@@ -202,6 +212,10 @@ func (this *Controller) DeleteInstances(ctx context.Context, token string, names
 		}
 		return nil
 	})
+	if err == nil {
+		this.wake()
+	}
+	return err
 }
 
 func (this *Controller) StopInstances(ctx context.Context, token string, namespace string, ids []string) error {
@@ -210,16 +224,32 @@ func (this *Controller) StopInstances(ctx context.Context, token string, namespa
 	}
 	var errs []error
 	for _, id := range ids {
-		err := this.engine.StopInstance(ctx, id, "stopped")
+		var networkId string
+		err := this.store.Tx(ctx, func(tx *store.Tx) error {
+			inst, err := tx.GetInstance(id, true)
+			if err != nil || inst.NetworkId == "" || this.networks == nil {
+				return err
+			}
+			networkId = inst.NetworkId
+			// the gateway stops it and reports the result
+			return this.desireInstance(tx, inst.Instance, false)
+		})
+		if err == nil && networkId == "" {
+			err = this.engine.StopInstance(ctx, id, "stopped")
+		}
 		if err != nil && !errors.Is(err, model.ErrConflict) {
 			errs = append(errs, err)
 		}
 	}
+	this.wake()
 	return errors.Join(errs...)
 }
 
 func (this *Controller) RestartInstance(ctx context.Context, token string, namespace string, id string, input model.RestartInput) (model.Instance, error) {
 	if err := this.checkAll(ctx, token, namespace, []string{id}, Write); err != nil {
+		return model.Instance{}, err
+	}
+	if err := this.localOnly(ctx, id); err != nil {
 		return model.Instance{}, err
 	}
 	return this.engine.RestartInstance(ctx, id, input.DeploymentVersion, model.CauseRestart)
@@ -249,6 +279,9 @@ func (this *Controller) GetVariables(ctx context.Context, token string, namespac
 
 func (this *Controller) SetVariable(ctx context.Context, token string, namespace string, id string, name string, value any) error {
 	if err := this.checkAll(ctx, token, namespace, []string{id}, Write); err != nil {
+		return err
+	}
+	if err := this.localOnly(ctx, id); err != nil {
 		return err
 	}
 	return this.engine.SetVariable(ctx, id, name, value)

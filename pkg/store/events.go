@@ -106,7 +106,10 @@ func (this *Tx) EventDescriptionsSince(revision int64) (result []model.EventDesc
 	if err = this.queryRow("SELECT value FROM counters WHERE name = 'event_descriptions'").Scan(&latest); err != nil {
 		return nil, nil, 0, err
 	}
-	rows, err := this.query("SELECT "+eventColumns+" FROM event_descriptions WHERE revision > ? AND revision <= ? ORDER BY revision, id", revision, latest)
+	// descriptions of deployments of gateways read the topics of the gateway; there the
+	// deployment has no network id
+	rows, err := this.query("SELECT "+eventColumns+" FROM event_descriptions WHERE revision > ? AND revision <= ? "+
+		"AND deployment_id NOT IN (SELECT id FROM deployments WHERE network_id <> '') ORDER BY revision, id", revision, latest)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -173,4 +176,21 @@ func (this *Tx) DeploymentsOfDeviceGroup(groupId string) (result []string, err e
 func (this *Tx) PurgeEventTombstones(before time.Time) error {
 	_, err := this.exec("DELETE FROM event_description_tombstones WHERE removed_at < ?", millis(before))
 	return err
+}
+
+// DeviceGroupsOfDeployment lists the device groups the events of a deployment depend on.
+func (this *Tx) DeviceGroupsOfDeployment(deploymentId string) (result []string, err error) {
+	rows, err := this.query("SELECT group_id FROM deployment_device_groups WHERE deployment_id = ? ORDER BY group_id", deploymentId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result = append(result, id)
+	}
+	return result, rows.Err()
 }

@@ -138,7 +138,12 @@ func (this *Controller) createDeployment(ctx context.Context, token string, name
 	if err != nil {
 		return result, err
 	}
-	plan, err := this.planSelections(ctx, user, ns, input, model.Deployment{Id: id, Namespace: ns.Name, Owner: deploymentOwner}, 1)
+	if input.NetworkId != "" {
+		if err = this.checkNetwork(ctx, user, input.NetworkId, Administrate); err != nil {
+			return result, err
+		}
+	}
+	plan, err := this.planSelections(ctx, user, ns, input, model.Deployment{Id: id, Namespace: ns.Name, Owner: deploymentOwner, NetworkId: input.NetworkId}, 1)
 	if err != nil {
 		return result, err
 	}
@@ -154,7 +159,7 @@ func (this *Controller) createDeployment(ctx context.Context, token string, name
 		result = model.Deployment{
 			Id: id, Namespace: ns.Name, Name: resolved.name, Description: input.Description, Owner: deploymentOwner,
 			ModelId: resolved.modelId, ModelVersion: resolved.modelVersion, Version: 1, Source: input.Source, RetentionDays: input.RetentionDays,
-			ManagedBy: input.ManagedBy, CreatedAt: now, UpdatedAt: now,
+			ManagedBy: input.ManagedBy, NetworkId: input.NetworkId, CreatedAt: now, UpdatedAt: now,
 		}
 		if err = tx.InsertDeployment(result); err != nil {
 			return err
@@ -171,9 +176,16 @@ func (this *Controller) createDeployment(ctx context.Context, token string, name
 				return err
 			}
 		}
+		if result.NetworkId != "" {
+			// runs on the gateway, not here
+			return this.desireDeployment(tx, result)
+		}
 		// deployment, version, event descriptions and start events are written in one transaction (DEP-03)
 		return this.engine.ActivateVersion(tx, id, 1)
 	})
+	if err == nil && result.NetworkId != "" {
+		this.networks.Wake()
+	}
 	return result, err
 }
 
@@ -194,6 +206,14 @@ func (this *Controller) PutDeployment(ctx context.Context, token string, namespa
 	})
 	if err != nil && !isNotFound(err) {
 		return result, err
+	}
+	if err == nil && input.NetworkId != "" && input.NetworkId != existing.NetworkId {
+		return result, model.BadRequest("the network of a deployment cannot change")
+	}
+	if err == nil && existing.NetworkId != "" {
+		if err = this.checkNetwork(ctx, user, existing.NetworkId, Administrate); err != nil {
+			return result, err
+		}
 	}
 	var plan eventPlan
 	if err == nil && existing.Namespace == namespace {
@@ -272,11 +292,17 @@ func (this *Controller) PutDeployment(ctx context.Context, token string, namespa
 		if err = tx.ReplaceEventDescriptions(id, plan.descriptions, plan.groups, now); err != nil {
 			return err
 		}
+		if result.NetworkId != "" {
+			return this.desireDeployment(tx, result)
+		}
 		if err = this.engine.ActivateVersion(tx, id, result.Version); err != nil {
 			return err
 		}
 		return this.engine.ApplyUpdate(tx, id, input.UpdateStrategy)
 	})
+	if err == nil && result.NetworkId != "" {
+		this.networks.Wake()
+	}
 	if err == nil && created {
 		return this.createDeployment(ctx, token, namespace, id, input)
 	}
@@ -325,12 +351,29 @@ func (this *Controller) ListDeployments(ctx context.Context, token string, names
 // DeleteDeployment removes all versions with instances, history, incidents and start events
 // in one transaction (DEP-11).
 func (this *Controller) DeleteDeployment(ctx context.Context, token string, namespace string, id string) error {
-	return this.store.Tx(ctx, func(tx *store.Tx) error {
-		if _, err := this.readDeployment(ctx, tx, token, namespace, id, Administrate, true); err != nil {
+	err := this.store.Tx(ctx, func(tx *store.Tx) error {
+		d, err := this.readDeployment(ctx, tx, token, namespace, id, Administrate, true)
+		if err != nil {
 			return err
+		}
+		if d.NetworkId != "" {
+			user, _, err := this.begin(token, namespace)
+			if err != nil {
+				return err
+			}
+			if err = this.checkNetwork(ctx, user, d.NetworkId, Administrate); err != nil {
+				return err
+			}
+			if err = this.desireDeletedDeployment(tx, d); err != nil {
+				return err
+			}
 		}
 		return tx.DeleteDeployment(id)
 	})
+	if err == nil {
+		this.wake()
+	}
+	return err
 }
 
 func (this *Controller) ListDeploymentVersions(ctx context.Context, token string, namespace string, id string, options model.PageOptions) (result model.Page[model.DeploymentVersion], err error) {
@@ -399,7 +442,11 @@ func (this *Controller) RecomputeEvents(ctx context.Context, deploymentId string
 		return err
 	}
 	bpmn.ApplyParameters(process, version.Parameters)
-	descriptions, groups, err := this.describer.Describe(deployment, version.Version, process, version.Selections)
+	describer := this.describer
+	if deployment.NetworkId != "" {
+		describer = describer.Local()
+	}
+	descriptions, groups, err := describer.Describe(deployment, version.Version, process, version.Selections)
 	if err != nil {
 		return err
 	}
@@ -412,7 +459,14 @@ func (this *Controller) RecomputeEvents(ctx context.Context, deploymentId string
 			// an update replaced the descriptions meanwhile
 			return nil
 		}
-		return tx.ReplaceEventDescriptions(deploymentId, descriptions, groups, time.Now())
+		if err = tx.ReplaceEventDescriptions(deploymentId, descriptions, groups, time.Now()); err != nil {
+			return err
+		}
+		if current.NetworkId != "" && this.networks != nil {
+			// a gateway gets changed descriptions with its deployment (SYNC-06)
+			return this.desireDeployment(tx, current)
+		}
+		return nil
 	})
 }
 

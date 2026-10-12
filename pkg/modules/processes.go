@@ -21,12 +21,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/SENERGY-Platform/models/go/models"
 )
 
 const (
@@ -41,6 +44,8 @@ type Processes interface {
 	CreateDeployment(ctx context.Context, token string, namespace string, input model.DeploymentInput) (model.Deployment, error)
 	PutDeployment(ctx context.Context, token string, namespace string, id string, input model.DeploymentInput) (model.Deployment, error)
 	StartInstance(ctx context.Context, token string, namespace string, input model.StartInstanceInput) (model.Instance, error)
+	// the gateways the user may read (SYNC-12)
+	ListNetworks(ctx context.Context, token string) ([]model.Network, error)
 }
 
 // Namespaces gives the referenced namespaces of the namespace of an instance (NS-08).
@@ -168,6 +173,11 @@ func (this *deployHandler) Do(ctx context.Context, task Task) (modules []model.M
 	if err = this.elementInputs(task, proc, &deployment); err != nil {
 		return nil, nil, err
 	}
+	if prefer, ok := boolInput(task, deployPrefix+"prefer_fog_deployment"); ok && prefer {
+		if deployment.NetworkId, err = this.gatewayFor(ctx, p.token, deployment.Selections); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	moduleData := map[string]any{}
 	if raw, ok := input(task, deployPrefix+"module_data"); ok {
@@ -218,8 +228,61 @@ func (this *deployHandler) Do(ctx context.Context, task Task) (modules []model.M
 	done := "deployment_done_" + result.Id
 	modules = []model.Module{{Id: moduleId, ModuleType: TypeProcessDeployment, Data: moduleData, Keys: keys,
 		DeleteInfo: &model.ModuleDeleteInfo{UserId: p.owner, Resource: &model.ResourceRef{Kind: model.ResourceDeployment, Namespace: p.namespace, Id: result.Id}}}}
-	// no gateway deployments before M6: prefer_fog_deployment deploys in the cloud
-	return modules, map[string]any{"process_deployment_id": result.Id, "done_event": done, "is_fog_deployment": false, "fog_hub": ""}, nil
+	return modules, map[string]any{"process_deployment_id": result.Id, "done_event": done, "is_fog_deployment": result.NetworkId != "", "fog_hub": result.NetworkId}, nil
+}
+
+// gatewayFor chooses the first gateway that carries every selected device, with the devices of
+// selected groups, as smart-service-module-worker-process did; without devices, with imports
+// or without such gateway the deployment stays in the cloud (TASK-20, DEP-09)
+func (this *processModules) gatewayFor(ctx context.Context, token string, selections map[string]model.Selection) (string, error) {
+	selected := []string{}
+	for _, s := range selections {
+		if s.ImportId != "" {
+			return "", nil
+		}
+		if s.DeviceId != "" {
+			selected = append(selected, s.DeviceId)
+		}
+		if s.DeviceGroupId != "" {
+			group, err, _ := this.runtime.iot.ReadDeviceGroup(s.DeviceGroupId, token, false)
+			if err != nil {
+				return "", err
+			}
+			selected = append(selected, group.DeviceIds...)
+		}
+	}
+	if len(selected) == 0 {
+		this.runtime.logger.WarnContext(ctx, "a process deployment without devices stays in the cloud")
+		return "", nil
+	}
+	networks, err := this.processes.ListNetworks(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	for _, network := range networks {
+		if !network.Compatible {
+			continue
+		}
+		hub, err, code := this.runtime.iot.ReadHub(network.Id, token, models.Read)
+		if code == http.StatusNotFound || code == http.StatusForbidden {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		carries := true
+		for _, id := range selected {
+			pure, _ := devices.SplitModifier(id)
+			if !slices.Contains(hub.DeviceIds, pure) && !slices.Contains(hub.DeviceIds, id) {
+				carries = false
+				break
+			}
+		}
+		if carries {
+			return network.Id, nil
+		}
+	}
+	return "", nil
 }
 
 // elementInputs reads the selections and overrides per element (TASK-20)

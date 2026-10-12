@@ -23,13 +23,13 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 )
 
-const deploymentColumns = "id, namespace, name, description, owner, model_id, model_version, model_deleted, version, source, retention_days, faulty_since, created_at, updated_at, managed_by"
+const deploymentColumns = "id, namespace, name, description, owner, model_id, model_version, model_deleted, version, source, retention_days, faulty_since, created_at, updated_at, managed_by, network_id"
 
 func scanDeployment(row interface{ Scan(...any) error }) (d model.Deployment, err error) {
 	var deleted int
 	var created, updated int64
 	var faulty sql.NullInt64
-	err = row.Scan(&d.Id, &d.Namespace, &d.Name, &d.Description, &d.Owner, &d.ModelId, &d.ModelVersion, &deleted, &d.Version, &d.Source, &d.RetentionDays, &faulty, &created, &updated, &d.ManagedBy)
+	err = row.Scan(&d.Id, &d.Namespace, &d.Name, &d.Description, &d.Owner, &d.ModelId, &d.ModelVersion, &deleted, &d.Version, &d.Source, &d.RetentionDays, &faulty, &created, &updated, &d.ManagedBy, &d.NetworkId)
 	d.ModelDeleted = deleted == 1
 	d.FaultySince = fromNullMillis(faulty)
 	d.CreatedAt = fromMillis(created)
@@ -38,8 +38,8 @@ func scanDeployment(row interface{ Scan(...any) error }) (d model.Deployment, er
 }
 
 func (this *Tx) InsertDeployment(d model.Deployment) error {
-	_, err := this.exec("INSERT INTO deployments ("+deploymentColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		d.Id, d.Namespace, d.Name, d.Description, d.Owner, d.ModelId, d.ModelVersion, boolInt(d.ModelDeleted), d.Version, d.Source, d.RetentionDays, nullMillis(d.FaultySince), millis(d.CreatedAt), millis(d.UpdatedAt), d.ManagedBy)
+	_, err := this.exec("INSERT INTO deployments ("+deploymentColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		d.Id, d.Namespace, d.Name, d.Description, d.Owner, d.ModelId, d.ModelVersion, boolInt(d.ModelDeleted), d.Version, d.Source, d.RetentionDays, nullMillis(d.FaultySince), millis(d.CreatedAt), millis(d.UpdatedAt), d.ManagedBy, d.NetworkId)
 	return err
 }
 
@@ -91,6 +91,7 @@ func (this *Tx) ListDeployments(namespace string, options model.DeploymentListOp
 	if options.Source != "" {
 		w.add("source = ?", options.Source)
 	}
+	w.network(options.NetworkId)
 	order, err := orderBy(options.Sort, map[string]string{"name": "LOWER(name)", "created_at": "created_at", "updated_at": "updated_at"}, "LOWER(name) ASC, id ASC")
 	if err != nil {
 		return result, err

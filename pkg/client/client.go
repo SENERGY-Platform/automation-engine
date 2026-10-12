@@ -230,6 +230,7 @@ func (this *ClientImpl) ListDeployments(ctx context.Context, token string, names
 	set(q, "model_id", options.ModelId)
 	set(q, "owner", options.Owner)
 	set(q, "source", options.Source)
+	set(q, "network_id", options.NetworkId)
 	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "deployments"), q, nil, &result)
 	return result, err
 }
@@ -277,6 +278,7 @@ func (this *ClientImpl) ListInstances(ctx context.Context, token string, namespa
 	setList(q, "ids", options.Ids)
 	set(q, "owner", options.Owner)
 	set(q, "sort", options.Sort)
+	set(q, "network_id", options.NetworkId)
 	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "instances"), q, nil, &result)
 	return result, err
 }
@@ -461,6 +463,16 @@ func (this *ClientImpl) SetOwner(ctx context.Context, token string, namespace st
 
 func (this *ClientImpl) ResetRestarts(ctx context.Context, token string, namespace string, id string) (result model.Deployment, err error) {
 	err = this.do(ctx, token, http.MethodPost, path("namespaces", namespace, "deployments", id, "reset-restarts"), nil, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) ListNetworks(ctx context.Context, token string) (result []model.Network, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("networks"), nil, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) GetNetwork(ctx context.Context, token string, networkId string) (result model.Network, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("networks", networkId), nil, nil, &result)
 	return result, err
 }
 

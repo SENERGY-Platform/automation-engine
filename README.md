@@ -76,6 +76,10 @@ Mit `MODE=fog` läuft dasselbe Binary auf einem Gateway, als einziger Container 
 - `STORAGE_BUDGET` begrenzt die Datenbank in Bytes (Vorgabe im Fog 1 GiB, negativ heißt unbegrenzt). Ab 80 % wird der Verlauf über die Aufbewahrung hinaus gekürzt, älteste Einträge zuerst, bis 70 %, mit einer Warnung je Tag. Ist der Datenträger voll, hält die Ausführung an und `/health` meldet einen Fehler, bis Schreiben wieder gelingt.
 - Die API ist lokal nur lesend und braucht kein Token; Deployments, Starts und Stopps kommen über die Synchronisation aus der Cloud.
 
+## Synchronisation mit Gateways
+
+In der Cloud verbindet `SYNC_MQTT_BROKER` die Engine mit dem Broker, den die Gateways über mgw-device-cloud-connector erreichen. Deployments für ein Gateway entstehen über dieselbe API mit `network_id` (die Hub-ID) und laufen dort, nicht in der Cloud; Instanzen eines Gateways startet, stoppt und löscht die Cloud, ihren Zustand meldet das Gateway. Die Replicas teilen die Nachrichten der Gateways (`SYNC_SHARE_GROUP`); das Protokoll bestätigt und sendet selbst erneut (`SYNC_RESEND_AFTER`), Gateways ohne Kontakt seit `SYNC_OFFLINE_AFTER` gelten als offline, nach `NETWORK_CLEANUP_MAX_AGE` werden ihre Daten entfernt. `GET /networks` zeigt Kontakt, Versionen und Rückstand je Gateway, `GET /networks/{id}` Soll- und Ist-Zustand je Ressource. Rechte auf Gateways prüft permissions-v2 (Topic `hubs`: `rx` zum Lesen und Starten, `a` zum Deployen). Das Protokoll ist in `pkg/fogsync/protocol` beschrieben.
+
 Namespaces aus `NAMESPACES` werden nur angelegt, wenn es sie noch nicht gibt; danach verwaltet `PUT /namespaces/{ns}` sie (Admins).
 
 ## API

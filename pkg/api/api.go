@@ -187,6 +187,9 @@ func (h *handlers) routes() []route {
 		{"DELETE /io/values/{key...}", h.deleteIoValue},
 		{"POST /io/bulk", h.ioBulk},
 
+		{"GET /networks", h.listNetworks},
+		{"GET /networks/{id}", h.getNetwork},
+
 		{"GET /users/{id}/dependents", h.getUserDependents},
 		{"DELETE /users/{id}", h.deleteUser},
 		{"GET /users/{id}/settings", h.getUserSettings},

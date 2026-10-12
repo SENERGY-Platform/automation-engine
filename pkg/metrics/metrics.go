@@ -34,20 +34,22 @@ import (
 const prefix = "automation_engine_"
 
 type Metrics struct {
-	registry      *prometheus.Registry
-	started       *prometheus.CounterVec
-	ended         *prometheus.CounterVec
-	incidents     *prometheus.CounterVec
-	restarts      *prometheus.CounterVec
-	correlations  *prometheus.CounterVec
-	tasks         *prometheus.CounterVec
-	taskDuration  *prometheus.HistogramVec
-	timerDelay    prometheus.Histogram
-	storageRows   *prometheus.GaugeVec
-	databaseBytes prometheus.Gauge
-	stalled       *prometheus.GaugeVec
-	topActivities *prometheus.GaugeVec
-	stalledAfter  time.Duration
+	registry       *prometheus.Registry
+	started        *prometheus.CounterVec
+	ended          *prometheus.CounterVec
+	incidents      *prometheus.CounterVec
+	restarts       *prometheus.CounterVec
+	correlations   *prometheus.CounterVec
+	tasks          *prometheus.CounterVec
+	taskDuration   *prometheus.HistogramVec
+	timerDelay     prometheus.Histogram
+	storageRows    *prometheus.GaugeVec
+	databaseBytes  prometheus.Gauge
+	stalled        *prometheus.GaugeVec
+	topActivities  *prometheus.GaugeVec
+	networkContact *prometheus.GaugeVec
+	networkBacklog *prometheus.GaugeVec
+	stalledAfter   time.Duration
 	// names and labels of the external-task-worker, read by the cost-calculator (TASK-12)
 	commandSent        *prometheus.CounterVec
 	marshallingLatency *prometheus.HistogramVec
@@ -83,6 +85,10 @@ func New(stalledAfter time.Duration) *Metrics {
 		databaseBytes: prometheus.NewGauge(prometheus.GaugeOpts{Name: prefix + "database_bytes", Help: "size of the database"}),
 		stalled: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: prefix + "stalled_instances", Help: "running instances without element change for the configured time"},
 			[]string{"namespace"}),
+		networkContact: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: prefix + "network_last_contact_seconds", Help: "seconds since the last message of a gateway; alarm on large values (SYNC-12)"},
+			[]string{"network_id"}),
+		networkBacklog: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: prefix + "network_backlog", Help: "unacknowledged synchronisation of a gateway: up in positions of its change stream, down in resources not applied, failed in resources it could not apply"},
+			[]string{"network_id", "direction"}),
 		topActivities: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: prefix + "instance_activities_top", Help: "activity entries of the instances with the most entries"},
 			[]string{"namespace", "instance_id"}),
 		commandSent: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "external_task_worker_task_command_send_count_vec", Help: "device commands sent; process_definition_id carries the deployment id"},
@@ -92,7 +98,7 @@ func New(stalledAfter time.Duration) *Metrics {
 	}
 	m.instanceId, _ = os.Hostname()
 	m.registry.MustRegister(m.started, m.ended, m.incidents, m.restarts, m.correlations, m.tasks, m.taskDuration, m.timerDelay,
-		m.storageRows, m.databaseBytes, m.stalled, m.topActivities, m.commandSent, m.marshallingLatency,
+		m.storageRows, m.databaseBytes, m.stalled, m.topActivities, m.networkContact, m.networkBacklog, m.commandSent, m.marshallingLatency,
 		prometheus.NewGoCollector(), prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
 	return m
 }
@@ -174,7 +180,7 @@ func (this *Metrics) Collect(ctx context.Context, s *store.Store) error {
 		for _, c := range top {
 			this.topActivities.WithLabelValues(c.Namespace, c.InstanceId).Set(float64(c.Count))
 		}
-		return nil
+		return this.collectNetworks(tx)
 	})
 }
 
@@ -192,4 +198,27 @@ func (this *Metrics) Run(ctx context.Context, s *store.Store, interval time.Dura
 		case <-ticker.C:
 		}
 	}
+}
+
+// collectNetworks reports the synchronisation with each gateway (SYNC-12)
+func (this *Metrics) collectNetworks(tx *store.Tx) error {
+	networks, err := tx.ListNetworks(nil)
+	if err != nil {
+		return err
+	}
+	backlog, err := tx.DesiredBacklog()
+	if err != nil {
+		return err
+	}
+	this.networkContact.Reset()
+	this.networkBacklog.Reset()
+	for _, n := range networks {
+		if !n.LastContact.IsZero() {
+			this.networkContact.WithLabelValues(n.Id).Set(time.Since(n.LastContact).Seconds())
+		}
+		this.networkBacklog.WithLabelValues(n.Id, "up").Set(float64(max(n.Latest-n.Acked, 0)))
+		this.networkBacklog.WithLabelValues(n.Id, "down").Set(float64(backlog[n.Id].Pending))
+		this.networkBacklog.WithLabelValues(n.Id, "failed").Set(float64(backlog[n.Id].Failed))
+	}
+	return nil
 }

@@ -379,6 +379,18 @@ type where struct {
 	args       []any
 }
 
+// network filters by the gateway: "cloud" for resources of the cloud, a network id for those of
+// a gateway, empty for all (API-05)
+func (this *where) network(networkId string) {
+	switch networkId {
+	case "":
+	case "cloud":
+		this.add("network_id = ''")
+	default:
+		this.add("network_id = ?", networkId)
+	}
+}
+
 func (this *where) add(condition string, args ...any) {
 	this.conditions = append(this.conditions, condition)
 	this.args = append(this.args, args...)

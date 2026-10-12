@@ -155,6 +155,21 @@ type Config struct {
 	LocalCommandPrefix string `json:"local_command_prefix" env_var:"LOCAL_COMMAND_PREFIX"`
 	// fog: concepts for commands before payload version 3 are refreshed at this interval
 	ConceptRefreshInterval string `json:"concept_refresh_interval" env_var:"CONCEPT_REFRESH_INTERVAL"`
+	// cloud: the broker the gateways reach through mgw-device-cloud-connector; empty disables
+	// deployments to gateways (SYNC-04). Replicas share the messages of the gateways in a group.
+	SyncMqttBroker   string       `json:"sync_mqtt_broker" env_var:"SYNC_MQTT_BROKER"`
+	SyncMqttClientId string       `json:"sync_mqtt_client_id" env_var:"SYNC_MQTT_CLIENT_ID"`
+	SyncMqttUser     string       `json:"sync_mqtt_user" env_var:"SYNC_MQTT_USER"`
+	SyncMqttPassword types.Secret `json:"sync_mqtt_password" env_var:"SYNC_MQTT_PASSWORD"`
+	SyncShareGroup   string       `json:"sync_share_group" env_var:"SYNC_SHARE_GROUP"`
+	// unacknowledged desired state goes again after this time (SYNC-08)
+	SyncResendAfter string `json:"sync_resend_after" env_var:"SYNC_RESEND_AFTER"`
+	// a gateway without status since this time counts as offline
+	SyncOfflineAfter string `json:"sync_offline_after" env_var:"SYNC_OFFLINE_AFTER"`
+	// data of a gateway without contact since this time is removed (SYNC-07)
+	NetworkCleanupMaxAge string `json:"network_cleanup_max_age" env_var:"NETWORK_CLEANUP_MAX_AGE"`
+	// protocol versions of gateways before the own one the cloud serves (SYNC-11)
+	SyncProtocolWindow int `json:"sync_protocol_window" env_var:"SYNC_PROTOCOL_WINDOW"`
 	// upper bound of the database in bytes; 0 is unlimited, in fog 1 GiB, negative unlimited (LONG-07)
 	StorageBudget int64 `json:"storage_budget" env_var:"STORAGE_BUDGET"`
 	// limits of the process-io store per user (LONG-11)
@@ -198,6 +213,11 @@ func Default() Config {
 		MqttClientId:               "automation-engine",
 		LocalCommandPrefix:         "automation-engine-",
 		ConceptRefreshInterval:     "1h",
+		SyncShareGroup:             "automation-engine",
+		SyncResendAfter:            "1m",
+		SyncOfflineAfter:           "15m",
+		NetworkCleanupMaxAge:       "730h",
+		SyncProtocolWindow:         1,
 		Role:                       "engine",
 		EventConsumerGroup:         "automation-engine-events",
 		UserTopic:                  "user",
@@ -277,7 +297,7 @@ func Load(path string) (Config, error) {
 const DefaultGatewayStorageBudget = 1 << 30
 
 func (this Config) validate() error {
-	for _, d := range []string{this.ScriptTimeout, this.TaskTimeout, this.PollInterval, this.StalledAfter, this.ConceptRefreshInterval} {
+	for _, d := range []string{this.ScriptTimeout, this.TaskTimeout, this.PollInterval, this.StalledAfter, this.ConceptRefreshInterval, this.SyncResendAfter, this.SyncOfflineAfter, this.NetworkCleanupMaxAge} {
 		if _, err := time.ParseDuration(d); err != nil {
 			return fmt.Errorf("invalid duration %q: %w", d, err)
 		}
@@ -295,6 +315,9 @@ func (this Config) validate() error {
 	case "parallel", "sequential", "round_robin":
 	default:
 		return fmt.Errorf("group_scheduler must be parallel, sequential or round_robin")
+	}
+	if this.Mode == "fog" && this.SyncMqttBroker != "" {
+		return fmt.Errorf("sync_mqtt_broker is for the cloud; a gateway reaches the cloud through its own broker")
 	}
 	if this.Mode == "fog" && this.MqttBroker == "" {
 		return fmt.Errorf("mode fog needs mqtt_broker, the broker of the gateway")

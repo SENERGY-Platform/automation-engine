@@ -34,13 +34,13 @@ type Instance struct {
 	SnapshotAt  time.Time
 }
 
-const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at, parent_id"
+const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at, parent_id, network_id"
 
 func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 	var state, startVariables string
 	var created, started, lastActivity, snapshotAt int64
 	var ended, restartAt sql.NullInt64
-	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt, &i.ParentId)
+	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt, &i.ParentId, &i.NetworkId)
 	if snapshotAt > 0 {
 		i.SnapshotAt = fromMillis(snapshotAt)
 	}
@@ -55,9 +55,9 @@ func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 }
 
 func (this *Tx) InsertInstance(i Instance) error {
-	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		i.Id, i.Namespace, i.Owner, i.DeploymentId, i.DeploymentName, i.DeploymentVersion, i.ModelId, i.ModelVersion, i.Run, string(i.State), i.EndReason, toJson(i.StartVariables),
-		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.SnapshotSeq, snapshotMillis(i.SnapshotAt), i.ParentId)
+		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.SnapshotSeq, snapshotMillis(i.SnapshotAt), i.ParentId, i.NetworkId)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func (this *Tx) ListInstances(namespace string, options model.InstanceListOption
 	case "running":
 		w.add("state = ?", string(model.StateRunning))
 	case "finished":
-		w.add("state <> ?", string(model.StateRunning))
+		w.add("state NOT IN (?, ?)", string(model.StateRunning), string(model.StatePending))
 	default:
 		w.add("state = ?", options.State)
 	}
@@ -145,6 +145,7 @@ func (this *Tx) ListInstances(namespace string, options model.InstanceListOption
 	if options.Owner != "" {
 		w.add("owner = ?", options.Owner)
 	}
+	w.network(options.NetworkId)
 	order, err := orderBy(options.Sort, map[string]string{
 		"started_at":      "started_at",
 		"ended_at":        "ended_at",

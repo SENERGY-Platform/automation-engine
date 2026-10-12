@@ -26,11 +26,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/cloud"
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/gateway"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
@@ -84,9 +86,11 @@ type Server struct {
 	Broker mqtt.Broker
 	Events *events.Worker
 	// fog: the synchronisation with the cloud (SYNC-09)
-	Sync   *gateway.Agent
-	config configuration.Config
-	logger *slog.Logger
+	Sync *gateway.Agent
+	// cloud: the synchronisation with gateways (SYNC-09)
+	Networks *cloud.Cloud
+	config   configuration.Config
+	logger   *slog.Logger
 }
 
 // Dependencies replace connections to other services, e.g. in tests.
@@ -107,6 +111,8 @@ type Dependencies struct {
 	EventUnmarshaller events.Unmarshaller
 	// fog: the broker of the gateway, e.g. mqtt.NewMemory() in tests
 	Broker mqtt.Broker
+	// cloud: the broker the gateways reach (SYNC-04), e.g. mqtt.NewMemory() in tests
+	SyncBroker mqtt.Broker
 }
 
 func openStore(ctx context.Context, config configuration.Config) (*store.Store, error) {
@@ -318,6 +324,30 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		workerConfig.Local = true
 		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller), e, events.LocalConsumer(broker, 1, logger), logger)
 	}
+	var networks *cloud.Cloud
+	syncBroker := deps.SyncBroker
+	if syncBroker == nil && config.SyncMqttBroker != "" {
+		clientId := config.SyncMqttClientId
+		if clientId == "" {
+			// every replica has its own session; they share the messages of the gateways
+			host, _ := os.Hostname()
+			clientId = "automation-engine-" + host
+		}
+		client, err := mqtt.Connect(ctx, mqtt.Config{Broker: config.SyncMqttBroker, ClientId: clientId, User: config.SyncMqttUser, Password: config.SyncMqttPassword.Value(), CleanSession: true}, logger)
+		if err != nil {
+			s.Close()
+			return nil, err
+		}
+		syncBroker = client
+	}
+	if syncBroker != nil && !fog {
+		settings := cloud.DefaultSettings()
+		settings.EngineVersion, settings.Group, settings.ProtocolWindow = Version(), config.SyncShareGroup, config.SyncProtocolWindow
+		settings.ResendAfter, settings.OfflineAfter = configuration.Duration(config.SyncResendAfter), configuration.Duration(config.SyncOfflineAfter)
+		settings.CleanupMaxAge = configuration.Duration(config.NetworkCleanupMaxAge)
+		networks = cloud.New(settings, s, syncBroker, logger)
+		c.SetNetworks(networks)
+	}
 	var agent *gateway.Agent
 	if fog {
 		settings := gateway.DefaultSettings()
@@ -330,7 +360,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	c.SetLive(hub, liveSettings)
 	return &Server{
 		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, api.Settings{VerifiesTokens: certs != nil, Gateway: fog}), Namespaces: registry, Permissions: service, Metrics: m,
-		Live: hub, ModuleRemover: modules.NewRemover(s, userToken, logger), Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, Sync: agent, config: config, logger: logger,
+		Live: hub, ModuleRemover: modules.NewRemover(s, userToken, logger), Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, Sync: agent, Networks: networks, config: config, logger: logger,
 	}, nil
 }
 
@@ -542,6 +572,11 @@ func (this *Server) Start(ctx context.Context) {
 	go this.Modules.RunWatches(ctx, 5*time.Second)
 	if err := this.startKafka(ctx); err != nil {
 		this.logger.Error("unable to start kafka consumers", "error", err)
+	}
+	if this.Networks != nil {
+		if err := this.Networks.Start(ctx); err != nil {
+			this.logger.Error("unable to subscribe to the gateways", "error", err)
+		}
 	}
 	if err := this.startLocal(ctx); err != nil {
 		this.logger.Error("unable to subscribe at the broker of the gateway", "error", err)

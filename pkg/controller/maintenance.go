@@ -59,8 +59,11 @@ func (this *Controller) ListMaintenanceProcedures(ctx context.Context, token str
 // it; administrate on the instance is needed, as before (SMS-13).
 func (this *Controller) StartMaintenance(ctx context.Context, token string, namespace string, id string, procedure string, input model.MaintenanceStartInput) (model.Instance, error) {
 	err := this.store.Tx(ctx, func(tx *store.Tx) error {
-		_, err := this.readInstance(ctx, tx, token, namespace, id, Administrate)
-		return err
+		inst, err := this.readInstance(ctx, tx, token, namespace, id, Administrate)
+		if err != nil {
+			return err
+		}
+		return inCloud(inst.Instance)
 	})
 	if err != nil {
 		return model.Instance{}, err
@@ -140,6 +143,9 @@ func (this *Controller) UpdateParameters(ctx context.Context, token string, name
 		if err != nil {
 			return err
 		}
+		if err = inCloud(inst.Instance); err != nil {
+			return err
+		}
 		if inst.ParentId != "" {
 			return model.BadRequest("instance %v is a maintenance procedure; change the parameters of %v", id, inst.ParentId)
 		}
@@ -171,6 +177,9 @@ func (this *Controller) UpdateParameters(ctx context.Context, token string, name
 // DeleteVariable removes a variable of an instance (SMS-10).
 func (this *Controller) DeleteVariable(ctx context.Context, token string, namespace string, id string, name string) error {
 	if err := this.checkAll(ctx, token, namespace, []string{id}, Administrate); err != nil {
+		return err
+	}
+	if err := this.localOnly(ctx, id); err != nil {
 		return err
 	}
 	return this.engine.DeleteVariable(ctx, id, name)

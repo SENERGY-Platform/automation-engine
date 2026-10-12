@@ -52,7 +52,9 @@ type Deployment struct {
 	// set when automatic restarts exceeded the restart policy; no automatic restarts until reset (INC-04)
 	FaultySince *time.Time `json:"faulty_since,omitempty"`
 	// the instance that manages the deployment through a module (NS-08)
-	ManagedBy string    `json:"managed_by,omitempty"`
+	ManagedBy string `json:"managed_by,omitempty"`
+	// the gateway that runs the deployment; empty runs it in the cloud (DEP-09)
+	NetworkId string    `json:"network_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -93,6 +95,8 @@ type DeploymentInput struct {
 	UpdateStrategy UpdateStrategy `json:"update_strategy,omitempty"`
 	// set by the engine when a module creates the deployment (NS-08), not through the API
 	ManagedBy string `json:"-"`
+	// the gateway that runs the deployment; empty runs it in the cloud; fixed after creation (DEP-09)
+	NetworkId string `json:"network_id,omitempty"`
 }
 
 type DeploymentListOptions struct {
@@ -103,6 +107,8 @@ type DeploymentListOptions struct {
 	ModelId string   `json:"model_id,omitempty"`
 	Owner   string   `json:"owner,omitempty"`
 	Source  string   `json:"source,omitempty"`
+	// "cloud" lists deployments of the cloud, a network id those of a gateway, empty all (API-05)
+	NetworkId string `json:"network_id,omitempty"`
 }
 
 // StartParameter is a form field of the start event (BPMN-02, RUN-02).

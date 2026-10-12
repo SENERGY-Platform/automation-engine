@@ -400,7 +400,8 @@ func (this *Agent) apply(ctx context.Context, r protocol.Resource) error {
 // descriptions come from the cloud, which reads the device repository (SYNC-06)
 func (this *Agent) applyDeployment(ctx context.Context, id string, spec protocol.DeploymentSpec) error {
 	d, v := spec.Deployment, spec.Version
-	d.Id, v.DeploymentId = id, id
+	// on the gateway the deployment is local
+	d.Id, d.NetworkId, v.DeploymentId = id, "", id
 	if _, ok := this.namespaces.Get(d.Namespace); !ok {
 		return fmt.Errorf("namespace %v is not known on the gateway", d.Namespace)
 	}

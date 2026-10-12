@@ -85,6 +85,8 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 
 ### web-ui und Prozess-Designer
 
+- [ ] **Aufgabe:** Fog-Deployments über dieselbe API mit `network_id` statt über process-fog-deployment und process-sync; Netzübersicht über `GET /networks` und `GET /networks/{id}` mit Soll- und Ist-Zustand je Ressource; Instanzen eines Gateways sind bis zur ersten Meldung `pending` (DEP-09, SYNC-12, SYNC-13, M6). Instanzen eines Gateways lassen sich aus der Cloud starten, stoppen und löschen, nicht neu starten oder in Variablen und Parametern ändern.
+
 - [ ] **Aufgabe:** Umstellung auf die neue API anhand der OpenAPI in `docs/swagger.json` (API-04, API-07), mit Namespaces (NS-09), Update-Dialog mit Strategie (DEP-04), Modellversionen (MOD-05) und Aufbewahrungseinstellungen (HIST-04).
 - [ ] **Aufgabe:** Smart-Service-Designer: Warten auf den Abschluss eines Deployments mit `senergy:messageName` (JavaScript, z. B. `done_event`) statt eines `${...}`-Nachrichtennamens; keine Schleifen im Sequenzfluss in `smart-services` (M5). Start- und Prozedur-Dialoge über `.../parameters`, Status über `status`/`status_message`, Module über `/modules`.
 - [ ] **Aufgabe:** Deploy-Dialog: Werte einzelner Elemente (Eingaben, Eventvariablen, Timer, Startvorgaben) über `parameters` des Deployments (DEP-01, M5).
@@ -110,11 +112,16 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 - [ ] **Aufgabe:** smart-service-engine (Camunda), smart-service-repository mit seiner Mongo, die acht Module-Worker und die `watcher-db` stilllegen, wenn M7 die Daten migriert hat (SMS-01).
 - [ ] **Aufgabe:** event-worker und event-deployment stilllegen; der Event-Worker ist eine Rolle der Engine (`ROLE=event`, M3). Die Engine importiert event-worker nicht mehr, das Repo kann danach archiviert werden.
 - [ ] **Aufgabe:** Kafka-Topic `process-deployment-done` entfernen, sobald event-deployment aus ist; dazu die Altlasten `deployments_v3`, `camunda_incident` und vermutlich `processmodel` prüfen.
-- [ ] **Aufgabe:** process-sync und mgw-process-sync-client archivieren, wenn die Synchronisation in der Engine läuft (M6).
+- [ ] **Aufgabe:** process-sync, mgw-process-sync-client und process-fog-deployment archivieren, sobald kein Gateway mehr mit Camunda läuft. Bis dahin bedient process-sync die alten Gateways, die Engine nur Gateways mit ihr selbst; beide nutzen getrennte Topics unter `processes/{nid}/` (M6, Migration M7).
 - [ ] **Aufgabe:** api-aggregator abschalten.
 - [ ] **Aufgabe:** ArgoCD-Apps `process-engine-prod` und `smart-service-engine-prod` ablösen.
 
 ## Gateway (M6)
+
+### VerneMQ und senergy-platform-connector (`lib/handler/process`)
+
+- [ ] **Aufgabe (Betrieb):** Die Replicas der Engine verbinden sich mit `SYNC_MQTT_BROKER` als Admin-Client: Sie abonnieren `$share/automation-engine/processes/+/state/engine/v1/#` und veröffentlichen auf `processes/{nid}/cmd/engine/v1/...` jedes Netzes. Der Webhook lässt Wildcards und `$share` nur für Admins zu. Jede Replica braucht eine eigene Client-ID (Vorgabe `automation-engine-{hostname}`).
+- [ ] **Frage:** Unterstützt der eingesetzte VerneMQ geteilte Subscriptions mit QoS 1 so, dass eine Nachricht genau einer Replica zugestellt wird? Doppelte Zustellung wäre harmlos (das Protokoll erkennt sie), verlorene holt das Gateway nach.
 
 ### mgw-device-cloud-connector
 

@@ -582,6 +582,12 @@ const docTemplate = `{
                         "description": "source, e.g. generated",
                         "name": "source",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "cloud for deployments of the cloud, a network id for those of a gateway",
+                        "name": "network_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1293,6 +1299,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "started_at, ended_at, created_at, deployment_name or state, with .asc or .desc",
                         "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "cloud for instances of the cloud, a network id for those of a gateway",
+                        "name": "network_id",
                         "in": "query"
                     }
                 ],
@@ -3789,6 +3801,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/networks": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Gateways the caller may read (permissions-v2 topic hubs), with last contact, versions, backlog of the synchronisation in both directions and storage (SYNC-12).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "networks"
+                ],
+                "summary": "gateways the cloud synchronises with",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.Network"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/networks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Per namespace, deployment and instance: the version the cloud desires, the version the gateway applied and its error (SYNC-13).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "networks"
+                ],
+                "summary": "a gateway with the desired and applied state of its resources",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id, the hub id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Network"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/ready": {
             "get": {
                 "tags": [
@@ -4334,6 +4414,10 @@ const docTemplate = `{
                 "namespace": {
                     "type": "string"
                 },
+                "network_id": {
+                    "description": "the gateway that runs the deployment; empty runs it in the cloud (DEP-09)",
+                    "type": "string"
+                },
                 "owner": {
                     "type": "string"
                 },
@@ -4373,6 +4457,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "network_id": {
+                    "description": "the gateway that runs the deployment; empty runs it in the cloud; fixed after creation (DEP-09)",
                     "type": "string"
                 },
                 "owner": {
@@ -4938,6 +5026,10 @@ const docTemplate = `{
                 "namespace": {
                     "type": "string"
                 },
+                "network_id": {
+                    "description": "the gateway that runs the instance; empty is the cloud (API-05)",
+                    "type": "string"
+                },
                 "owner": {
                     "type": "string"
                 },
@@ -4981,13 +5073,15 @@ const docTemplate = `{
                 "running",
                 "completed",
                 "terminated",
-                "incident"
+                "incident",
+                "pending"
             ],
             "x-enum-varnames": [
                 "StateRunning",
                 "StateCompleted",
                 "StateTerminated",
-                "StateIncident"
+                "StateIncident",
+                "StatePending"
             ]
         },
         "model.InstanceStatus": {
@@ -5478,6 +5572,91 @@ const docTemplate = `{
                 "user_deletion": {
                     "description": "what happens to resources of others that depend on a deleted user (SEC-13): reject or cascade",
                     "type": "string"
+                }
+            }
+        },
+        "model.Network": {
+            "type": "object",
+            "properties": {
+                "compatible": {
+                    "description": "false: the gateway speaks a protocol the cloud does not serve; it needs an update (SYNC-11)",
+                    "type": "boolean"
+                },
+                "down_backlog": {
+                    "description": "desired resources the gateway has not applied yet, and those it could not apply",
+                    "type": "integer"
+                },
+                "engine_version": {
+                    "type": "string"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_contact": {
+                    "type": "string"
+                },
+                "online": {
+                    "type": "boolean"
+                },
+                "protocol": {
+                    "type": "integer"
+                },
+                "resources": {
+                    "description": "the desired state per resource; only when reading one network",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NetworkResource"
+                    }
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "storage": {
+                    "description": "storage of the gateway as it reported it (LONG-14)",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "up_backlog": {
+                    "description": "positions of the change stream of the gateway the cloud has not taken yet",
+                    "type": "integer"
+                }
+            }
+        },
+        "model.NetworkResource": {
+            "type": "object",
+            "properties": {
+                "applied_at": {
+                    "type": "string"
+                },
+                "applied_version": {
+                    "type": "integer"
+                },
+                "deleted": {
+                    "type": "boolean"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "sent_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "description": "pending, applied or failed",
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

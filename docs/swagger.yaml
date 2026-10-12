@@ -249,6 +249,10 @@ definitions:
         type: string
       namespace:
         type: string
+      network_id:
+        description: the gateway that runs the deployment; empty runs it in the cloud
+          (DEP-09)
+        type: string
       owner:
         type: string
       retention_days:
@@ -275,6 +279,10 @@ definitions:
       model_version:
         type: integer
       name:
+        type: string
+      network_id:
+        description: the gateway that runs the deployment; empty runs it in the cloud;
+          fixed after creation (DEP-09)
         type: string
       owner:
         type: string
@@ -656,6 +664,9 @@ definitions:
         type: integer
       namespace:
         type: string
+      network_id:
+        description: the gateway that runs the instance; empty is the cloud (API-05)
+        type: string
       owner:
         type: string
       parent_id:
@@ -687,12 +698,14 @@ definitions:
     - completed
     - terminated
     - incident
+    - pending
     type: string
     x-enum-varnames:
     - StateRunning
     - StateCompleted
     - StateTerminated
     - StateIncident
+    - StatePending
   model.InstanceStatus:
     enum:
     - running
@@ -1039,6 +1052,67 @@ definitions:
         description: 'what happens to resources of others that depend on a deleted
           user (SEC-13): reject or cascade'
         type: string
+    type: object
+  model.Network:
+    properties:
+      compatible:
+        description: 'false: the gateway speaks a protocol the cloud does not serve;
+          it needs an update (SYNC-11)'
+        type: boolean
+      down_backlog:
+        description: desired resources the gateway has not applied yet, and those
+          it could not apply
+        type: integer
+      engine_version:
+        type: string
+      failed:
+        type: integer
+      id:
+        type: string
+      last_contact:
+        type: string
+      online:
+        type: boolean
+      protocol:
+        type: integer
+      resources:
+        description: the desired state per resource; only when reading one network
+        items:
+          $ref: '#/definitions/model.NetworkResource'
+        type: array
+      started_at:
+        type: string
+      storage:
+        description: storage of the gateway as it reported it (LONG-14)
+        items:
+          type: integer
+        type: array
+      up_backlog:
+        description: positions of the change stream of the gateway the cloud has not
+          taken yet
+        type: integer
+    type: object
+  model.NetworkResource:
+    properties:
+      applied_at:
+        type: string
+      applied_version:
+        type: integer
+      deleted:
+        type: boolean
+      error:
+        type: string
+      id:
+        type: string
+      kind:
+        type: string
+      sent_at:
+        type: string
+      state:
+        description: pending, applied or failed
+        type: string
+      version:
+        type: integer
     type: object
   model.OwnerInput:
     properties:
@@ -2065,6 +2139,11 @@ paths:
         in: query
         name: source
         type: string
+      - description: cloud for deployments of the cloud, a network id for those of
+          a gateway
+        in: query
+        name: network_id
+        type: string
       produces:
       - application/json
       responses:
@@ -2558,6 +2637,11 @@ paths:
           .asc or .desc
         in: query
         name: sort
+        type: string
+      - description: cloud for instances of the cloud, a network id for those of a
+          gateway
+        in: query
+        name: network_id
         type: string
       produces:
       - application/json
@@ -4111,6 +4195,51 @@ paths:
       summary: validate BPMN against the rules of a namespace
       tags:
       - namespaces
+  /networks:
+    get:
+      description: Gateways the caller may read (permissions-v2 topic hubs), with
+        last contact, versions, backlog of the synchronisation in both directions
+        and storage (SYNC-12).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.Network'
+            type: array
+      security:
+      - Bearer: []
+      summary: gateways the cloud synchronises with
+      tags:
+      - networks
+  /networks/{id}:
+    get:
+      description: 'Per namespace, deployment and instance: the version the cloud
+        desires, the version the gateway applied and its error (SYNC-13).'
+      parameters:
+      - description: network id, the hub id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Network'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: a gateway with the desired and applied state of its resources
+      tags:
+      - networks
   /ready:
     get:
       responses:

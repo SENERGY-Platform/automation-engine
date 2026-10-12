@@ -156,6 +156,31 @@ func (this *Service) Access(ctx context.Context, token jwt.Token, namespace stri
 // HasAdministrate reports whether user holds administrate on a resource in permissions-v2,
 // directly or through a group or role (SEC-11). permissions-v2 evaluates the rights with a
 // token of that user.
+// HubsTopic is the permissions-v2 topic of gateways, written by device-repository (SEC-05).
+const HubsTopic = "hubs"
+
+// CheckHub checks a right of the user on a gateway: rx to read and start, a to deploy and
+// delete (SEC-05).
+func (this *Service) CheckHub(ctx context.Context, token jwt.Token, networkId string, right Right) (bool, error) {
+	if token.IsAdmin() {
+		return true, nil
+	}
+	access, err, code := this.client.CheckPermissionContext(ctx, token.Jwt(), HubsTopic, networkId, right)
+	if code == http.StatusNotFound {
+		return false, nil
+	}
+	return access, codeErr(err, code)
+}
+
+// ReadableHubs lists the gateways the user may read.
+func (this *Service) ReadableHubs(ctx context.Context, token jwt.Token) ([]string, error) {
+	ids, err, code := this.client.ListAccessibleResourceIdsContext(ctx, token.Jwt(), HubsTopic, permmodel.ListOptions{}, Read)
+	if code == http.StatusNotFound {
+		return []string{}, nil
+	}
+	return ids, codeErr(err, code)
+}
+
 func (this *Service) HasAdministrate(ctx context.Context, namespace string, kind model.Kind, id string, user string) (bool, error) {
 	token, err := this.userToken(user)
 	if err != nil {

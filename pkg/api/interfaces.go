@@ -115,6 +115,10 @@ type Controller interface {
 	DeleteIoValue(ctx context.Context, token string, key string) error
 	IoBulk(ctx context.Context, token string, bulk model.IoBulk) ([]model.IoValue, error)
 
+	// the gateways the cloud synchronises with (SYNC-12, SYNC-13)
+	ListNetworks(ctx context.Context, token string) ([]model.Network, error)
+	GetNetwork(ctx context.Context, token string, networkId string) (model.Network, error)
+
 	// GetUserDependents is the dry run of DeleteUser; admins only (SEC-14)
 	GetUserDependents(ctx context.Context, token string, userId string) (model.UserDependents, error)
 	// DeleteUser removes everything a user owns; admins only (SEC-08, SEC-13)

@@ -25,6 +25,8 @@ const (
 	StateCompleted  InstanceState = "completed"
 	StateTerminated InstanceState = "terminated"
 	StateIncident   InstanceState = "incident"
+	// started in the cloud for a gateway that has not reported the instance yet (SYNC-01)
+	StatePending InstanceState = "pending"
 )
 
 // RunCause names why a run was started (RUN-11).
@@ -64,6 +66,8 @@ type Instance struct {
 	RestartAt *time.Time `json:"restart_at,omitempty"`
 	// a maintenance procedure refers to the instance it belongs to (SMS-13)
 	ParentId string `json:"parent_id,omitempty"`
+	// the gateway that runs the instance; empty is the cloud (API-05)
+	NetworkId string `json:"network_id,omitempty"`
 	// summary for users, derived on read (SMS-11)
 	Status        InstanceStatus `json:"status,omitempty"`
 	StatusMessage string         `json:"status_message,omitempty"`
@@ -107,6 +111,8 @@ type InstanceListOptions struct {
 	Ids            []string `json:"ids,omitempty"`
 	Owner          string   `json:"owner,omitempty"`
 	Sort           string   `json:"sort,omitempty"`
+	// "cloud" lists instances of the cloud, a network id those of a gateway, empty all (API-05)
+	NetworkId string `json:"network_id,omitempty"`
 }
 
 type Variable struct {

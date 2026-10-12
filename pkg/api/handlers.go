@@ -284,12 +284,13 @@ func (h *handlers) prepareDeployment(w http.ResponseWriter, r *http.Request) {
 //	@Param		model_id	query		string	false	"model id"
 //	@Param		owner		query		string	false	"owner"
 //	@Param		source		query		string	false	"source, e.g. generated"
+//	@Param		network_id	query		string	false	"cloud for deployments of the cloud, a network id for those of a gateway"
 //	@Success	200			{object}	model.Page[model.Deployment]
 //	@Failure	400			{object}	model.Error
 //	@Router		/namespaces/{ns}/deployments [get]
 func (h *handlers) listDeployments(w http.ResponseWriter, r *http.Request) {
 	q := newQuery(r)
-	options := model.DeploymentListOptions{PageOptions: q.page(), Search: q.str("search"), Sort: q.str("sort"), Ids: q.list("ids"), ModelId: q.str("model_id"), Owner: q.str("owner"), Source: q.str("source")}
+	options := model.DeploymentListOptions{PageOptions: q.page(), Search: q.str("search"), Sort: q.str("sort"), Ids: q.list("ids"), ModelId: q.str("model_id"), Owner: q.str("owner"), Source: q.str("source"), NetworkId: q.str("network_id")}
 	if q.err != nil {
 		writeError(w, q.err)
 		return
@@ -451,6 +452,7 @@ func (h *handlers) getStartParameters(w http.ResponseWriter, r *http.Request) {
 //	@Param		ids				query		string	false	"comma separated instance ids"
 //	@Param		owner			query		string	false	"owner"
 //	@Param		sort			query		string	false	"started_at, ended_at, created_at, deployment_name or state, with .asc or .desc"
+//	@Param		network_id		query		string	false	"cloud for instances of the cloud, a network id for those of a gateway"
 //	@Success	200				{object}	model.Page[model.Instance]
 //	@Failure	400				{object}	model.Error
 //	@Router		/namespaces/{ns}/instances [get]
@@ -458,7 +460,7 @@ func (h *handlers) listInstances(w http.ResponseWriter, r *http.Request) {
 	q := newQuery(r)
 	options := model.InstanceListOptions{
 		PageOptions: q.page(), State: q.str("state"), DeploymentId: q.str("deployment_id"), DeploymentName: q.str("deployment_name"),
-		ModelId: q.str("model_id"), Ids: q.list("ids"), Owner: q.str("owner"), Sort: q.str("sort"),
+		ModelId: q.str("model_id"), Ids: q.list("ids"), Owner: q.str("owner"), Sort: q.str("sort"), NetworkId: q.str("network_id"),
 	}
 	if q.err != nil {
 		writeError(w, q.err)
