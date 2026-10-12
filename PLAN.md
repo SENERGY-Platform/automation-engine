@@ -14,7 +14,7 @@ Die Anforderungen beschreiben ein Programm, nicht eine einzelne Änderung. Sie w
 | M6 | Fog-Betriebsart und Synchronisation | FOG-*, SYNC-*, LONG-06/07/09–11/14/15 | offen |
 | M7 | `deprecated/`-Schicht, Migration aus Camunda, Modell-Umschreibung | API-02/03/08, MIG-* | offen |
 
-Außerhalb dieses Repos und deshalb in keinem Meilenstein: Kong-Umleitung (API-08), web-ui (API-04, NS-09), user-management (SEC-14), platform-connector-lib (DATA-04), cost-calculator (TASK-12), mgw-device-cloud-connector (SYNC-02).
+Was andere Repos, den Betrieb oder die Plattformkonfiguration betrifft, steht gesammelt in `OFFENE-PUNKTE.md` und wird nach den Meilensteinen gemeinsam durchgegangen.
 
 ## M1: Entscheidungen
 
@@ -102,7 +102,6 @@ Abgelehnt: `DefaultPermissions` wörtlich zu nehmen, weil dann eine Freigabe fü
 - Abhängige über Module (NS-08) gibt es erst mit M5; Zeitpläne und IO-Daten beim Löschen eines Nutzers mit M3.
 - Laufen mehrere Replicas `Sync` gleichzeitig, kann in einem seltenen Ablauf (Löschen während einer laufenden Registrierung in einer anderen Replica) ein verwaister Eintrag in permissions-v2 bleiben. Er gewährt keinen Zugriff, weil die Ressource in der Engine fehlt.
 - Listen auf teilbaren Ebenen holen alle freigegebenen IDs aus permissions-v2 und filtern mit `IN`. Bei sehr vielen Freigaben je Nutzer wird das teuer.
-- Außerhalb dieses Repos: user-management muss Vorabprüfung und Löschen aufrufen; Kong und Ladon brauchen Admin-Regeln für `/users` und `PUT`/`DELETE /namespaces`.
 
 ## M3: Entscheidungen (2026-10-12)
 
@@ -136,7 +135,6 @@ Abgelehnt: `DefaultPermissions` wörtlich zu nehmen, weil dann eine Freigabe fü
 - Fog (MQTT statt Kafka für Kommandos und Gerätedaten) folgt mit M6; `MODE=fog` wählt bisher nur die HTTP-Richtlinie.
 - Die Importe aus external-task-worker v0.1.2 und event-worker v1.2.0 bleiben, bis CLI-11 einen stabilen Ort schafft.
 - `PERMISSIONS_KAFKA_TOPIC` ist ohne Wert abgeschaltet; ohne das Signal bleibt ein in permissions-v2 entzogenes Administrationsrecht des Owners dort entzogen. Zugriff in der Engine behält der Owner trotzdem, weil sie den Owner lokal prüft.
-- Außerhalb dieses Repos: der cost-calculator muss die Engine-Pods statt der external-task-worker-Pods abfragen; die Repos event-worker, event-deployment und der Topic `process-deployment-done` werden mit der Umstellung stillgelegt; Kong darf den internen Port nicht routen.
 
 ## Nach M3 (2026-10-12)
 
@@ -178,4 +176,3 @@ Abgelehnt: `DefaultPermissions` wörtlich zu nehmen, weil dann eine Freigabe fü
 - Auf Postgres folgt die Sequenz des Änderungsstroms der Einfügereihenfolge, nicht der Commit-Reihenfolge. Für das Live-Debugging genügt das, weil Weckrufe nur Hinweise sind; die Synchronisation (M6) läuft auf SQLite mit einem Schreiber.
 - Import-Events werden nicht rekonstruiert, solange offen ist, ob Importdaten in Timescale landen (EVT-12). Lange Listen mit festen Einträgen kommen aus Timescale als Map zurück; ein Unmarshalling, das eine Liste erwartet, scheitert dann und zeigt den Fehler an der Auswertung.
 - Wie weit die Rekonstruktion zurückreicht, regelt die Aufbewahrung in Timescale (timescale-rule-manager); die Engine kennt sie nicht.
-- Außerhalb dieses Repos: Kong muss das WebSocket-Upgrade für `/namespaces/*/instances/*/live` durchreichen und Ladon den Pfad freigeben; die web-ui braucht `KEYCLOAK_CERT_URL` in der Engine, wenn sie das Token als erste Nachricht schickt.
