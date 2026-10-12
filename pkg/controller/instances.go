@@ -1,0 +1,271 @@
+/*
+ * Copyright 2026 InfAI (CC SES)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package controller
+
+import (
+	"context"
+	"errors"
+
+	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
+	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+)
+
+func (this *Controller) StartInstance(ctx context.Context, token string, namespace string, input model.StartInstanceInput) (model.Instance, error) {
+	return this.startInstance(ctx, token, namespace, "", input)
+}
+
+func (this *Controller) PutInstance(ctx context.Context, token string, namespace string, id string, input model.StartInstanceInput) (model.Instance, error) {
+	if err := validId(id); err != nil {
+		return model.Instance{}, err
+	}
+	return this.startInstance(ctx, token, namespace, id, input)
+}
+
+func (this *Controller) startInstance(ctx context.Context, token string, namespace string, id string, input model.StartInstanceInput) (model.Instance, error) {
+	user, _, err := this.begin(token, namespace)
+	if err != nil {
+		return model.Instance{}, err
+	}
+	instanceOwner, err := owner(user, input.Owner)
+	if err != nil {
+		return model.Instance{}, err
+	}
+	if input.DeploymentId == "" {
+		return model.Instance{}, model.BadRequest("deployment_id is required")
+	}
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		// starting needs the execute right; on a shared deployment the starting user becomes owner (SEC-12)
+		_, err := this.readDeployment(ctx, tx, token, namespace, input.DeploymentId, Execute, false)
+		if err != nil {
+			return err
+		}
+		if id == "" {
+			return nil
+		}
+		existing, err := tx.GetInstance(id, false)
+		if isNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		// an existing id that the caller cannot see conflicts without details
+		if existing.Namespace != namespace || this.check(ctx, user, namespace, KindInstance, id, existing.Owner, Read) != nil {
+			return model.Conflict("instance id %v is already used", id)
+		}
+		return nil
+	})
+	if err != nil {
+		return model.Instance{}, err
+	}
+	result, _, err := this.engine.StartInstance(ctx, engine.StartRequest{
+		DeploymentId: input.DeploymentId, DeploymentVersion: input.DeploymentVersion, InstanceId: id, Owner: instanceOwner, Variables: input.Variables,
+	})
+	return result, err
+}
+
+func (this *Controller) readInstance(ctx context.Context, tx *store.Tx, token string, namespace string, id string, right Right) (store.Instance, error) {
+	user, _, err := this.begin(token, namespace)
+	if err != nil {
+		return store.Instance{}, err
+	}
+	inst, err := tx.GetInstance(id, false)
+	if err != nil {
+		return inst, err
+	}
+	if err = inNamespace(inst.Namespace, namespace, KindInstance, id); err != nil {
+		return inst, err
+	}
+	return inst, this.check(ctx, user, namespace, KindInstance, id, inst.Owner, right)
+}
+
+func (this *Controller) GetInstance(ctx context.Context, token string, namespace string, id string) (result model.Instance, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		inst, err := this.readInstance(ctx, tx, token, namespace, id, Read)
+		result = inst.Instance
+		return err
+	})
+	return result, err
+}
+
+func (this *Controller) ListInstances(ctx context.Context, token string, namespace string, options model.InstanceListOptions) (result model.Page[model.Instance], err error) {
+	user, _, err := this.begin(token, namespace)
+	if err != nil {
+		return result, err
+	}
+	access, err := this.auth.Access(ctx, user, namespace, KindInstance, Read)
+	if err != nil {
+		return result, err
+	}
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		result, err = tx.ListInstances(namespace, options, access)
+		return err
+	})
+	return result, err
+}
+
+// checkAll verifies a right on all instances before anything changes
+func (this *Controller) checkAll(ctx context.Context, token string, namespace string, ids []string, right Right) error {
+	if len(ids) == 0 {
+		return model.BadRequest("ids are required")
+	}
+	return this.store.Tx(ctx, func(tx *store.Tx) error {
+		for _, id := range ids {
+			if _, err := this.readInstance(ctx, tx, token, namespace, id, right); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// DeleteInstances removes instances with history, variables, incidents and runtime state
+// (HIST-03); a running instance is removed as well.
+func (this *Controller) DeleteInstances(ctx context.Context, token string, namespace string, ids []string) error {
+	if err := this.checkAll(ctx, token, namespace, ids, Administrate); err != nil {
+		return err
+	}
+	return this.store.Tx(ctx, func(tx *store.Tx) error {
+		for _, id := range ids {
+			// the lock waits for a running step of the instance
+			if _, err := tx.GetInstance(id, true); err != nil {
+				if isNotFound(err) {
+					continue
+				}
+				return err
+			}
+			if err := tx.DeleteInstance(id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (this *Controller) StopInstances(ctx context.Context, token string, namespace string, ids []string) error {
+	if err := this.checkAll(ctx, token, namespace, ids, Write); err != nil {
+		return err
+	}
+	var errs []error
+	for _, id := range ids {
+		err := this.engine.StopInstance(ctx, id, "stopped")
+		if err != nil && !errors.Is(err, model.ErrConflict) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (this *Controller) RestartInstance(ctx context.Context, token string, namespace string, id string, input model.RestartInput) (model.Instance, error) {
+	if err := this.checkAll(ctx, token, namespace, []string{id}, Write); err != nil {
+		return model.Instance{}, err
+	}
+	return this.engine.RestartInstance(ctx, id, input.DeploymentVersion, model.CauseRestart)
+}
+
+func (this *Controller) ListRuns(ctx context.Context, token string, namespace string, id string) (result []model.Run, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		if _, err := this.readInstance(ctx, tx, token, namespace, id, Read); err != nil {
+			return err
+		}
+		result, err = tx.ListRuns(id)
+		return err
+	})
+	return result, err
+}
+
+func (this *Controller) GetVariables(ctx context.Context, token string, namespace string, id string) (result []model.Variable, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		if _, err := this.readInstance(ctx, tx, token, namespace, id, Read); err != nil {
+			return err
+		}
+		result, err = tx.GetVariables(id)
+		return err
+	})
+	return result, err
+}
+
+func (this *Controller) SetVariable(ctx context.Context, token string, namespace string, id string, name string, value any) error {
+	if err := this.checkAll(ctx, token, namespace, []string{id}, Write); err != nil {
+		return err
+	}
+	return this.engine.SetVariable(ctx, id, name, value)
+}
+
+func (this *Controller) ListActivities(ctx context.Context, token string, namespace string, id string, options model.ActivityListOptions) (result model.ActivityPage, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		inst, err := this.readInstance(ctx, tx, token, namespace, id, Read)
+		if err != nil {
+			return err
+		}
+		result.Items, err = tx.ListActivities(id, options)
+		// entries before the oldest one kept were evicted (LONG-03)
+		result.Truncated = inst.ActivityMinSeq > 1 && options.AfterSeq < inst.ActivityMinSeq-1
+		return err
+	})
+	return result, err
+}
+
+func (this *Controller) ListElementStats(ctx context.Context, token string, namespace string, id string, run int) (result []model.ElementStats, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		if _, err := this.readInstance(ctx, tx, token, namespace, id, Read); err != nil {
+			return err
+		}
+		result, err = tx.ListElementStats(id, run)
+		return err
+	})
+	return result, err
+}
+
+func (this *Controller) ListIncidents(ctx context.Context, token string, namespace string, options model.IncidentListOptions) (result model.Page[model.Incident], err error) {
+	user, _, err := this.begin(token, namespace)
+	if err != nil {
+		return result, err
+	}
+	access, err := this.auth.Access(ctx, user, namespace, KindInstance, Read)
+	if err != nil {
+		return result, err
+	}
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		result, err = tx.ListIncidents(namespace, options, access)
+		return err
+	})
+	return result, err
+}
+
+// CorrelateMessage delivers a message to the caller's instances and deployments; admins, e.g.
+// the event-worker with client credentials, correlate across owners or for one owner (EVT-01).
+func (this *Controller) CorrelateMessage(ctx context.Context, token string, input model.MessageInput) (model.CorrelationResult, error) {
+	user, err := this.parseToken(token)
+	if err != nil {
+		return model.CorrelationResult{}, err
+	}
+	if input.InstanceId != "" {
+		if err = validId(input.InstanceId); err != nil {
+			return model.CorrelationResult{}, err
+		}
+	}
+	filter := input.Owner
+	if !user.IsAdmin() {
+		if input.Owner != "" && input.Owner != user.GetUserId() {
+			return model.CorrelationResult{}, model.Forbidden("only admins may correlate for another owner")
+		}
+		filter = user.GetUserId()
+	}
+	return this.engine.Correlate(ctx, engine.CorrelationRequest{MessageInput: input, OwnerFilter: filter})
+}

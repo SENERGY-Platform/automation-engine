@@ -1,0 +1,443 @@
+/*
+ * Copyright 2026 InfAI (CC SES)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package engine
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/SENERGY-Platform/automation-engine/pkg/timer"
+	"github.com/google/uuid"
+)
+
+// ProcessDue fires due timers and start timers and executes due jobs. Every timer and job is
+// handled in its own transaction that locks the instance (or the deployment for start timers)
+// and checks that the timer or job still exists; a second replica finds nothing to do, so
+// each fires exactly once (RUN-06, OPS-01).
+func (this *Engine) ProcessDue(ctx context.Context) error {
+	now := this.now()
+	return errors.Join(
+		this.fireStartTimers(ctx, now),
+		this.fireSchedules(ctx, now),
+		this.fireTimers(ctx, now),
+		this.runJobs(ctx, now),
+		this.processRestarts(ctx, now),
+		this.processNotifications(ctx, now),
+		this.housekeeping(ctx, now),
+	)
+}
+
+func (this *Engine) fireTimers(ctx context.Context, now time.Time) error {
+	var due []store.Subscription
+	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+		due, err = tx.DueTimers(now, this.config.BatchSize)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, candidate := range due {
+		err = this.store.Tx(ctx, func(tx *store.Tx) error {
+			inst, err := tx.GetInstance(candidate.InstanceId, true)
+			if err != nil {
+				return ignoreNotFound(err)
+			}
+			s, err := tx.GetSubscription(candidate.Id)
+			if err != nil || s == nil || inst.State != model.StateRunning {
+				return err
+			}
+			r, err := this.newRunner(tx, &inst)
+			if err != nil {
+				return err
+			}
+			if s.DueAt != nil {
+				this.metrics.TimerDelay(now.Sub(*s.DueAt))
+			}
+			data := map[string]any{"due": s.DueAt, "definition": s.Definition}
+			if err = r.trigger(*s, nil, nil, model.ActivityTimerFired, data); err != nil {
+				if err = r.handle(err); err != nil {
+					return err
+				}
+			}
+			return r.finish()
+		})
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+func (this *Engine) fireStartTimers(ctx context.Context, now time.Time) error {
+	var due []store.StartEvent
+	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+		due, err = tx.DueStartTimers(now, this.config.BatchSize)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, candidate := range due {
+		err = this.store.Tx(ctx, func(tx *store.Tx) error {
+			deployment, err := tx.GetDeployment(candidate.DeploymentId, true)
+			if err != nil {
+				return ignoreNotFound(err)
+			}
+			current, err := tx.GetStartEvent(candidate.DeploymentId, candidate.ElementId)
+			if err != nil {
+				return ignoreNotFound(err)
+			}
+			if current.DueAt == nil || current.DueAt.After(now) {
+				return nil
+			}
+			proc, err := this.process(tx, deployment.Id, current.Version)
+			if err != nil {
+				return err
+			}
+			start := proc.Element(current.ElementId)
+			if start == nil || start.Timer == nil {
+				return tx.SetStartEventDue(deployment.Id, current.ElementId, nil)
+			}
+			// missed cycles fire once, not once per missed cycle (LONG-12)
+			next, err := this.startTimerDue(start, now)
+			if err != nil || start.Timer.Kind != timer.KindCycle {
+				next = nil
+			}
+			if err = tx.SetStartEventDue(deployment.Id, current.ElementId, next); err != nil {
+				return err
+			}
+			_, _, err = this.startInstance(tx, StartRequest{DeploymentId: deployment.Id, DeploymentVersion: current.Version, Owner: deployment.Owner, StartElementId: current.ElementId}, model.CauseStart)
+			var modelErr *model.Error
+			if errors.As(err, &modelErr) && modelErr.Kind != model.KindInternal && modelErr.Kind != model.KindUnavailable {
+				this.logger.Warn("timer start failed", "deployment_id", deployment.Id, "element_id", current.ElementId, "error", err)
+				return tx.SetStartEventDue(deployment.Id, current.ElementId, next)
+			}
+			return err
+		})
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+func ignoreNotFound(err error) error {
+	if errors.Is(err, model.ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+// claimed is a job claimed by this replica for one execution
+type claimed struct {
+	job  store.Job
+	task Task
+}
+
+func (this *Engine) runJobs(ctx context.Context, now time.Time) error {
+	var candidates []store.Job
+	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+		candidates, err = tx.JobCandidates(now, this.config.BatchSize)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	var errs []error
+	var claims []claimed
+	for _, candidate := range candidates {
+		c, err := this.claim(ctx, candidate.Id, now)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if c != nil {
+			claims = append(claims, *c)
+		}
+	}
+	var wg sync.WaitGroup
+	var mux sync.Mutex
+	for _, c := range claims {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := this.execute(ctx, c); err != nil {
+				mux.Lock()
+				errs = append(errs, err)
+				mux.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+// claim locks a due job for one execution; an expired lock counts as failed attempt (TASK-07)
+func (this *Engine) claim(ctx context.Context, jobId string, now time.Time) (result *claimed, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		job, err := tx.GetJob(jobId)
+		if err != nil || job == nil {
+			return err
+		}
+		inst, err := tx.GetInstance(job.InstanceId, true)
+		if err != nil {
+			return ignoreNotFound(err)
+		}
+		// re-read under the instance lock
+		job, err = tx.GetJob(jobId)
+		if err != nil || job == nil || inst.State != model.StateRunning {
+			return err
+		}
+		switch {
+		case job.State == store.JobPending && !job.DueAt.After(now):
+		case job.State != store.JobPending && !job.LockUntil.After(now):
+			if result, handled, err := this.timeoutResult(ctx, tx, inst, *job); err != nil || handled {
+				if err != nil {
+					return err
+				}
+				r, err := this.newRunner(tx, &inst)
+				if err != nil {
+					return err
+				}
+				if err = r.completeTask(*job, result.Output); err != nil {
+					if err = r.handle(err); err != nil {
+						return err
+					}
+				}
+				return r.finish()
+			}
+			r, err := this.newRunner(tx, &inst)
+			if err != nil {
+				return err
+			}
+			retry, err := r.failJob(job, fmt.Sprintf("task timed out after %v", job.Timeout), false)
+			if err != nil {
+				return err
+			}
+			if err = r.finish(); err != nil || !retry {
+				return err
+			}
+			// the retry is due after the backoff
+			return nil
+		default:
+			return nil
+		}
+		version, err := this.version(tx, inst.DeploymentId, inst.DeploymentVersion)
+		if err != nil {
+			return err
+		}
+		job.State = store.JobRunning
+		job.Attempt++
+		job.LockOwner = this.config.ReplicaId + "/" + uuid.NewString()
+		job.LockUntil = now.Add(job.Timeout)
+		if err = tx.SaveJob(*job); err != nil {
+			return err
+		}
+		result = &claimed{job: *job, task: taskOf(*job, inst, version)}
+		return nil
+	})
+	return result, err
+}
+
+func taskOf(job store.Job, inst store.Instance, version *cachedVersion) Task {
+	attributes := map[string]string{}
+	if element := version.process.Element(job.ElementId); element != nil {
+		attributes = element.Attributes
+	}
+	var selection *model.Selection
+	if s, ok := version.selections[job.ElementId]; ok {
+		selection = &s
+	}
+	return Task{
+		JobId: job.Id, InstanceId: inst.Id, Run: inst.Run, Namespace: inst.Namespace, DeploymentId: inst.DeploymentId,
+		ElementId: job.ElementId, TaskType: job.TaskType, Owner: inst.Owner, Input: job.Input, Attributes: attributes,
+		Attempt: job.Attempt, Retries: job.Retries, Timeout: job.Timeout, Selection: selection,
+	}
+}
+
+// timeoutResult asks the task type for a result of a timed out asynchronous task
+func (this *Engine) timeoutResult(ctx context.Context, tx *store.Tx, inst store.Instance, job store.Job) (*TaskResult, bool, error) {
+	taskType, ok := this.taskType(job.TaskType)
+	if !ok {
+		return nil, false, nil
+	}
+	handler, ok := taskType.(TimeoutHandler)
+	if !ok || job.Attempt <= job.Retries {
+		// only the last attempt ends with a partial result; earlier ones are retried
+		return nil, false, nil
+	}
+	version, err := this.version(tx, inst.DeploymentId, inst.DeploymentVersion)
+	if err != nil {
+		return nil, false, err
+	}
+	result, err := handler.OnTimeout(ctx, tx, taskOf(job, inst, version))
+	if err != nil || result == nil {
+		return nil, false, err
+	}
+	return result, true, nil
+}
+
+func (this *Engine) execute(ctx context.Context, c claimed) error {
+	taskType, ok := this.taskType(c.job.TaskType)
+	if !ok {
+		return this.finishJob(ctx, c.job.Id, c.job.LockOwner, nil, fmt.Errorf("task type %q is not available", c.job.TaskType), false)
+	}
+	taskCtx, cancel := context.WithTimeout(ctx, c.job.Timeout)
+	defer cancel()
+	started := time.Now()
+	result, err := safeExecute(taskCtx, taskType, c.task)
+	outcome := "completed"
+	switch {
+	case err != nil:
+		outcome = "failed"
+	case result.Async:
+		outcome = "async"
+	}
+	this.metrics.Task(c.job.TaskType, outcome, time.Since(started))
+	if ctx.Err() != nil {
+		// the engine shuts down; the lock expires and the job is retried
+		return nil
+	}
+	if err == nil && result.Async {
+		return this.store.Tx(ctx, func(tx *store.Tx) error {
+			job, err := tx.GetJob(c.job.Id)
+			if err != nil || job == nil || job.LockOwner != c.job.LockOwner || job.State != store.JobRunning {
+				return err
+			}
+			job.State = store.JobWaiting
+			return tx.SaveJob(*job)
+		})
+	}
+	return this.finishJob(ctx, c.job.Id, c.job.LockOwner, result.Output, err, false)
+}
+
+func safeExecute(ctx context.Context, taskType TaskType, task Task) (result TaskResult, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("task type panicked: %v", p)
+		}
+	}()
+	return taskType.Execute(ctx, task)
+}
+
+// finishJob completes or fails a job. lockOwner identifies the execution; an answer for
+// another execution or for a job that no longer exists is ignored, so every task is completed
+// at most once (TASK-11). external answers (CompleteTask, FailTask) skip the owner check.
+func (this *Engine) finishJob(ctx context.Context, jobId string, lockOwner string, output map[string]any, taskErr error, external bool) (err error) {
+	return this.store.Tx(ctx, func(tx *store.Tx) error {
+		job, err := tx.GetJob(jobId)
+		if err != nil || job == nil {
+			return err
+		}
+		inst, err := tx.GetInstance(job.InstanceId, true)
+		if err != nil {
+			return ignoreNotFound(err)
+		}
+		job, err = tx.GetJob(jobId)
+		if err != nil || job == nil || inst.State != model.StateRunning || job.State == store.JobPending {
+			return err
+		}
+		if !external && job.LockOwner != lockOwner {
+			return nil
+		}
+		r, err := this.newRunner(tx, &inst)
+		if err != nil {
+			return err
+		}
+		if taskErr != nil {
+			_, err = r.failJob(job, taskErr.Error(), IsPermanent(taskErr))
+		} else {
+			err = r.completeTask(*job, output)
+		}
+		if err != nil {
+			if err = r.handle(err); err != nil {
+				return err
+			}
+		}
+		return r.finish()
+	})
+}
+
+// CompleteTask delivers the answer of an asynchronous task; false if the task is no longer
+// waiting, e.g. because the answer is a duplicate or late.
+func (this *Engine) CompleteTask(ctx context.Context, jobId string, output map[string]any) (bool, error) {
+	return this.answer(ctx, jobId, output, nil)
+}
+
+// FailTask reports the failure of an asynchronous task; it is retried or becomes an incident.
+func (this *Engine) FailTask(ctx context.Context, jobId string, message string) (bool, error) {
+	return this.answer(ctx, jobId, nil, errors.New(message))
+}
+
+func (this *Engine) answer(ctx context.Context, jobId string, output map[string]any, taskErr error) (bool, error) {
+	var exists bool
+	err := this.store.Tx(ctx, func(tx *store.Tx) error {
+		job, err := tx.GetJob(jobId)
+		exists = job != nil && job.State != store.JobPending
+		return err
+	})
+	if err != nil || !exists {
+		return false, err
+	}
+	return true, this.finishJob(ctx, jobId, "", output, taskErr, true)
+}
+
+// The job is retried after a backoff while retries are left, then the failure becomes an incident.
+// failJob counts a failed attempt; a permanent error skips the remaining retries
+func (this *runner) failJob(job *store.Job, message string, permanent bool) (retry bool, err error) {
+	element := this.proc.Element(job.ElementId)
+	if element == nil {
+		element = &bpmn.Element{Id: job.ElementId}
+	}
+	if err = this.tx.RecordElementError(this.inst.Id, this.inst.Run, job.ElementId, message, this.now); err != nil {
+		return false, err
+	}
+	if err = this.log(model.ActivityTaskFailed, element, map[string]any{"job_id": job.Id, "attempt": job.Attempt, "error": message}); err != nil {
+		return false, err
+	}
+	if job.Attempt > job.Retries || permanent {
+		return false, this.incident(job.ElementId, message)
+	}
+	job.State = store.JobPending
+	job.DueAt = this.now.Add(this.e.config.TaskRetryBackoff * time.Duration(max(job.Attempt, 1)))
+	job.LockOwner = ""
+	job.LockUntil = time.Time{}
+	job.LastError = message
+	this.scheduled = true
+	return true, this.tx.SaveJob(*job)
+}
+
+// housekeeping removes old message receipts and returns free pages to the file system in
+// small steps, without a batch window (LONG-05, LONG-06)
+func (this *Engine) housekeeping(ctx context.Context, now time.Time) error {
+	this.housekeepingMux.Lock()
+	if now.Sub(this.lastHousekeeping) < this.config.HousekeepingInterval {
+		this.housekeepingMux.Unlock()
+		return nil
+	}
+	this.lastHousekeeping = now
+	this.housekeepingMux.Unlock()
+	err := this.store.Tx(ctx, func(tx *store.Tx) error {
+		_, err := tx.PurgeReceipts(now.Add(-this.config.ReceiptRetention))
+		return err
+	})
+	return errors.Join(err, this.enforceRetention(ctx, now), this.trimModelVersions(ctx), this.store.Vacuum(ctx, 256))
+}

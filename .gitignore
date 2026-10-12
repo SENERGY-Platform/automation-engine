@@ -1,2 +1,5 @@
 .idea
 automation-engine
+*.db
+*.db-wal
+*.db-shm

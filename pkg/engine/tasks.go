@@ -1,0 +1,100 @@
+/*
+ * Copyright 2026 InfAI (CC SES)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package engine
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+)
+
+// TaskType executes service tasks of one type inside the engine (TASK-00). New types are
+// code in the engine, not a network protocol; which types a model may use is decided by its
+// namespace.
+type TaskType interface {
+	Execute(ctx context.Context, task Task) (TaskResult, error)
+}
+
+// TaskTypeFunc adapts a function to TaskType.
+type TaskTypeFunc func(ctx context.Context, task Task) (TaskResult, error)
+
+func (this TaskTypeFunc) Execute(ctx context.Context, task Task) (TaskResult, error) {
+	return this(ctx, task)
+}
+
+// Task is one execution attempt of a service task.
+type Task struct {
+	JobId        string
+	InstanceId   string
+	Run          int
+	Namespace    string
+	DeploymentId string
+	ElementId    string
+	TaskType     string
+	// the owner of the instance; task types act with the owner's rights (SEC-06)
+	Owner string
+	// the local variables of the task after its input mappings
+	Input map[string]any
+	// senergy:* attributes of the element
+	Attributes map[string]string
+	// 1 for the first execution; Attempt > Retries is the last one
+	Attempt int
+	Retries int
+	// the device selection of the element in the deployment (DEP-05), nil if there is none
+	Selection *model.Selection
+	// the engine cancels ctx after this duration, and an asynchronous task fails after it (TASK-07)
+	Timeout time.Duration
+}
+
+// TaskResult completes a task with output variables, or announces an asynchronous answer
+// which the task type delivers later through Engine.CompleteTask or Engine.FailTask.
+type TaskResult struct {
+	// local variables of the task, e.g. "result" (TASK-10); the output mappings read them
+	Output map[string]any
+	Async  bool
+}
+
+// PermanentError fails a task without retries, e.g. an incident the process raises itself.
+type PermanentError struct {
+	Message string
+}
+
+func (this *PermanentError) Error() string {
+	return this.Message
+}
+
+func IsPermanent(err error) bool {
+	var p *PermanentError
+	return errors.As(err, &p)
+}
+
+// TimeoutHandler is implemented by task types that can still produce a result when an
+// asynchronous task times out, e.g. a device group command with partial results (TASK-06).
+// A nil result lets the engine count the timeout as failed attempt. It runs inside the
+// transaction of the engine and must use tx instead of opening its own.
+type TimeoutHandler interface {
+	OnTimeout(ctx context.Context, tx *store.Tx, task Task) (*TaskResult, error)
+}
+
+// JobDefaults is implemented by task types that derive retries or a timeout from the task
+// input, e.g. the retries of a device command payload; element attributes take precedence.
+type JobDefaults interface {
+	Defaults(input map[string]any) (retries *int, timeout *time.Duration)
+}
