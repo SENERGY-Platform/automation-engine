@@ -108,6 +108,10 @@ func (this *Marshaller) path(desc MessageDesc) (string, error) {
 	return paths[0], nil
 }
 
+// ErrUnavailable marks an evaluation that failed because device-repository could not answer;
+// the message is read again instead of notifying the owner, as the event-worker did.
+var ErrUnavailable = errors.New("device-repository unavailable")
+
 // CachedDeviceRepo reads characteristics, concepts, functions and aspect nodes with a client
 // token and caches them; cache invalidation signals of service-commons clear the entries.
 type CachedDeviceRepo struct {
@@ -135,7 +139,11 @@ func NewCachedDeviceRepo(url string, token auth.TokenSource, duration time.Durat
 
 func cached[T any](this *CachedDeviceRepo, key string, get func() (T, error, int), valid func(T) bool) (T, error) {
 	return cache.Use(this.cache, key, func() (T, error) {
-		result, err, _ := get()
+		result, err, code := get()
+		// the client reports transport and decoding failures as internal error as well
+		if err != nil && code >= 500 {
+			err = fmt.Errorf("%w: %v", ErrUnavailable, err)
+		}
 		return result, err
 	}, func(value T) error {
 		if !valid(value) {

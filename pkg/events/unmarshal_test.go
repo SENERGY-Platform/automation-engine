@@ -286,6 +286,38 @@ func TestDeviceRepoCachesAnswers(t *testing.T) {
 	}
 }
 
+// An unavailable device-repository makes the message to be read again; a rejected request is
+// final and reaches the owner as notification.
+func TestDeviceRepoMarksOnlyServerErrorsAsUnavailable(t *testing.T) {
+	cases := []struct {
+		status      int
+		unavailable bool
+	}{{http.StatusNotFound, false}, {http.StatusBadRequest, false}, {http.StatusInternalServerError, true}, {http.StatusServiceUnavailable, true}}
+	for _, c := range cases {
+		t.Run(strconv.Itoa(c.status), func(t *testing.T) {
+			repo := repository(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(c.status)
+				_, _ = w.Write([]byte("no"))
+			})
+			_, err := repo.GetAspectNode("urn:aspect:" + strconv.Itoa(c.status))
+			if err == nil || errors.Is(err, events.ErrUnavailable) != c.unavailable {
+				t.Errorf("%v", err)
+			}
+		})
+	}
+	t.Run("unreachable", func(t *testing.T) {
+		server := httptest.NewServer(http.NotFoundHandler())
+		server.Close()
+		repo, err := events.NewCachedDeviceRepo(server.URL, auth.Static("Bearer client"), time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = repo.GetAspectNode("urn:aspect:1"); !errors.Is(err, events.ErrUnavailable) {
+			t.Errorf("%v", err)
+		}
+	})
+}
+
 // The aspects of one event description are read in one request; an id device-repository does
 // not know is reported rather than dropped.
 func TestDeviceRepoReadsAspectNodeLists(t *testing.T) {

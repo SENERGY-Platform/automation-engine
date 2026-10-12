@@ -278,6 +278,9 @@ func (this *Worker) process(ctx context.Context, d model.EventDescription, paylo
 		attribute.String("element_id", d.ElementId), attribute.String("message_id", messageId))
 	defer func() { tracing.End(span, err) }()
 	evaluation, err := this.evaluator.Evaluate(d, payload)
+	if errors.Is(err, ErrUnavailable) {
+		return err
+	}
 	if err != nil {
 		this.notifyError(ctx, d, err)
 		return nil

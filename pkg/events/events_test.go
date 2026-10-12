@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"reflect"
@@ -155,12 +156,16 @@ func TestDescribeExpandsGroupsDevicesAndImports(t *testing.T) {
 	}
 }
 
-// fakeUnmarshaller reads the field value of the message, or fails for "broken"
+// fakeUnmarshaller reads the field value of the message, fails for "broken" and finds
+// device-repository unavailable for "unavailable"
 type fakeUnmarshaller struct{}
 
 func (fakeUnmarshaller) Unmarshal(desc events.MessageDesc) (any, error) {
 	if desc.Message["value"] == "broken" {
 		return nil, errors.New("cannot unmarshal")
+	}
+	if desc.Message["value"] == "unavailable" {
+		return nil, fmt.Errorf("%w: connection refused", events.ErrUnavailable)
 	}
 	return desc.Message["value"], nil
 }
@@ -267,10 +272,14 @@ func (this *env) sync() {
 
 func (this *env) send(offset int64, deviceId string, value any, at time.Time) {
 	this.t.Helper()
-	raw, _ := json.Marshal(map[string]any{"device_id": deviceId, "service_id": "urn:infai:ses:service:event", "value": map[string]any{"value": value}})
-	if err := this.worker.Handle(ctx, events.Message{Topic: "urn_infai_ses_service_event", Partition: 0, Offset: offset, Value: raw, Time: at}); err != nil {
+	if err := this.handle(offset, deviceId, value, at); err != nil {
 		this.t.Fatal(err)
 	}
+}
+
+func (this *env) handle(offset int64, deviceId string, value any, at time.Time) error {
+	raw, _ := json.Marshal(map[string]any{"device_id": deviceId, "service_id": "urn:infai:ses:service:event", "value": map[string]any{"value": value}})
+	return this.worker.Handle(ctx, events.Message{Topic: "urn_infai_ses_service_event", Partition: 0, Offset: offset, Value: raw, Time: at})
 }
 
 func (this *env) count(instanceId string) any {
@@ -365,6 +374,29 @@ func TestEvaluationErrorsAreNotifiedOncePerWindow(t *testing.T) {
 	})
 	if len(notifications) != 1 || notifications[0].UserId != "alice" {
 		t.Fatalf("one notification to the owner per window (EVT-07): %+v", notifications)
+	}
+}
+
+func TestUnavailableDeviceRepositoryRereadsTheMessageWithoutNotifying(t *testing.T) {
+	e := newEnv(t)
+	d, err := e.srv.Controller.CreateDeployment(ctx, alice, "processes", model.DeploymentInput{Xml: eventProcess(), Selections: map[string]model.Selection{"reading": {DeviceId: "d1", ServiceId: "urn:infai:ses:service:event"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = e.srv.Controller.StartInstance(ctx, alice, "processes", model.StartInstanceInput{DeploymentId: d.Id}); err != nil {
+		t.Fatal(err)
+	}
+	e.sync()
+	if err = e.handle(1, "d1", "unavailable", time.Now()); !errors.Is(err, events.ErrUnavailable) {
+		t.Fatalf("a qos 1 message is not acknowledged while device-repository is unavailable: %v", err)
+	}
+	var notifications []store.Notification
+	_ = e.srv.Store.Tx(ctx, func(tx *store.Tx) (err error) {
+		notifications, err = tx.DueNotifications(time.Now().Add(time.Hour), 100)
+		return err
+	})
+	if len(notifications) != 0 {
+		t.Fatalf("an outage of device-repository is not the owner's problem: %+v", notifications)
 	}
 }
 

@@ -247,3 +247,4 @@ Grundlage sind die Analysen der acht Worker, von `smart-service-module-worker-li
 - `persistData` bleibt nur als JSON-Text wirksam, ein Boolean gilt wie beim Worker als `false`.
 - Gerätekommandos: Eine Antwort von device-repository außer 2xx ist ein Fehler mit Pfad und Status. Bisher wurde der Inhalt trotzdem gelesen, und es folgten Folgefehler wie ein leeres Gerät oder „service not found“.
 - Gerätekommandos mit `prefer_event`: Liefert timescale-wrapper weniger Abfragen oder Spalten zurück als angefragt, ist das ein Fehler. Bisher lief der Zugriff in einen Panic.
+- Event-Rolle: Ist device-repository nicht erreichbar (5xx oder Transportfehler), wird eine QoS-1-Nachricht erneut gelesen, und der Owner wird nicht benachrichtigt. Das entspricht dem event-worker. Seit M3 hatte die Engine stattdessen benachrichtigt und die Nachricht verworfen.
