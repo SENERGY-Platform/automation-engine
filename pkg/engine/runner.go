@@ -439,6 +439,9 @@ func (this *runner) execute(t *store.Token) error {
 		if err := this.applyInputs(element, t); err != nil {
 			return err
 		}
+		if consumed, err := this.consumeBuffered(element, t); err != nil || consumed {
+			return err
+		}
 		if err := this.subscribe(element, t, ""); err != nil {
 			return err
 		}
@@ -463,6 +466,51 @@ func (this *runner) execute(t *store.Token) error {
 	}
 }
 
+// messageName is the name a message event waits for: the name of senergy:messageName evaluated
+// in the scope of the token, or the literal or engine-assigned name
+func (this *runner) messageName(element *bpmn.Element, t *store.Token) (string, error) {
+	if element.Message == nil || element.Message.Expression == "" {
+		return messageName(this.inst.DeploymentId, element), nil
+	}
+	value, err := this.eval(element, t, element.Message.Expression)
+	if err != nil {
+		return "", err
+	}
+	name, ok := value.(string)
+	if !ok || name == "" {
+		return "", incidentf(element.Id, "senergy:messageName must give a non-empty string, got %v", value)
+	}
+	return name, nil
+}
+
+// consumeBuffered continues a message catch event at once if its message arrived before the
+// instance waited for it, e.g. the completion of a deployment a module created (SMS-04)
+func (this *runner) consumeBuffered(element *bpmn.Element, t *store.Token) (bool, error) {
+	if element.Kind != bpmn.EventMessage || element.IsDeviceEvent() {
+		return false, nil
+	}
+	name, err := this.messageName(element, t)
+	if err != nil {
+		return false, err
+	}
+	variables, found, err := this.tx.TakeMessage(this.inst.Id, name)
+	if err != nil || !found {
+		return false, err
+	}
+	if err = this.log(model.ActivityMessageReceived, element, map[string]any{"message_name": name, "buffered": true}); err != nil {
+		return true, err
+	}
+	for key, value := range variables {
+		if err = this.setLocal(element, t, key, value); err != nil {
+			return true, err
+		}
+	}
+	if err = this.applyOutputs(element, t); err != nil {
+		return true, err
+	}
+	return true, this.leave(element, t)
+}
+
 // subscribe makes the token wait for the message or timer of a catch event; after an
 // event-based gateway the group is the token id
 func (this *runner) subscribe(element *bpmn.Element, t *store.Token, group string) error {
@@ -475,7 +523,11 @@ func (this *runner) subscribe(element *bpmn.Element, t *store.Token, group strin
 	switch element.Kind {
 	case bpmn.EventMessage:
 		s.Kind = store.SubscriptionMessage
-		s.MessageName = messageName(this.inst.DeploymentId, element)
+		name, err := this.messageName(element, t)
+		if err != nil {
+			return err
+		}
+		s.MessageName = name
 		if err := this.tx.InsertSubscription(s); err != nil {
 			return err
 		}

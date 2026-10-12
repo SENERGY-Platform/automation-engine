@@ -51,8 +51,10 @@ type Deployment struct {
 	RetentionDays int `json:"retention_days,omitempty"`
 	// set when automatic restarts exceeded the restart policy; no automatic restarts until reset (INC-04)
 	FaultySince *time.Time `json:"faulty_since,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	// the instance that manages the deployment through a module (NS-08)
+	ManagedBy string    `json:"managed_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type DeploymentVersion struct {
@@ -65,7 +67,9 @@ type DeploymentVersion struct {
 	IncidentHandling IncidentHandling `json:"incident_handling"`
 	// device selection per BPMN element id (DEP-05)
 	Selections map[string]Selection `json:"selections,omitempty"`
-	CreatedAt  time.Time            `json:"created_at"`
+	// overrides per BPMN element id
+	Parameters map[string]ElementParameters `json:"parameters,omitempty"`
+	CreatedAt  time.Time                    `json:"created_at"`
 }
 
 // DeploymentInput creates or updates a deployment, either from a model (version) or from own BPMN.
@@ -83,8 +87,12 @@ type DeploymentInput struct {
 	RetentionDays    int               `json:"retention_days,omitempty"`
 	// device selection per BPMN element id (DEP-05)
 	Selections map[string]Selection `json:"selections,omitempty"`
+	// overrides of inputs, event variables and timers per BPMN element id
+	Parameters map[string]ElementParameters `json:"parameters,omitempty"`
 	// required on update
 	UpdateStrategy UpdateStrategy `json:"update_strategy,omitempty"`
+	// set by the engine when a module creates the deployment (NS-08), not through the API
+	ManagedBy string `json:"-"`
 }
 
 type DeploymentListOptions struct {

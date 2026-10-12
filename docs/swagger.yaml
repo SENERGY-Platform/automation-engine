@@ -63,6 +63,9 @@ definitions:
     - incident
     - join_waiting
     - restart_scheduled
+    - variable_deleted
+    - modules_changed
+    - modules_removed
     type: string
     x-enum-varnames:
     - ActivityRunStarted
@@ -84,6 +87,9 @@ definitions:
     - ActivityIncident
     - ActivityTokenJoinWaiting
     - ActivityRestartScheduled
+    - ActivityVariableDeleted
+    - ActivityModulesChanged
+    - ActivityModulesRemoved
   model.ActivityPage:
     properties:
       items:
@@ -228,6 +234,9 @@ definitions:
         type: string
       id:
         type: string
+      managed_by:
+        description: the instance that manages the deployment through a module (NS-08)
+        type: string
       model_deleted:
         description: the referenced model has been deleted; the deployment keeps its
           copy of the BPMN (MOD-08)
@@ -269,6 +278,12 @@ definitions:
         type: string
       owner:
         type: string
+      parameters:
+        additionalProperties:
+          $ref: '#/definitions/model.ElementParameters'
+        description: overrides of inputs, event variables and timers per BPMN element
+          id
+        type: object
       retention_days:
         type: integer
       selections:
@@ -297,6 +312,11 @@ definitions:
         $ref: '#/definitions/model.IncidentHandling'
       model_version:
         type: integer
+      parameters:
+        additionalProperties:
+          $ref: '#/definitions/model.ElementParameters'
+        description: overrides per BPMN element id
+        type: object
       selections:
         additionalProperties:
           $ref: '#/definitions/model.Selection'
@@ -317,6 +337,23 @@ definitions:
         type: boolean
       at_start:
         type: boolean
+    type: object
+  model.ElementParameters:
+    properties:
+      defaults:
+        additionalProperties:
+          type: string
+        type: object
+      inputs:
+        additionalProperties:
+          type: string
+        type: object
+      timer:
+        type: string
+      variables:
+        additionalProperties:
+          type: string
+        type: object
     type: object
   model.ElementStats:
     properties:
@@ -621,6 +658,10 @@ definitions:
         type: string
       owner:
         type: string
+      parent_id:
+        description: a maintenance procedure refers to the instance it belongs to
+          (SMS-13)
+        type: string
       restart_at:
         description: an automatic restart after an incident is due at this time (INC-02)
         type: string
@@ -633,6 +674,12 @@ definitions:
         type: string
       state:
         $ref: '#/definitions/model.InstanceState'
+      status:
+        allOf:
+        - $ref: '#/definitions/model.InstanceStatus'
+        description: summary for users, derived on read (SMS-11)
+      status_message:
+        type: string
     type: object
   model.InstanceState:
     enum:
@@ -646,6 +693,16 @@ definitions:
     - StateCompleted
     - StateTerminated
     - StateIncident
+  model.InstanceStatus:
+    enum:
+    - running
+    - ready
+    - error
+    type: string
+    x-enum-varnames:
+    - StatusRunning
+    - StatusReady
+    - StatusError
   model.IoBulk:
     properties:
       get:
@@ -744,6 +801,27 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  model.MaintenanceProcedure:
+    properties:
+      element_id:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      parameters:
+        items:
+          $ref: '#/definitions/model.StartParameter'
+        type: array
+    type: object
+  model.MaintenanceStartInput:
+    properties:
+      variables:
+        additionalProperties: {}
+        description: values of the procedure's parameters; they extend the start variables
+          of the instance
+        type: object
     type: object
   model.MessageInput:
     properties:
@@ -845,6 +923,53 @@ definitions:
       xml:
         type: string
     type: object
+  model.Module:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        description: the instance whose task created the module, a maintenance procedure
+          or the instance itself
+        type: string
+      delete_info:
+        $ref: '#/definitions/model.ModuleDeleteInfo'
+      element_id:
+        type: string
+      error:
+        description: finding of the last health check; shown in the status of the
+          instance (SMS-11)
+        type: string
+      id:
+        type: string
+      instance_id:
+        type: string
+      keys:
+        items:
+          type: string
+        type: array
+      module_data:
+        additionalProperties: {}
+        type: object
+      module_type:
+        type: string
+      namespace:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.ModuleDeleteInfo:
+    properties:
+      resource:
+        allOf:
+        - $ref: '#/definitions/model.ResourceRef'
+        description: a deployment, instance or watch of the engine (NS-08)
+      url:
+        type: string
+      user_id:
+        type: string
+    type: object
   model.NamedRef:
     properties:
       id:
@@ -864,6 +989,11 @@ definitions:
         $ref: '#/definitions/model.DeviceSelection'
       elements:
         $ref: '#/definitions/model.ListRule'
+      forbid_cycles:
+        description: |-
+          reject sequence flow cycles at deploy, so that every run ends; for namespaces whose task
+          types create modules, which are removed with every new run (SMS-03)
+        type: boolean
       http:
         allOf:
         - $ref: '#/definitions/model.HttpSettings'
@@ -875,8 +1005,18 @@ definitions:
         description: default for deployments without own setting
       instances:
         $ref: '#/definitions/model.LevelSettings'
+      json_string_parameters:
+        description: |-
+          non-string values of string form fields are stored as JSON strings, as Camunda did; models
+          of smart services parse them, e.g. a list of selected devices (SMS-08)
+        type: boolean
       limits:
         $ref: '#/definitions/model.Limits'
+      message_starts_are_procedures:
+        description: |-
+          message start events with a name are maintenance procedures of an instance and start only
+          through it, not by correlation (SMS-13)
+        type: boolean
       models:
         $ref: '#/definitions/model.LevelSettings'
       name:
@@ -996,6 +1136,19 @@ definitions:
       total:
         type: integer
     type: object
+  model.Page-model_Module:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/model.Module'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
   model.Page-model_Schedule:
     properties:
       items:
@@ -1008,6 +1161,61 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  model.ParameterDescription:
+    properties:
+      characteristic: {}
+      characteristic_id:
+        type: string
+      default_value: {}
+      description:
+        type: string
+      has_no_valid_option:
+        description: a required IoT parameter without any option the user may choose
+        type: boolean
+      id:
+        type: string
+      label:
+        type: string
+      multiple:
+        type: boolean
+      optional:
+        type: boolean
+      options:
+        description: nil allows free input; IoT parameters always have a list
+        items:
+          $ref: '#/definitions/model.ParameterOption'
+        type: array
+      order:
+        type: integer
+      type:
+        description: https://schema.org/Text, Integer, Float, Boolean or the form
+          field type
+        type: string
+    type: object
+  model.ParameterOption:
+    properties:
+      entity_id:
+        type: string
+      kind:
+        type: string
+      label:
+        type: string
+      needs_same_entity_id_in_parameter:
+        description: the option fits only to the entity selected in that parameter
+        type: string
+      value:
+        description: for IoT parameters the JSON of the selection, the value modules
+          read
+    type: object
+  model.ParametersInput:
+    properties:
+      deployment_version:
+        description: 0 selects the current version of the deployment
+        type: integer
+      variables:
+        additionalProperties: {}
+        type: object
     type: object
   model.PrepareInput:
     properties:
@@ -1083,6 +1291,25 @@ definitions:
       published:
         type: boolean
     type: object
+  model.ResourceKind:
+    enum:
+    - deployment
+    - instance
+    - watch
+    type: string
+    x-enum-varnames:
+    - ResourceDeployment
+    - ResourceInstance
+    - ResourceWatch
+  model.ResourceRef:
+    properties:
+      id:
+        type: string
+      kind:
+        $ref: '#/definitions/model.ResourceKind'
+      namespace:
+        type: string
+    type: object
   model.RestartInput:
     properties:
       deployment_version:
@@ -1146,6 +1373,7 @@ definitions:
     - update
     - incident
     - migration
+    - parameters
     type: string
     x-enum-varnames:
     - CauseStart
@@ -1153,6 +1381,7 @@ definitions:
     - CauseUpdate
     - CauseIncident
     - CauseMigration
+    - CauseParameters
   model.Schedule:
     properties:
       alias:
@@ -2031,6 +2260,41 @@ paths:
       summary: event descriptions of a deployment, as event workers evaluate them
       tags:
       - deployments
+  /namespaces/{ns}/deployments/{id}/parameters:
+    get:
+      description: Form fields of the start event with description, type, default
+        and the options the caller may choose, IoT options through device-selection;
+        fields with auto_select_all are filled at the start (SMS-08). Needs execute
+        on the deployment.
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.ParameterDescription'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: start parameters of a deployment with their options
+      tags:
+      - deployments
   /namespaces/{ns}/deployments/{id}/reset-restarts:
     post:
       parameters:
@@ -2760,6 +3024,164 @@ paths:
       summary: live debug stream of an instance (WebSocket)
       tags:
       - debugging
+  /namespaces/{ns}/instances/{id}/maintenance-procedures:
+    get:
+      description: Further message start events of the model with own start parameters
+        (SMS-13).
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.MaintenanceProcedure'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: maintenance procedures of an instance
+      tags:
+      - instances
+  /namespaces/{ns}/instances/{id}/maintenance-procedures/{procedure}/parameters:
+    get:
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: procedure id
+        in: path
+        name: procedure
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.ParameterDescription'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: parameters of a maintenance procedure with their options
+      tags:
+      - instances
+  /namespaces/{ns}/instances/{id}/maintenance-procedures/{procedure}/start:
+    post:
+      consumes:
+      - application/json
+      description: Starts the procedure as an instance that refers to the given one;
+        it shares its variables and modules. Needs administrate on the instance, which
+        must be ready without errors (SMS-13).
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: procedure id, the message name
+        in: path
+        name: procedure
+        required: true
+        type: string
+      - description: parameters
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/model.MaintenanceStartInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.Instance'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: start a maintenance procedure
+      tags:
+      - instances
+  /namespaces/{ns}/instances/{id}/parameters:
+    put:
+      consumes:
+      - application/json
+      description: Starts a new run with the new parameters; the modules of the previous
+        run and its maintenance procedures are removed (SMS-03, SMS-09). Needs administrate
+        on the instance and execute on the deployment.
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: parameters
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/model.ParametersInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Instance'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: change the start parameters of an instance
+      tags:
+      - instances
   /namespaces/{ns}/instances/{id}/restart:
     post:
       consumes:
@@ -2896,6 +3318,35 @@ paths:
       tags:
       - instances
   /namespaces/{ns}/instances/{id}/variables/{name}:
+    delete:
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: variable name
+        in: path
+        name: name
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: delete a variable of an instance
+      tags:
+      - instances
     get:
       parameters:
       - description: namespace
@@ -3313,6 +3764,103 @@ paths:
       summary: get a version of a model
       tags:
       - models
+  /namespaces/{ns}/modules:
+    get:
+      description: Resources instances created through task types, e.g. deployments,
+        imports or pipelines (SMS-12); only of instances the caller may read.
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: modules of this instance
+        in: query
+        name: instance_id
+        type: string
+      - description: module type
+        in: query
+        name: module_type
+        type: string
+      - description: modules with this key
+        in: query
+        name: key
+        type: string
+      - description: page size
+        in: query
+        name: limit
+        type: integer
+      - description: page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Page-model_Module'
+      security:
+      - Bearer: []
+      summary: modules of instances
+      tags:
+      - modules
+  /namespaces/{ns}/modules/{id}:
+    delete:
+      description: Needs administrate on the instance. The resource is removed afterwards,
+        with retries until it succeeds (SMS-06).
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: module id
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: delete a module
+      tags:
+      - modules
+    get:
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: module id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Module'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: module
+      tags:
+      - modules
   /namespaces/{ns}/prepared-deployments:
     post:
       consumes:

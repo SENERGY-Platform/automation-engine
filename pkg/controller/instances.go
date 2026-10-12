@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -74,8 +75,12 @@ func (this *Controller) startInstance(ctx context.Context, token string, namespa
 	if err != nil {
 		return model.Instance{}, err
 	}
+	variables, err := this.withAutoSelected(ctx, token, input.DeploymentId, input.DeploymentVersion, "", input.Variables)
+	if err != nil {
+		return model.Instance{}, err
+	}
 	result, _, err := this.engine.StartInstance(ctx, engine.StartRequest{
-		DeploymentId: input.DeploymentId, DeploymentVersion: input.DeploymentVersion, InstanceId: id, Owner: instanceOwner, Variables: input.Variables,
+		DeploymentId: input.DeploymentId, DeploymentVersion: input.DeploymentVersion, InstanceId: id, Owner: instanceOwner, Variables: variables,
 	})
 	if err == nil {
 		// marks the span of the request with the new instance; its later work carries the id
@@ -103,10 +108,44 @@ func (this *Controller) readInstance(ctx context.Context, tx *store.Tx, token st
 func (this *Controller) GetInstance(ctx context.Context, token string, namespace string, id string) (result model.Instance, err error) {
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		inst, err := this.readInstance(ctx, tx, token, namespace, id, Read)
-		result = inst.Instance
+		if err != nil {
+			return err
+		}
+		items := []model.Instance{inst.Instance}
+		err = withStatus(tx, items)
+		result = items[0]
 		return err
 	})
 	return result, err
+}
+
+// withStatus derives the status of instances from their run state and module errors (SMS-11)
+func withStatus(tx *store.Tx, instances []model.Instance) error {
+	ids := make([]string, 0, len(instances))
+	for _, inst := range instances {
+		ids = append(ids, inst.Id)
+	}
+	moduleErrors, err := tx.ModuleErrors(ids)
+	if err != nil {
+		return err
+	}
+	for i := range instances {
+		inst := &instances[i]
+		switch inst.State {
+		case model.StateRunning:
+			inst.Status, inst.StatusMessage = model.StatusRunning, ""
+		case model.StateCompleted:
+			inst.Status, inst.StatusMessage = model.StatusReady, ""
+		default:
+			inst.Status, inst.StatusMessage = model.StatusError, inst.EndReason
+		}
+		if m, ok := moduleErrors[inst.Id]; ok && inst.Status != model.StatusError {
+			// the format smart-service-repository used
+			inst.Status = model.StatusError
+			inst.StatusMessage = fmt.Sprintf("module error: module.id = %s; module.type= %s; error = %s", m.Id, m.ModuleType, m.Error)
+		}
+	}
+	return nil
 }
 
 func (this *Controller) ListInstances(ctx context.Context, token string, namespace string, options model.InstanceListOptions) (result model.Page[model.Instance], err error) {
@@ -119,8 +158,10 @@ func (this *Controller) ListInstances(ctx context.Context, token string, namespa
 		return result, err
 	}
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
-		result, err = tx.ListInstances(namespace, options, access)
-		return err
+		if result, err = tx.ListInstances(namespace, options, access); err != nil {
+			return err
+		}
+		return withStatus(tx, result.Items)
 	})
 	return result, err
 }

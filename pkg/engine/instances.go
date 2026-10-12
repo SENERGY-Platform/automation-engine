@@ -49,6 +49,8 @@ type StartRequest struct {
 	StartElementId string
 	// local variables of the start event, e.g. of a message start
 	Locals map[string]any
+	// the instance a maintenance procedure belongs to (SMS-13)
+	ParentId string
 }
 
 // StartInstance creates an instance and runs it until all tokens wait or end. With a given
@@ -89,7 +91,8 @@ func (this *Engine) startInstance(tx *store.Tx, request StartRequest, cause mode
 	if err != nil {
 		return model.Instance{}, false, err
 	}
-	variables, err := startVariables(start, request.Variables, this.config.MaxVariableBytes)
+	ns, _ := this.namespaces.Get(deployment.Namespace)
+	variables, err := startVariables(start, request.Variables, this.config.MaxVariableBytes, ns.JsonStringParameters)
 	if err != nil {
 		return model.Instance{}, false, err
 	}
@@ -116,7 +119,7 @@ func (this *Engine) startInstance(tx *store.Tx, request StartRequest, cause mode
 		Instance: model.Instance{
 			Id: id, Namespace: deployment.Namespace, Owner: request.Owner, DeploymentId: deployment.Id, DeploymentName: deployment.Name,
 			DeploymentVersion: version, ModelId: deployment.ModelId, ModelVersion: deployment.ModelVersion, Run: 0, State: model.StateRunning,
-			StartVariables: variables, CreatedAt: now, StartedAt: now, LastActivityAt: now,
+			StartVariables: variables, CreatedAt: now, StartedAt: now, LastActivityAt: now, ParentId: request.ParentId,
 		},
 		ActivityMinSeq: 1,
 	}
@@ -145,7 +148,7 @@ func startElement(proc *bpmn.Process, id string) (*bpmn.Element, error) {
 }
 
 // startVariables normalizes the variables and adds defaults of missing form fields (BPMN-02)
-func startVariables(start *bpmn.Element, given map[string]any, maxBytes int) (map[string]any, error) {
+func startVariables(start *bpmn.Element, given map[string]any, maxBytes int, jsonStrings bool) (map[string]any, error) {
 	result := map[string]any{}
 	for _, field := range start.FormFields {
 		if field.DefaultValue == "" {
@@ -153,7 +156,20 @@ func startVariables(start *bpmn.Element, given map[string]any, maxBytes int) (ma
 		}
 		result[field.Id] = typedDefault(field)
 	}
+	types := map[string]string{}
+	for _, field := range start.FormFields {
+		types[field.Id] = field.Type
+	}
 	for name, value := range given {
+		if _, isString := value.(string); jsonStrings && types[name] == "string" && value != nil && !isString {
+			// a string form field keeps other values as JSON, as Camunda did; models of smart
+			// services parse them, e.g. a list of selected devices (SMS-08)
+			raw, err := json.Marshal(value)
+			if err != nil {
+				return nil, model.BadRequest("variable %v: %v", name, err)
+			}
+			value = string(raw)
+		}
 		normalized, err := script.Normalize(value, maxBytes)
 		if err != nil {
 			return nil, model.BadRequest("variable %v: %v", name, err)
@@ -206,12 +222,23 @@ func (this *Engine) beginRun(tx *store.Tx, inst *store.Instance, version int, st
 	if err := tx.DeleteVariables(inst.Id); err != nil {
 		return err
 	}
+	// neither do its modules nor its maintenance procedures: processes that create modules run
+	// briefly, every run starts without them (SMS-03, SMS-09)
+	removed, err := tx.RemoveModulesOfInstance(inst.Id)
+	if err != nil {
+		return err
+	}
 	r, err := this.newRunner(tx, inst)
 	if err != nil {
 		return err
 	}
 	if err = r.log(model.ActivityRunStarted, nil, map[string]any{"cause": string(cause), "deployment_version": version, "start_variables": r.preview(inst.StartVariables)}); err != nil {
 		return err
+	}
+	if removed > 0 {
+		if err = r.log(model.ActivityModulesRemoved, nil, map[string]any{"count": removed}); err != nil {
+			return err
+		}
 	}
 	for _, name := range sortedKeys(inst.StartVariables) {
 		if err = r.setProcessVariable(nil, name, inst.StartVariables[name]); err != nil {
@@ -309,8 +336,42 @@ func (this *Engine) stopInstance(tx *store.Tx, instanceId string, reason string)
 // RestartInstance starts a new run of the instance with its stored start variables; a running
 // run is stopped first. version 0 selects the current deployment version (RUN-11).
 func (this *Engine) RestartInstance(ctx context.Context, instanceId string, version int, cause model.RunCause) (result model.Instance, err error) {
+	return this.RestartWith(ctx, instanceId, version, nil, cause)
+}
+
+// RestartWith restarts with new start variables, e.g. after a parameter change of a smart
+// service (SMS-09); nil keeps the stored ones.
+func (this *Engine) RestartWith(ctx context.Context, instanceId string, version int, variables map[string]any, cause model.RunCause) (result model.Instance, err error) {
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
-		inst, err := this.restartInstance(tx, instanceId, version, cause)
+		inst, err := tx.GetInstance(instanceId, true)
+		if err != nil {
+			return err
+		}
+		if variables != nil {
+			deployment, err := tx.GetDeployment(inst.DeploymentId, false)
+			if err != nil {
+				return err
+			}
+			if version == 0 {
+				version = deployment.Version
+			}
+			proc, err := this.process(tx, deployment.Id, version)
+			if err != nil {
+				return err
+			}
+			start := proc.NoneStartEvent()
+			if start == nil {
+				return model.BadRequest("deployment %v version %v has no start event without definition", deployment.Id, version)
+			}
+			ns, _ := this.namespaces.Get(deployment.Namespace)
+			if inst.StartVariables, err = startVariables(start, variables, this.config.MaxVariableBytes, ns.JsonStringParameters); err != nil {
+				return err
+			}
+			if err = tx.SetStartVariables(inst.Id, inst.StartVariables); err != nil {
+				return err
+			}
+		}
+		inst, err = this.restartInstance(tx, instanceId, version, cause)
 		result = inst.Instance
 		return err
 	})
@@ -360,12 +421,18 @@ func (this *Engine) restartInstance(tx *store.Tx, instanceId string, version int
 }
 
 // SetVariable sets a variable of a running instance (RUN-05).
+// SetVariable sets a variable of an instance in any state (RUN-05, SMS-10): variables of a
+// smart service that is ready are read by its maintenance procedures.
 func (this *Engine) SetVariable(ctx context.Context, instanceId string, name string, value any) error {
 	if strings.TrimSpace(name) == "" {
 		return model.BadRequest("variable name must not be empty")
 	}
 	return this.store.Tx(ctx, func(tx *store.Tx) error {
-		r, err := this.lockRunning(tx, instanceId)
+		inst, err := tx.GetInstance(instanceId, true)
+		if err != nil {
+			return err
+		}
+		r, err := this.newRunner(tx, &inst)
 		if err != nil {
 			return err
 		}
@@ -414,11 +481,20 @@ func (this *Engine) ActivateVersion(tx *store.Tx, deploymentId string, version i
 	if err != nil {
 		return err
 	}
+	deployment, err := tx.GetDeployment(deploymentId, false)
+	if err != nil {
+		return err
+	}
+	ns, _ := this.namespaces.Get(deployment.Namespace)
 	now := this.now()
 	var events []store.StartEvent
 	for _, start := range proc.StartEvents() {
 		switch start.Kind {
 		case bpmn.EventMessage:
+			if ns.MessageStartsAreProcedures && !start.IsDeviceEvent() {
+				// started only through their instance (SMS-13), not by a message to anyone
+				continue
+			}
 			events = append(events, store.StartEvent{Version: version, ElementId: start.Id, Kind: string(bpmn.EventMessage), MessageName: messageName(deploymentId, start)})
 		case bpmn.EventTimer:
 			due, err := this.startTimerDue(start, now)
@@ -430,4 +506,30 @@ func (this *Engine) ActivateVersion(tx *store.Tx, deploymentId string, version i
 		}
 	}
 	return tx.ReplaceStartEvents(deploymentId, events)
+}
+
+// DeleteVariable removes a variable of an instance in any state (SMS-10).
+func (this *Engine) DeleteVariable(ctx context.Context, instanceId string, name string) error {
+	return this.store.Tx(ctx, func(tx *store.Tx) error {
+		inst, err := tx.GetInstance(instanceId, true)
+		if err != nil {
+			return err
+		}
+		r, err := this.newRunner(tx, &inst)
+		if err != nil {
+			return err
+		}
+		if _, ok := r.vars[name]; !ok {
+			return model.NotFound("variable %v not found", name)
+		}
+		delete(r.vars, name)
+		delete(r.varSizes, name)
+		if err = tx.DeleteVariable(instanceId, name); err != nil {
+			return err
+		}
+		if err = r.log(model.ActivityVariableDeleted, nil, map[string]any{"name": name}); err != nil {
+			return err
+		}
+		return r.finish()
+	})
 }

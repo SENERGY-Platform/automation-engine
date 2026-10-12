@@ -10,7 +10,7 @@ Die Anforderungen beschreiben ein Programm, nicht eine einzelne Änderung. Sie w
 | M2 | permissions-v2 (Topics je Namespace, Startrechte, Owner-Schutz), Incident-Behandlung mit Restart und Backoff, Aufbewahrung mit Obergrenzen, Nutzer löschen, Admin-API für Namespaces, Prometheus-Metriken, Token-Provider im Client | NS-02/05/07, SEC-01–14, INC-02–04, HIST-04/06, LONG-03 (Alter), LONG-13/14, MOD-02/07/08, OPS-05, CLI-10 | umgesetzt, siehe unten |
 | M3 | Aufgabentypen Gerätekommando, Process-IO, Benachrichtigung, HTTP-Aufruf; Zeitpläne; Event-Worker als Rolle des Binaries, Eventbeschreibungen, Gruppen-Expansion; Vorbereitungs-API; Kafka `user` und Rechte-Signal | TASK-01–12, IO-01–03, BPMN-09/10, RUN-07, DEP-01/05–10, EVT-01–08, NS-04/11 | umgesetzt, siehe unten |
 | M4 | Debugging: Outbox, WebSocket-Live-Strom, historisches Debugging, Rekonstruktion von Event-Auswertungen | SYNC-03, DBG-*, EVT-09–13, CLI-05 | umgesetzt, siehe unten |
-| M5 | Smart-Services-Module, Watcher, Wartungsprozeduren | TASK-20–29, SMS-* | offen |
+| M5 | Smart-Services-Module, Watcher, Wartungsprozeduren | TASK-20–29, SMS-* | umgesetzt, siehe unten |
 | M6 | Fog-Betriebsart und Synchronisation | FOG-*, SYNC-*, LONG-06/07/09–11/14/15 | offen |
 | M7 | `deprecated/`-Schicht, Migration aus Camunda, Modell-Umschreibung | API-02/03/08, MIG-* | offen |
 
@@ -176,3 +176,53 @@ Abgelehnt: `DefaultPermissions` wörtlich zu nehmen, weil dann eine Freigabe fü
 - Auf Postgres folgt die Sequenz des Änderungsstroms der Einfügereihenfolge, nicht der Commit-Reihenfolge. Für das Live-Debugging genügt das, weil Weckrufe nur Hinweise sind; die Synchronisation (M6) läuft auf SQLite mit einem Schreiber.
 - Import-Events werden nicht rekonstruiert, solange offen ist, ob Importdaten in Timescale landen (EVT-12). Lange Listen mit festen Einträgen kommen aus Timescale als Map zurück; ein Unmarshalling, das eine Liste erwartet, scheitert dann und zeigt den Fehler an der Auswertung.
 - Wie weit die Rekonstruktion zurückreicht, regelt die Aufbewahrung in Timescale (timescale-rule-manager); die Engine kennt sie nicht.
+
+## M5: Entscheidungen (2026-10-12)
+
+Grundlage sind die Analysen der acht Worker, von `smart-service-module-worker-lib` und von smart-service-repository (Stand `origin/main` 2026-10-06).
+
+**Kompatibilität der Module (entschieden: voll).** Jede Zeichenkette in den Eingaben eines Modul-Tasks wird wie heute als Go-Template gegen die Variablen gerendert (`{{.param}}`, `brl`/`brr`), `prescript*`- und `postscript*`-Eingaben laufen mit derselben Skript-API (`variables`, `inputs`, `outputs`, `util`, `deviceRepo`, `console`). Bestehende Designs laufen ohne Umschreiben.
+
+**Wiederverwendung statt Portierung.** Middleware, Skriptumgebung und Templates kommen aus `smart-service-module-worker-lib`, die Handler von `info`, `import`, `export`, `analytics` und `device_repository` aus den Worker-Repos (Pseudo-Versionen auf `origin/main` vom 2026-10-06). Sie nehmen nur kleine Schnittstellen (`GetInstanceUser`, `ListExistingModules`, `UseModuleDeleteInfo`), die die Engine gegen ihre eigene Datenbank erfüllt. Ihr Camunda-Teil bleibt ungenutzt. Neu geschrieben werden `process_deployment`, `process_deployment_start` und `watcher`, weil sie Dienste ansprechen, die die Engine ersetzt (process-deployment, process-engine-wrapper, watcher-db). Die Bibliotheken bleiben Abhängigkeit, bis CLI-11 einen Ort für sie schafft; der Preis ist eine Build-Kopplung an sechs Repos.
+
+**Module (SMS-12).** Tabelle `modules` an der Instanz, Schlüssel in `module_keys`. Löschinfo entweder eine URL (DELETE mit Token des Owners, 2xx und 404 gelten als gelöscht, wie heute) oder eine Ressource der Engine (Deployment, Instanz, Beobachtung). Gelöscht wird über die Outbox `module_removals` mit Wiederholung, nicht im Request: es bleibt nichts verwaist (SMS-06). Instanzen mit Modulen fallen nicht unter die Aufbewahrung, weil ihre Ressourcen weiterlaufen.
+
+**Module bei jedem neuen Lauf (entschieden, korrigiert).** Zuerst war eine Richtlinie je Namespace mit Abweichung je Deployment geplant (`delete` oder `keep_keyed`). Korrigiert: Jeder neue Lauf einer Instanz entfernt alle ihre Module, ob nach Parameteränderung (SMS-09), Update mit `restart` oder Neustart nach einem Incident. Grund: Nur kurzlebige Prozesse sollen Module anlegen. Dafür lehnt ein Namespace mit `forbid_cycles` Zyklen im Sequenzfluss beim Deploy ab, weil sich eine Schleife statisch nicht als endlich erweisen lässt; `smart-services` setzt das, `processes` nicht. Schlüssel bleiben für Wartungsprozeduren, die Module derselben Instanz aktualisieren.
+
+**Wartungsprozeduren (SMS-13, entschieden: geteilte Variablen).** Message-Startereignisse mit eigenen Formfeldern. Ein Start legt eine Instanz mit `parent_id` an. Modul-Eingaben, Templates und Skriptvariablen lesen und schreiben die Variablen der Elterninstanz, Module hängen an ihr. Der Nachrichtenname ist der Name der Message, ohne Umbenennung (SMS-02).
+
+**Gesundheitsprüfung der Module (entschieden: behalten).** Stündlich je Modultyp wie heute (Pipeline läuft, Import und Export existieren, Deployment existiert, gestartete Instanz läuft); ein Befund wird Modulfehler und erscheint im Instanzstatus, kein Incident.
+
+**Status (SMS-11).** `status` an jeder Instanz: `running`, `ready` (Lauf abgeschlossen), `error` mit Meldung aus Laufende, Incident oder Modulfehler.
+
+**Abschluss eines Deployments (SMS-04).** `process_deployment` deployt synchron im selben Schritt. Die Nachricht `deployment_done_<id>` wird für die ausführende Instanz vorgemerkt und beim nächsten Warten auf diesen Namen sofort zugestellt, statt sie 5 s später zu senden. Dafür bekommt ein Message-Event optional `senergy:messageName`, einen JavaScript-Ausdruck für den Namen; M7 schreibt `${done_event}` darauf um. `permission_done_<gid>` aus `device_repository` wird ebenso vorgemerkt; einen Sender gibt es heute nicht (SMS-05), wartende Designs liefen also nie weiter.
+
+**Deploy-Parameter.** `process_deployment` setzt Eingaben, Eventvariablen und Timer einzelner Elemente (`{bpmnId}.parameter.*`, `.variables.*`, `.time`). Die Deployment-Version bekommt dafür `parameters` je Element, die die Eingabe-Mappings bzw. `senergy:variables` und Timerdefinitionen überschreiben; das web-ui kann sie im Deploy-Dialog ebenso setzen (DEP-01). Analytics-Events (`.event.flow_id`) sind tot und entfallen.
+
+**Ohne Gateway.** `prefer_fog_deployment` deployt bis M6 in der Cloud; M6 ergänzt das Gateway.
+
+**Stufen.** a) Module, Outbox, Status, Elterninstanzen, Nachrichtenpuffer, Zyklenprüfung, API; b) Modul-Laufzeit mit wiederverwendeten Handlern und Gesundheitsprüfung; c) `process_deployment`, `process_deployment_start`, `watcher`, Wartungsprozeduren; d) Startparameter mit Optionen (SMS-08), Parameteränderung (SMS-09), Variablen löschen (SMS-10).
+
+## M5: Stand
+
+- **Module** (SMS-12): Tabelle `modules` mit Schlüsseln, API zum Auflisten, Lesen und Löschen, Löschen der Ressourcen über die Outbox `module_removals` (URL mit Owner-Token oder Ressource der Engine im passenden Namespace). Instanzen mit Modulen fallen nicht unter die Aufbewahrung; beim Löschen eines Nutzers werden keine Entfernungen eingereiht.
+- **Effekte von Aufgaben**: Module, Variablen der Wurzelinstanz und vorgemerkte Nachrichten entstehen in der Transaktion, die den Job abschließt. Kann die Engine ein Ergebnis nicht übernehmen (Instanz inzwischen gestoppt, Commit gescheitert), macht der Aufgabentyp die Ressourcen rückgängig; vorher bestehende Module bleiben dabei unberührt.
+- **Neuer Lauf entfernt Module** und Wartungsprozeduren des vorigen (SMS-03, SMS-09); `forbid_cycles` lehnt Schleifen in `smart-services` ab.
+- **Laufzeit der Module** (`pkg/modules`): Middleware, Skript-API und Templates der Worker-Bibliothek; `info`, `import`, `export`, `analytics`, `device_repository` mit den unveränderten Handlern; `process_deployment`, `process_deployment_start` und `watcher` neu gegen die Engine. Gesundheitsprüfung stündlich je Typ.
+- **Status** (SMS-11) an jeder Instanz, Format der Modulfehler wie bisher.
+- **Wartungsprozeduren** (SMS-13) mit geteilten Variablen und Modulen; Message-Starts in `smart-services` nur über die Instanz.
+- **Startparameter** (SMS-08) mit Optionen aus device-selection, Werteformat der Releases, `auto_select_all`; `json_string_parameters` speichert Listen in String-Feldern als JSON wie Camunda.
+- **Parameteränderung** (SMS-09), Variablen setzen und löschen in jedem Zustand (SMS-10).
+- **Deploy-Parameter** je Element (Eingaben, Eventvariablen, Timer, Startvorgaben) für Module und Deploy-Dialog.
+- **Nachrichtenpuffer** und `senergy:messageName` (SMS-04); `done_event` jeder Modulaufgabe wird vorgemerkt (SMS-05).
+
+## M5: Lücken
+
+- Gateway-Deployments (`prefer_fog_deployment`, Gateway-Instanzen von `process_deployment_start`) kommen mit M6; bis dahin Cloud.
+- Die alte REST-API von smart-service-repository (Releases, Designs, `/instances-by-process-id`) folgt mit der `deprecated/`-Schicht in M7, ebenso die Migration bestehender Designs, Releases, Instanzen und Module.
+- Module heißen `<instanz>.<job>` statt `<prozessinstanz>.<camunda-task>`; die Migration muss bestehende Module übernehmen, ohne ihre IDs zu ändern.
+- Wie bisher sind `import` und `export` nicht idempotent: stürzt die Engine zwischen dem Anlegen beim Dienst und dem Commit ab, bleibt die Ressource dort ohne Modul.
+- Die Fehler der Worker-Handler werden mit übernommen, etwa das `break` in `info` bei einem Feld, das kein String ist (siehe OFFENE-PUNKTE.md).
+- Generische Beobachtungen (`watch_request`) laufen unter der HTTP-Richtlinie des Namespace statt über den isolierten Client des Watchers; in der Cloud ist sie standardmäßig aus.
+- `process_deployment_start` vermerkt `state: completed` nicht mehr in den Moduldaten; der Status der gestarteten Instanz ist über die Engine abrufbar.
+- Startwerte ab 3000 Zeichen wurden bisher durch Platzhalter ersetzt (Grenze von Camunda); die Engine speichert sie direkt bis zur Variablengrenze.

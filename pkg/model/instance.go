@@ -36,6 +36,8 @@ const (
 	CauseUpdate    RunCause = "update"
 	CauseIncident  RunCause = "incident"
 	CauseMigration RunCause = "migration"
+	// the start parameters changed (SMS-09)
+	CauseParameters RunCause = "parameters"
 )
 
 // Instance has a stable id, chosen by the caller or generated, and one or more runs (RUN-01, RUN-11).
@@ -60,6 +62,11 @@ type Instance struct {
 	LastActivityAt time.Time `json:"last_activity_at"`
 	// an automatic restart after an incident is due at this time (INC-02)
 	RestartAt *time.Time `json:"restart_at,omitempty"`
+	// a maintenance procedure refers to the instance it belongs to (SMS-13)
+	ParentId string `json:"parent_id,omitempty"`
+	// summary for users, derived on read (SMS-11)
+	Status        InstanceStatus `json:"status,omitempty"`
+	StatusMessage string         `json:"status_message,omitempty"`
 }
 
 type Run struct {

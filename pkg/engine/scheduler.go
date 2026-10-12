@@ -259,6 +259,13 @@ func (this *Engine) claim(ctx context.Context, jobId string, now time.Time) (res
 	return result, err
 }
 
+func rootOf(inst store.Instance) string {
+	if inst.ParentId != "" {
+		return inst.ParentId
+	}
+	return inst.Id
+}
+
 func taskOf(job store.Job, inst store.Instance, version *cachedVersion) Task {
 	attributes := map[string]string{}
 	if element := version.process.Element(job.ElementId); element != nil {
@@ -271,7 +278,7 @@ func taskOf(job store.Job, inst store.Instance, version *cachedVersion) Task {
 	return Task{
 		JobId: job.Id, InstanceId: inst.Id, Run: inst.Run, Namespace: inst.Namespace, DeploymentId: inst.DeploymentId,
 		ElementId: job.ElementId, TaskType: job.TaskType, Owner: inst.Owner, Input: job.Input, Attributes: attributes,
-		Attempt: job.Attempt, Retries: job.Retries, Timeout: job.Timeout, Selection: selection,
+		Attempt: job.Attempt, Retries: job.Retries, Timeout: job.Timeout, Selection: selection, RootInstanceId: rootOf(inst),
 	}
 }
 
@@ -308,7 +315,8 @@ func (this *Engine) execute(ctx context.Context, c claimed) (err error) {
 	taskType, ok := this.taskType(c.job.TaskType)
 	if !ok {
 		taskErr = fmt.Errorf("task type %q is not available", c.job.TaskType)
-		return this.finishJob(spanCtx, c.job.Id, c.job.LockOwner, nil, taskErr, false)
+		_, err = this.finishJob(spanCtx, c.job.Id, c.job.LockOwner, TaskResult{}, taskErr, false)
+		return err
 	}
 	taskCtx, cancel := context.WithTimeout(spanCtx, c.job.Timeout)
 	defer cancel()
@@ -336,7 +344,17 @@ func (this *Engine) execute(ctx context.Context, c claimed) (err error) {
 			return tx.SaveJob(*job)
 		})
 	}
-	return this.finishJob(spanCtx, c.job.Id, c.job.LockOwner, result.Output, taskErr, false)
+	applied, err := this.finishJob(spanCtx, c.job.Id, c.job.LockOwner, result, taskErr, false)
+	if !applied && taskErr == nil && result.Effects != nil {
+		if undoer, ok := taskType.(Undoer); ok {
+			reason := err
+			if reason == nil {
+				reason = errors.New("the task result was not applied, the instance no longer waits for it")
+			}
+			undoer.Undo(context.WithoutCancel(spanCtx), c.task, result.Effects, reason)
+		}
+	}
+	return err
 }
 
 func safeExecute(ctx context.Context, taskType TaskType, task Task) (result TaskResult, err error) {
@@ -351,8 +369,9 @@ func safeExecute(ctx context.Context, taskType TaskType, task Task) (result Task
 // finishJob completes or fails a job. lockOwner identifies the execution; an answer for
 // another execution or for a job that no longer exists is ignored, so every task is completed
 // at most once (TASK-11). external answers (CompleteTask, FailTask) skip the owner check.
-func (this *Engine) finishJob(ctx context.Context, jobId string, lockOwner string, output map[string]any, taskErr error, external bool) (err error) {
-	return this.store.Tx(ctx, func(tx *store.Tx) error {
+func (this *Engine) finishJob(ctx context.Context, jobId string, lockOwner string, result TaskResult, taskErr error, external bool) (applied bool, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		applied = false
 		job, err := tx.GetJob(jobId)
 		if err != nil || job == nil {
 			return err
@@ -375,15 +394,22 @@ func (this *Engine) finishJob(ctx context.Context, jobId string, lockOwner strin
 		if taskErr != nil {
 			_, err = r.failJob(job, taskErr.Error(), IsPermanent(taskErr))
 		} else {
-			err = r.completeTask(*job, output)
+			if result.Effects != nil {
+				if err = r.applyEffects(*job, *result.Effects); err != nil {
+					return err
+				}
+			}
+			err = r.completeTask(*job, result.Output)
 		}
 		if err != nil {
 			if err = r.handle(err); err != nil {
 				return err
 			}
 		}
+		applied = true
 		return r.finish()
 	})
+	return applied && err == nil, err
 }
 
 // CompleteTask delivers the answer of an asynchronous task; false if the task is no longer
@@ -407,7 +433,8 @@ func (this *Engine) answer(ctx context.Context, jobId string, output map[string]
 	if err != nil || !exists {
 		return false, err
 	}
-	return true, this.finishJob(ctx, jobId, "", output, taskErr, true)
+	_, err = this.finishJob(ctx, jobId, "", TaskResult{Output: output}, taskErr, true)
+	return true, err
 }
 
 // The job is retried after a backoff while retries are left, then the failure becomes an incident.

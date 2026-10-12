@@ -11,6 +11,7 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 - [ ] **Aufgabe:** Eine Route für die neue API plus `deprecated/`; die heutigen Routen `/process/engine`, `/process/deployment`, `/process/repository`, `/process/scheduler`, `/process/incidents`, `/process-io`, `/process-sync`, `/process-fog-deployment`, `/smart-services/repository` auf `deprecated/` umleiten (API-08, M7).
 - [ ] **Aufgabe:** Den internen Port (`INTERNAL_PORT`, Vorgabe 8081) nicht routen. Er trägt `/metrics` und die HTTP-Antworten von Geräten (`/responses`, `/errors`) (M3).
 - [ ] **Aufgabe:** WebSocket-Upgrade für `/namespaces/*/instances/*/live` durchreichen (DBG-01, DBG-08, M4).
+- [ ] **Aufgabe:** Routen und Ladon-Regeln für die Pfade aus M5: `/namespaces/*/modules[/*]`, `/namespaces/*/deployments/*/parameters`, `/namespaces/*/instances/*/parameters`, `/namespaces/*/instances/*/maintenance-procedures[/...]`, `DELETE /namespaces/*/instances/*/variables/*`.
 - [ ] **Aufgabe:** Ladon-Regeln für die Admin-Endpunkte `/users` sowie `PUT` und `DELETE /namespaces/{ns}` (SEC-14, NS-02, M2) und für die Debug-Pfade `debug`, `live`, `history`, `event-evaluations`, `variables/{name}` unter `/namespaces/*/instances/*` (M4).
 - [ ] **Aufgabe:** Tote Routen `/api-aggregator` und `/eventmanager` entfernen.
 
@@ -55,6 +56,15 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 
 - [ ] **Aufgabe:** Einen stabilen Ort für die geteilten Pakete schaffen (CLI-11). Die Engine importiert aus `external-task-worker/lib` die Pakete `messages`, `devicerepository`, `marshaller` und `timescale` sowie aus event-worker `pkg/marshaller`, `devicerepo`, `model` und `configuration`. device-command und live-data-worker importieren ebenfalls aus `external-task-worker/lib`. Ein inkompatibler Bruch dort zeigt sich erst beim nächsten Build der Engine (M3).
 
+### smart-service-module-worker-lib und die Worker-Repos
+
+- [ ] **Aufgabe:** Die Engine bindet Middleware, Skript-API und Templates der Bibliothek sowie die Handler von `info`, `import`, `export`, `analytics` und `device_repository` als Bibliothek ein (M5). Ihr Camunda-Teil, die Gesundheitsprüfung und die Deployments der Worker werden nicht mehr gebraucht. Ein inkompatibler Bruch in den Handlern oder der Skript-API zeigt sich erst beim nächsten Build der Engine; mit CLI-11 ziehen die Pakete an einen stabilen Ort.
+- [ ] **Frage:** Sollen die gefundenen Fehler in den Handlern dort behoben werden? `info` bricht beim ersten Zusatzfeld, das kein String ist, die übrigen ab (`break`); `analytics` ignoriert den Fehler der Modulsuche und legt dann eine zweite Pipeline an, und sein Undo löscht eine nur aktualisierte Pipeline (die Engine ruft Undo für bestehende Module nicht mehr auf); `persistData` als Boolean wird stillschweigend `false`.
+
+### device-repository
+
+- [ ] **Frage:** device-repository hat den Modulpfad `/v3` (bis v3.4.0), external-task-worker, die Worker-Bibliothek und die Worker nutzen `/v2` (v2.2.2). Die Engine kann erst wechseln, wenn diese Bibliotheken wechseln.
+
 ### models (`models/go`)
 
 - [ ] **Frage:** Liegen die Typen der Engine dort oder im Engine-Repo? Heute hält das Engine-Repo sie in `pkg/model` (CLI-01).
@@ -72,6 +82,8 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 ### web-ui und Prozess-Designer
 
 - [ ] **Aufgabe:** Umstellung auf die neue API anhand der OpenAPI in `docs/swagger.json` (API-04, API-07), mit Namespaces (NS-09), Update-Dialog mit Strategie (DEP-04), Modellversionen (MOD-05) und Aufbewahrungseinstellungen (HIST-04).
+- [ ] **Aufgabe:** Smart-Service-Designer: Warten auf den Abschluss eines Deployments mit `senergy:messageName` (JavaScript, z. B. `done_event`) statt eines `${...}`-Nachrichtennamens; keine Schleifen im Sequenzfluss in `smart-services` (M5). Start- und Prozedur-Dialoge über `.../parameters`, Status über `status`/`status_message`, Module über `/modules`.
+- [ ] **Aufgabe:** Deploy-Dialog: Werte einzelner Elemente (Eingaben, Eventvariablen, Timer, Startvorgaben) über `parameters` des Deployments (DEP-01, M5).
 - [ ] **Aufgabe:** Der Designer schreibt nur die unterstützte BPMN-Menge (BPMN-18), nur JavaScript (EXPR-01) und das Modellformat der Engine: `senergy:taskType` statt Topics, `senergy:retries` und `senergy:timeout` am Service Task, `senergy:completionStrategy` an Gerätekommandos, Geräte- und Import-Events mit `senergy:*`-Attributen (M1, M3). Ein Designer für alle Namespaces (NS-09).
 - [ ] **Aufgabe:** Live- und historisches Debugging (Abschnitt 13, M4): WebSocket `live` mit dem Token als erster Nachricht `{"type":"auth","token":"..."}`, Schließcodes 4000 plus HTTP-Status (4401 heißt: neues Token holen und mit `after` fortsetzen), Deltas nach der Beschreibung von `model.DebugMessage` übernehmen, Schritte über `history`, Event-Rekonstruktion über `event-evaluations`. Genommene Sequenzflüsse stehen jetzt in `element-stats` (DBG-07).
 - [ ] **Aufgabe (Betrieb):** Schickt die web-ui das Token als erste Nachricht, braucht die Engine `KEYCLOAK_CERT_URL`, weil das Token dann nicht über Kong läuft (DBG-08, M4).
@@ -91,6 +103,7 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 
 ## Stilllegungen
 
+- [ ] **Aufgabe:** smart-service-engine (Camunda), smart-service-repository mit seiner Mongo, die acht Module-Worker und die `watcher-db` stilllegen, wenn M7 die Daten migriert hat (SMS-01).
 - [ ] **Aufgabe:** event-worker und event-deployment stilllegen; der Event-Worker ist eine Rolle der Engine (`ROLE=event`, M3).
 - [ ] **Aufgabe:** Kafka-Topic `process-deployment-done` entfernen, sobald event-deployment aus ist; dazu die Altlasten `deployments_v3`, `camunda_incident` und vermutlich `processmodel` prüfen.
 - [ ] **Aufgabe:** process-sync und mgw-process-sync-client archivieren, wenn die Synchronisation in der Engine läuft (M6).

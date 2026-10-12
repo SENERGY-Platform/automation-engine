@@ -109,6 +109,7 @@ func (h *handlers) routes() []route {
 		{"GET /namespaces/{ns}/deployments/{id}/versions", h.listDeploymentVersions},
 		{"GET /namespaces/{ns}/deployments/{id}/versions/{version}", h.getDeploymentVersion},
 		{"GET /namespaces/{ns}/deployments/{id}/start-parameters", h.getStartParameters},
+		{"GET /namespaces/{ns}/deployments/{id}/parameters", h.getDeploymentParameters},
 		{"POST /namespaces/{ns}/deployments/{id}/reset-restarts", h.resetRestarts},
 		{"GET /namespaces/{ns}/deployments/{id}/event-descriptions", h.listEventDescriptions},
 		{"PUT /namespaces/{ns}/deployments/{id}/owner", h.setOwner(model.KindDeployment)},
@@ -127,6 +128,11 @@ func (h *handlers) routes() []route {
 		{"PUT /namespaces/{ns}/instances/{id}/variables/{name}", h.setVariable},
 		{"GET /namespaces/{ns}/instances/{id}/activities", h.listActivities},
 		{"GET /namespaces/{ns}/instances/{id}/variables/{name}", h.getVariable},
+		{"PUT /namespaces/{ns}/instances/{id}/parameters", h.updateParameters},
+		{"DELETE /namespaces/{ns}/instances/{id}/variables/{name}", h.deleteVariable},
+		{"GET /namespaces/{ns}/instances/{id}/maintenance-procedures", h.listMaintenanceProcedures},
+		{"GET /namespaces/{ns}/instances/{id}/maintenance-procedures/{procedure}/parameters", h.getMaintenanceParameters},
+		{"POST /namespaces/{ns}/instances/{id}/maintenance-procedures/{procedure}/start", h.startMaintenance},
 		{"GET /namespaces/{ns}/instances/{id}/debug", h.getDebugState},
 		{"GET /namespaces/{ns}/instances/{id}/live", h.watchInstance},
 		{"GET /namespaces/{ns}/instances/{id}/history", h.getHistoryState},
@@ -136,6 +142,10 @@ func (h *handlers) routes() []route {
 		{"PUT /namespaces/{ns}/instances/{id}/owner", h.setOwner(model.KindInstance)},
 
 		{"GET /namespaces/{ns}/incidents", h.listIncidents},
+
+		{"GET /namespaces/{ns}/modules", h.listModules},
+		{"GET /namespaces/{ns}/modules/{id}", h.getModule},
+		{"DELETE /namespaces/{ns}/modules/{id}", h.deleteModule},
 
 		{"POST /messages", h.correlate},
 

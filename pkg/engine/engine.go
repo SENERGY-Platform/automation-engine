@@ -236,6 +236,7 @@ func (this *Engine) Rules(namespace model.Namespace) bpmn.Rules {
 		Elements:          namespace.Elements,
 		TaskTypes:         namespace.TaskTypes,
 		TaskTypeAvailable: this.TaskTypeAvailable,
+		ForbidCycles:      namespace.ForbidCycles,
 	}
 }
 
@@ -284,6 +285,8 @@ func (this *Engine) version(tx *store.Tx, deploymentId string, version int) (*ca
 	if err != nil {
 		return nil, fmt.Errorf("deployment %v version %v: %w", deploymentId, version, err)
 	}
+	// the deploy validated them; what does not fit anymore is left out
+	bpmn.ApplyParameters(p, v.Parameters)
 	cached = &cachedVersion{process: p, selections: v.Selections}
 	this.cacheMux.Lock()
 	if len(this.cache) >= maxCachedProcesses {
@@ -340,4 +343,9 @@ func (this *Engine) DebugState(tx *store.Tx, inst store.Instance) (model.DebugSt
 // transfers of the debugger (DBG-04).
 func (this *Engine) ActivityValueLimit() int {
 	return this.config.MaxActivityValueBytes
+}
+
+// Process returns the parsed BPMN of a deployment version from the cache.
+func (this *Engine) Process(tx *store.Tx, deploymentId string, version int) (*bpmn.Process, error) {
+	return this.process(tx, deploymentId, version)
 }

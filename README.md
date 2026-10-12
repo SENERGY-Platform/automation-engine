@@ -22,6 +22,24 @@ Für den Plattformbetrieb kommen dazu:
 - `MAX_LIVE_CONNECTIONS_PER_USER` (Vorgabe 5): Live-Debug-Verbindungen je Nutzer und Replica.
 - `OTEL_ENDPOINT`: OTLP-Collector (gRPC) für Traces. Leer heißt Vorgabe von `gin-middleware/otelx` (`jaeger.logging.svc.cluster.local:4317`), `off` schaltet Tracing ab, etwa im Fog oder lokal.
 
+## Smart Services und Module
+
+Smart Services sind der Namespace `smart-services`. Ihre Aufgabentypen ersetzen die acht Module-Worker:
+- `info`, `import`, `export`, `analytics`, `device_repository`: die Handler der bisherigen Worker, unverändert eingebunden. Eingaben mit Präfix `<typ>.`, Go-Templates gegen die Instanzvariablen (`{{.param}}`), `prescript*`/`postscript*` mit `variables`, `inputs`, `outputs`, `util`, `deviceRepo`.
+- `process_deployment`, `process_deployment_start`: deployen bzw. starten Prozesse im referenzierten Namespace (`processes`) mit dem Token des Owners. Das Deployment verweist auf die verwaltende Instanz (`managed_by`). Den Abschluss meldet die Engine mit der Nachricht `deployment_done_<id>`, die die Instanz beim nächsten Warten darauf sofort erhält; Wartepunkte nennen ihren Namen mit `senergy:messageName` (JavaScript).
+- `watcher`: prüft Geräteauswahlen (oder mit `ALLOW_GENERIC_WATCH_REQUESTS` beliebige Anfragen unter der HTTP-Richtlinie des Namespace) in Abständen und startet bei einer Änderung eine Wartungsprozedur.
+
+Konfiguration: `DEVICE_MANAGER_URL`, `DEVICE_SELECTION_URL`, `FLOW_ENGINE_URL`, `FLOW_PARSER_URL`, `IMPORT_DEPLOY_URL`, `SERVING_SERVICE_URL`, `DEVICE_REPOSITORY_URL`, dazu die Optionen der Worker (`ANALYTICS_*`, `DEVICE_GROUP_*`, `INFO_ADDITIONAL_MODULE_DATA_FIELDS`, `WATCHER_MIN_INTERVAL`, `WATCHER_DEFAULT_INTERVAL`, `MODULE_HEALTH_CHECK_INTERVAL`). Ein Aufgabentyp ist nur registriert, wenn seine Dienste konfiguriert sind; sonst lehnt der Deploy ihn ab.
+
+API:
+- Module: `GET .../modules?instance_id=&module_type=&key=`, `GET|DELETE .../modules/{id}`. Gelöscht werden Ressourcen über eine Outbox mit Wiederholung; Instanzen mit Modulen fallen nicht unter die Aufbewahrung.
+- Status jeder Instanz (`status`, `status_message`): `running`, `ready`, `error` aus Laufzustand und Modulfehlern der stündlichen Gesundheitsprüfung.
+- Startparameter mit Optionen: `GET .../deployments/{id}/parameters`; `auto_select_all`-Felder füllt die Engine beim Start.
+- Parameter ändern: `PUT .../instances/{id}/parameters`. Jeder neue Lauf entfernt die Module des vorigen; `smart-services` lehnt deshalb Schleifen im Sequenzfluss ab (`forbid_cycles`).
+- Wartungsprozeduren: `GET .../instances/{id}/maintenance-procedures[/{procedure}/parameters]`, `POST .../{procedure}/start`. Message-Starts in `smart-services` starten nur so, nicht über `/messages`.
+- Variablen setzen und löschen auch bei beendeten Instanzen: `PUT|DELETE .../instances/{id}/variables/{name}`.
+- Deploy-Parameter je Element: `parameters` am Deployment überschreibt Eingaben, Eventvariablen, Timer und Startvorgaben.
+
 ## Debugging
 
 - `GET .../instances/{id}/debug`: aktueller Zustand mit aktiven Elementen, Wartegründen, Variablen, offenen Incidents und Durchlaufzählern von Elementen und Sequenzflüssen. Große Werte kommen gekürzt, `GET .../instances/{id}/variables/{name}` liefert sie einzeln.

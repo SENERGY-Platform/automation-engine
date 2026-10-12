@@ -133,6 +133,9 @@ func (this *replay) apply(a model.Activity) {
 			return
 		}
 		s.Variables[name] = v
+	case model.ActivityVariableDeleted:
+		name, _ := a.Data["name"].(string)
+		delete(s.Variables, name)
 	case model.ActivityMessageWaiting:
 		name, _ := a.Data["message_name"].(string)
 		this.wait(a, model.Wait{Kind: model.WaitMessage, Message: &model.MessageWait{Name: name}})

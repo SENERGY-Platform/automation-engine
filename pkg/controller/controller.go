@@ -29,6 +29,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/live"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
 	"github.com/SENERGY-Platform/automation-engine/pkg/permissions"
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
@@ -86,6 +87,9 @@ type Controller struct {
 	liveSettings LiveSettings
 	liveMux      sync.Mutex
 	liveCount    map[string]int
+	// start parameters with options (SMS-08)
+	parameters          *parameters.Describer
+	parametersUserToken auth.UserTokenSource
 	// event debugging; nil without timescale-wrapper (EVT-10, DBG-18)
 	series    events.Series
 	evaluator *events.Evaluator
@@ -113,7 +117,7 @@ type eventPlan struct {
 // reported as such, then checks the rights on the selected devices and derives the event
 // descriptions (DEP-06, DEP-07). Both call other services and run outside any transaction.
 func (this *Controller) planSelections(ctx context.Context, user jwt.Token, ns model.Namespace, input model.DeploymentInput, deployment model.Deployment, version int) (plan eventPlan, err error) {
-	if len(input.Selections) == 0 {
+	if len(input.Selections) == 0 && len(input.Parameters) == 0 {
 		return plan, nil
 	}
 	var resolved resolvedDeployment
@@ -129,12 +133,15 @@ func (this *Controller) planSelections(ctx context.Context, user jwt.Token, ns m
 			return plan, err
 		}
 	}
-	if this.describer == nil {
-		return plan, nil
-	}
 	process, _, err := bpmn.Parse(resolved.xml)
 	if err != nil {
 		return plan, err
+	}
+	if issues := bpmn.ApplyParameters(process, input.Parameters); len(issues) > 0 {
+		return plan, model.ValidationFailed(issues)
+	}
+	if this.describer == nil {
+		return plan, nil
 	}
 	plan.descriptions, plan.groups, err = this.describer.Describe(deployment, version, process, input.Selections)
 	return plan, err

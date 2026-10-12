@@ -380,6 +380,53 @@ func (this *ClientImpl) EventEvaluations(ctx context.Context, token string, name
 	return result, err
 }
 
+func (this *ClientImpl) UpdateParameters(ctx context.Context, token string, namespace string, id string, input model.ParametersInput) (result model.Instance, err error) {
+	err = this.do(ctx, token, http.MethodPut, path("namespaces", namespace, "instances", id, "parameters"), nil, input, &result)
+	return result, err
+}
+
+func (this *ClientImpl) DeleteVariable(ctx context.Context, token string, namespace string, id string, name string) error {
+	return this.do(ctx, token, http.MethodDelete, path("namespaces", namespace, "instances", id, "variables", name), nil, nil, nil)
+}
+
+func (this *ClientImpl) DeploymentParameters(ctx context.Context, token string, namespace string, id string) (result []model.ParameterDescription, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "deployments", id, "parameters"), nil, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) MaintenanceParameters(ctx context.Context, token string, namespace string, id string, procedure string) (result []model.ParameterDescription, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "instances", id, "maintenance-procedures", procedure, "parameters"), nil, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) ListMaintenanceProcedures(ctx context.Context, token string, namespace string, id string) (result []model.MaintenanceProcedure, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "instances", id, "maintenance-procedures"), nil, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) StartMaintenance(ctx context.Context, token string, namespace string, id string, procedure string, input model.MaintenanceStartInput) (result model.Instance, err error) {
+	err = this.do(ctx, token, http.MethodPost, path("namespaces", namespace, "instances", id, "maintenance-procedures", procedure, "start"), nil, input, &result)
+	return result, err
+}
+
+func (this *ClientImpl) ListModules(ctx context.Context, token string, namespace string, options model.ModuleListOptions) (result model.Page[model.Module], err error) {
+	q := pageQuery(options.PageOptions)
+	set(q, "instance_id", options.InstanceId)
+	set(q, "module_type", options.ModuleType)
+	set(q, "key", options.Key)
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "modules"), q, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) GetModule(ctx context.Context, token string, namespace string, id string) (result model.Module, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "modules", id), nil, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) DeleteModule(ctx context.Context, token string, namespace string, id string) error {
+	return this.do(ctx, token, http.MethodDelete, path("namespaces", namespace, "modules", id), nil, nil, nil)
+}
+
 func (this *ClientImpl) ListIncidents(ctx context.Context, token string, namespace string, options model.IncidentListOptions) (result model.Page[model.Incident], err error) {
 	q := pageQuery(options.PageOptions)
 	set(q, "instance_id", options.InstanceId)

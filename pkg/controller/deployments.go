@@ -154,14 +154,14 @@ func (this *Controller) createDeployment(ctx context.Context, token string, name
 		result = model.Deployment{
 			Id: id, Namespace: ns.Name, Name: resolved.name, Description: input.Description, Owner: deploymentOwner,
 			ModelId: resolved.modelId, ModelVersion: resolved.modelVersion, Version: 1, Source: input.Source, RetentionDays: input.RetentionDays,
-			CreatedAt: now, UpdatedAt: now,
+			ManagedBy: input.ManagedBy, CreatedAt: now, UpdatedAt: now,
 		}
 		if err = tx.InsertDeployment(result); err != nil {
 			return err
 		}
 		version := model.DeploymentVersion{
 			DeploymentId: id, Version: 1, ModelVersion: resolved.modelVersion, Xml: resolved.xml, Svg: resolved.svg,
-			IncidentHandling: incidentHandling(ns, input.IncidentHandling), Selections: input.Selections, CreatedAt: now,
+			IncidentHandling: incidentHandling(ns, input.IncidentHandling), Selections: input.Selections, Parameters: input.Parameters, CreatedAt: now,
 		}
 		if err = tx.InsertDeploymentVersion(version); err != nil {
 			return err
@@ -261,7 +261,7 @@ func (this *Controller) PutDeployment(ctx context.Context, token string, namespa
 		}
 		err = tx.InsertDeploymentVersion(model.DeploymentVersion{
 			DeploymentId: id, Version: result.Version, ModelVersion: resolved.modelVersion, Xml: resolved.xml, Svg: resolved.svg,
-			UpdateStrategy: input.UpdateStrategy, IncidentHandling: handling, Selections: input.Selections, CreatedAt: now,
+			UpdateStrategy: input.UpdateStrategy, IncidentHandling: handling, Selections: input.Selections, Parameters: input.Parameters, CreatedAt: now,
 		})
 		if err != nil {
 			return err
@@ -369,6 +369,7 @@ func (this *Controller) GetStartParameters(ctx context.Context, token string, na
 		if err != nil {
 			return err
 		}
+		bpmn.ApplyParameters(process, v.Parameters)
 		result = bpmn.StartParameters(process.NoneStartEvent())
 		return nil
 	})
@@ -397,6 +398,7 @@ func (this *Controller) RecomputeEvents(ctx context.Context, deploymentId string
 	if err != nil {
 		return err
 	}
+	bpmn.ApplyParameters(process, version.Parameters)
 	descriptions, groups, err := this.describer.Describe(deployment, version.Version, process, version.Selections)
 	if err != nil {
 		return err

@@ -190,6 +190,9 @@ type MessageRef struct {
 	// literal message name; empty for device events, whose name the engine assigns per deployment
 	Name        string
 	DeviceEvent bool
+	// senergy:messageName, a JavaScript expression for the name, evaluated when the event waits;
+	// e.g. the done event of a deployment a module created (SMS-04)
+	Expression string
 }
 
 type TimerDefinition struct {

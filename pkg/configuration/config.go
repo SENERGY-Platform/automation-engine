@@ -78,6 +78,26 @@ type Config struct {
 	// OTLP collector over gRPC for traces; empty selects the platform default of
 	// gin-middleware/otelx, "off" disables tracing
 	OtelEndpoint string `json:"otel_endpoint" env_var:"OTEL_ENDPOINT"`
+	// services and options of the module task types of smart services (TASK-29)
+	DeviceManagerUrl               string `json:"device_manager_url" env_var:"DEVICE_MANAGER_URL"`
+	FlowEngineUrl                  string `json:"flow_engine_url" env_var:"FLOW_ENGINE_URL"`
+	FlowParserUrl                  string `json:"flow_parser_url" env_var:"FLOW_PARSER_URL"`
+	ServingServiceUrl              string `json:"serving_service_url" env_var:"SERVING_SERVICE_URL"`
+	AnalyticsEnableMultiplePaths   bool   `json:"analytics_enable_multiple_paths" env_var:"ANALYTICS_ENABLE_MULTIPLE_PATHS"`
+	AnalyticsDevicePathPrefix      string `json:"analytics_device_path_prefix" env_var:"ANALYTICS_DEVICE_PATH_PREFIX"`
+	AnalyticsGroupPathPrefix       string `json:"analytics_group_path_prefix" env_var:"ANALYTICS_GROUP_PATH_PREFIX"`
+	AnalyticsImportPathPrefix      string `json:"analytics_import_path_prefix" env_var:"ANALYTICS_IMPORT_PATH_PREFIX"`
+	AnalyticsRemoveImportPathRoot  bool   `json:"analytics_remove_import_path_root" env_var:"ANALYTICS_REMOVE_IMPORT_PATH_ROOT"`
+	DeviceGroupNamePrefix          string `json:"device_group_name_prefix" env_var:"DEVICE_GROUP_NAME_PREFIX"`
+	DeviceGroupAttributeOrigin     string `json:"device_group_attribute_origin" env_var:"DEVICE_GROUP_ATTRIBUTE_ORIGIN"`
+	InfoAdditionalModuleDataFields bool   `json:"info_additional_module_data_fields" env_var:"INFO_ADDITIONAL_MODULE_DATA_FIELDS"`
+	// watcher task type (TASK-27): requests from models besides device criteria, and intervals
+	AllowGenericWatchRequests bool   `json:"allow_generic_watch_requests" env_var:"ALLOW_GENERIC_WATCH_REQUESTS"`
+	WatcherMinInterval        string `json:"watcher_min_interval" env_var:"WATCHER_MIN_INTERVAL"`
+	WatcherDefaultInterval    string `json:"watcher_default_interval" env_var:"WATCHER_DEFAULT_INTERVAL"`
+	// interval of the health checks of modules (SMS-11)
+	ModuleHealthCheckInterval string `json:"module_health_check_interval" env_var:"MODULE_HEALTH_CHECK_INTERVAL"`
+
 	// live debug streams per user and replica (DBG-10)
 	MaxLiveConnectionsPerUser int `json:"max_live_connections_per_user" env_var:"MAX_LIVE_CONNECTIONS_PER_USER"`
 
@@ -167,7 +187,16 @@ func Default() Config {
 		MaxIoValuesPerUser:         10000,
 		MaxIoValueBytes:            256 << 10,
 		MaxLiveConnectionsPerUser:  5,
-		Namespaces:                 DefaultNamespaces(),
+		// the values of the former module workers
+		AnalyticsDevicePathPrefix:      "value.",
+		AnalyticsGroupPathPrefix:       "value.",
+		DeviceGroupNamePrefix:          "smart-service generated: ",
+		DeviceGroupAttributeOrigin:     "smart-service",
+		InfoAdditionalModuleDataFields: true,
+		ModuleHealthCheckInterval:      "1h",
+		WatcherMinInterval:             "1m",
+		WatcherDefaultInterval:         "1h",
+		Namespaces:                     DefaultNamespaces(),
 	}
 }
 
@@ -200,6 +229,10 @@ func DefaultNamespaces() []model.Namespace {
 			Deployments:          model.LevelSettings{Shareable: true},
 			Instances:            model.LevelSettings{Shareable: true},
 			IncidentHandling:     model.IncidentHandling{Restart: false, Notify: true},
+			// processes that create modules run briefly; every new run removes the modules of the last one
+			ForbidCycles:               true,
+			MessageStartsAreProcedures: true,
+			JsonStringParameters:       true,
 		},
 	}
 }

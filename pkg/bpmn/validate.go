@@ -17,7 +17,9 @@
 package bpmn
 
 import (
+	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -33,6 +35,8 @@ type Rules struct {
 	TaskTypes model.ListRule
 	// reports whether the engine implements a task type; nil accepts every type
 	TaskTypeAvailable func(taskType string) bool
+	// reject cycles in the sequence flow, so that every run ends (SMS-03)
+	ForbidCycles bool
 }
 
 // ParseAndValidate combines Parse and Validate; issues block a deploy and are hints on a model save.
@@ -103,6 +107,13 @@ func Validate(p *Process, rules Rules) (issues []model.Issue) {
 				add(e.Id, "output mapping without name")
 			}
 			checkValue(e.Id, m.Name, m.Value)
+		}
+		if e.Message != nil && e.Message.Expression != "" {
+			if e.Type == StartEvent {
+				add(e.Id, "a message start event needs a literal message name, senergy:messageName is for events that wait")
+			} else {
+				checkScript(e.Id, "message name", e.Message.Expression)
+			}
 		}
 		if e.Timer != nil {
 			if e.Timer.Expression {
@@ -177,7 +188,45 @@ func Validate(p *Process, rules Rules) (issues []model.Issue) {
 	if noneStarts > 1 {
 		add(p.Id, "process must not have more than one start event without definition")
 	}
+	if rules.ForbidCycles {
+		for _, flow := range Cycles(p) {
+			add(flow.Id, "sequence flow %v closes a loop back to %v; loops are not allowed in this namespace", flow.Id, flow.Target.Id)
+		}
+	}
 	return issues
+}
+
+// Cycles returns one flow per loop of the sequence flow: the flow that leads back to an element
+// on the current path of a depth-first search in document order.
+func Cycles(p *Process) (result []*Flow) {
+	const (
+		unvisited = iota
+		onPath
+		done
+	)
+	state := map[string]int{}
+	var visit func(e *Element)
+	visit = func(e *Element) {
+		state[e.Id] = onPath
+		for _, flow := range e.Outgoing {
+			if flow.Target == nil {
+				continue
+			}
+			switch state[flow.Target.Id] {
+			case onPath:
+				result = append(result, flow)
+			case unvisited:
+				visit(flow.Target)
+			}
+		}
+		state[e.Id] = done
+	}
+	for _, id := range p.Order {
+		if e := p.Element(id); e != nil && state[id] == unvisited {
+			visit(e)
+		}
+	}
+	return result
 }
 
 // StartParameters lists the form fields of a start event without those marked ignore_on_start (RUN-02).
@@ -199,4 +248,60 @@ func StartParameters(e *Element) []model.StartParameter {
 		})
 	}
 	return result
+}
+
+// ApplyParameters sets the values a deployment overrides per element: input mappings by name
+// as text, senergy:variables of device events, timer definitions and defaults of start form
+// fields (DEP-01). Overrides of elements, inputs or fields the process does not have are issues.
+func ApplyParameters(p *Process, parameters map[string]model.ElementParameters) (issues []model.Issue) {
+	add := func(elementId string, format string, args ...any) {
+		issues = append(issues, model.Issue{ElementId: elementId, Message: fmt.Sprintf(format, args...)})
+	}
+	for _, elementId := range slices.Sorted(maps.Keys(parameters)) {
+		params := parameters[elementId]
+		e := p.Element(elementId)
+		if e == nil {
+			add(elementId, "parameters for an element the process does not have")
+			continue
+		}
+		for _, name := range slices.Sorted(maps.Keys(params.Inputs)) {
+			i := slices.IndexFunc(e.Inputs, func(m Mapping) bool { return m.Name == name })
+			if i < 0 {
+				add(elementId, "the element has no input %q", name)
+				continue
+			}
+			e.Inputs[i].Value = Value{Kind: ValueText, Text: params.Inputs[name]}
+		}
+		if len(params.Variables) > 0 {
+			if !e.IsDeviceEvent() {
+				add(elementId, "variables can only be set for device events")
+			} else {
+				variables := map[string]string{}
+				if raw := e.Attributes["variables"]; raw != "" {
+					_ = json.Unmarshal([]byte(raw), &variables)
+				}
+				maps.Copy(variables, params.Variables)
+				raw, _ := json.Marshal(variables)
+				e.Attributes["variables"] = string(raw)
+			}
+		}
+		if params.Timer != "" {
+			if e.Timer == nil {
+				add(elementId, "the element has no timer")
+			} else if err := timer.Validate(e.Timer.Kind, params.Timer); err != nil {
+				add(elementId, "timer: %v", err)
+			} else {
+				e.Timer.Value, e.Timer.Expression = params.Timer, false
+			}
+		}
+		for _, id := range slices.Sorted(maps.Keys(params.Defaults)) {
+			i := slices.IndexFunc(e.FormFields, func(f FormField) bool { return f.Id == id })
+			if i < 0 {
+				add(elementId, "the element has no form field %q", id)
+				continue
+			}
+			e.FormFields[i].DefaultValue = params.Defaults[id]
+		}
+	}
+	return issues
 }

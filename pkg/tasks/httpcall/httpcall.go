@@ -229,3 +229,18 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 	}
 	return engine.TaskResult{Output: map[string]any{"statusCode": float64(resp.StatusCode), "response": string(content)}}, nil
 }
+
+// Do sends a request under the HTTP policy of a namespace (NS-04), e.g. a generic watch request
+// of the watcher (TASK-27). The caller closes the body of the response.
+func (this *Type) Do(namespace string, req *http.Request) (*http.Response, error) {
+	policy := this.policy(namespace)
+	if !policy.Enabled {
+		return nil, fmt.Errorf("%w: http calls are disabled in namespace %v", errDenied, namespace)
+	}
+	allowedByName, err := target(policy, req.URL)
+	if err != nil {
+		return nil, err
+	}
+	timeout, _ := time.ParseDuration(policy.Timeout)
+	return this.client(policy, timeout).Do(req.WithContext(context.WithValue(req.Context(), allowedKey{}, allowedByName)))
+}

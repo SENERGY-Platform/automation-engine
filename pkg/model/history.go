@@ -41,6 +41,11 @@ const (
 	ActivityIncident         ActivityKind = "incident"
 	ActivityTokenJoinWaiting ActivityKind = "join_waiting"
 	ActivityRestartScheduled ActivityKind = "restart_scheduled"
+	ActivityVariableDeleted  ActivityKind = "variable_deleted"
+	// a task created or replaced modules (SMS-12)
+	ActivityModulesChanged ActivityKind = "modules_changed"
+	// a new run removed the modules of the previous one (SMS-03)
+	ActivityModulesRemoved ActivityKind = "modules_removed"
 )
 
 type Activity struct {

@@ -61,6 +61,9 @@ type Task struct {
 	Selection *model.Selection
 	// the engine cancels ctx after this duration, and an asynchronous task fails after it (TASK-07)
 	Timeout time.Duration
+	// the instance modules and shared variables belong to: the parent of a maintenance procedure,
+	// otherwise the instance itself (SMS-13)
+	RootInstanceId string
 }
 
 // TaskResult completes a task with output variables, or announces an asynchronous answer
@@ -69,6 +72,25 @@ type TaskResult struct {
 	// local variables of the task, e.g. "result" (TASK-10); the output mappings read them
 	Output map[string]any
 	Async  bool
+	// changes besides the output, applied in the transaction that completes the task
+	Effects *Effects
+}
+
+// Effects are what a task changes besides its output (SMS-04, SMS-12, SMS-13).
+type Effects struct {
+	// modules to create or replace; the engine sets instance, namespace, owner, creator, element
+	// and times
+	Modules []model.Module
+	// variables of the root instance
+	Variables map[string]any
+	// messages for the instance of the task, delivered at once when it waits for one of them
+	Messages []string
+}
+
+// Undoer is implemented by task types whose effects outlive a failed completion, e.g. an
+// external resource; the engine calls Undo when it could not apply them.
+type Undoer interface {
+	Undo(ctx context.Context, task Task, effects *Effects, reason error)
 }
 
 // PermanentError fails a task without retries, e.g. an incident the process raises itself.

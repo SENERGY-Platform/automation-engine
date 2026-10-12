@@ -23,13 +23,13 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 )
 
-const deploymentColumns = "id, namespace, name, description, owner, model_id, model_version, model_deleted, version, source, retention_days, faulty_since, created_at, updated_at"
+const deploymentColumns = "id, namespace, name, description, owner, model_id, model_version, model_deleted, version, source, retention_days, faulty_since, created_at, updated_at, managed_by"
 
 func scanDeployment(row interface{ Scan(...any) error }) (d model.Deployment, err error) {
 	var deleted int
 	var created, updated int64
 	var faulty sql.NullInt64
-	err = row.Scan(&d.Id, &d.Namespace, &d.Name, &d.Description, &d.Owner, &d.ModelId, &d.ModelVersion, &deleted, &d.Version, &d.Source, &d.RetentionDays, &faulty, &created, &updated)
+	err = row.Scan(&d.Id, &d.Namespace, &d.Name, &d.Description, &d.Owner, &d.ModelId, &d.ModelVersion, &deleted, &d.Version, &d.Source, &d.RetentionDays, &faulty, &created, &updated, &d.ManagedBy)
 	d.ModelDeleted = deleted == 1
 	d.FaultySince = fromNullMillis(faulty)
 	d.CreatedAt = fromMillis(created)
@@ -38,14 +38,14 @@ func scanDeployment(row interface{ Scan(...any) error }) (d model.Deployment, er
 }
 
 func (this *Tx) InsertDeployment(d model.Deployment) error {
-	_, err := this.exec("INSERT INTO deployments ("+deploymentColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		d.Id, d.Namespace, d.Name, d.Description, d.Owner, d.ModelId, d.ModelVersion, boolInt(d.ModelDeleted), d.Version, d.Source, d.RetentionDays, nullMillis(d.FaultySince), millis(d.CreatedAt), millis(d.UpdatedAt))
+	_, err := this.exec("INSERT INTO deployments ("+deploymentColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		d.Id, d.Namespace, d.Name, d.Description, d.Owner, d.ModelId, d.ModelVersion, boolInt(d.ModelDeleted), d.Version, d.Source, d.RetentionDays, nullMillis(d.FaultySince), millis(d.CreatedAt), millis(d.UpdatedAt), d.ManagedBy)
 	return err
 }
 
 func (this *Tx) UpdateDeployment(d model.Deployment) error {
-	_, err := this.exec("UPDATE deployments SET name = ?, description = ?, owner = ?, model_id = ?, model_version = ?, model_deleted = ?, version = ?, source = ?, retention_days = ?, faulty_since = ?, updated_at = ? WHERE id = ?",
-		d.Name, d.Description, d.Owner, d.ModelId, d.ModelVersion, boolInt(d.ModelDeleted), d.Version, d.Source, d.RetentionDays, nullMillis(d.FaultySince), millis(d.UpdatedAt), d.Id)
+	_, err := this.exec("UPDATE deployments SET name = ?, description = ?, owner = ?, model_id = ?, model_version = ?, model_deleted = ?, version = ?, source = ?, retention_days = ?, faulty_since = ?, updated_at = ?, managed_by = ? WHERE id = ?",
+		d.Name, d.Description, d.Owner, d.ModelId, d.ModelVersion, boolInt(d.ModelDeleted), d.Version, d.Source, d.RetentionDays, nullMillis(d.FaultySince), millis(d.UpdatedAt), d.ManagedBy, d.Id)
 	return err
 }
 
@@ -62,6 +62,9 @@ func (this *Tx) DeleteDeployment(id string) error {
 		return err
 	}
 	if err := this.queueRemovals("instances", "deployment_id = ?", id); err != nil {
+		return err
+	}
+	if err := this.queueModuleRemovals("instance_id IN (SELECT id FROM instances WHERE deployment_id = ?)", id); err != nil {
 		return err
 	}
 	if err := this.queueRemovals("deployments", "id = ?", id); err != nil {
@@ -119,8 +122,12 @@ func (this *Tx) InsertDeploymentVersion(v model.DeploymentVersion) error {
 	if len(v.Selections) > 0 {
 		selections = toJson(v.Selections)
 	}
-	_, err := this.exec("INSERT INTO deployment_versions (deployment_id, version, model_version, xml, svg, update_strategy, incident_restart, incident_notify, selections, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		v.DeploymentId, v.Version, v.ModelVersion, v.Xml, v.Svg, string(v.UpdateStrategy), boolInt(v.IncidentHandling.Restart), boolInt(v.IncidentHandling.Notify), selections, millis(v.CreatedAt))
+	parameters := ""
+	if len(v.Parameters) > 0 {
+		parameters = toJson(v.Parameters)
+	}
+	_, err := this.exec("INSERT INTO deployment_versions (deployment_id, version, model_version, xml, svg, update_strategy, incident_restart, incident_notify, selections, parameters, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		v.DeploymentId, v.Version, v.ModelVersion, v.Xml, v.Svg, string(v.UpdateStrategy), boolInt(v.IncidentHandling.Restart), boolInt(v.IncidentHandling.Notify), selections, parameters, millis(v.CreatedAt))
 	return err
 }
 
@@ -128,10 +135,11 @@ func (this *Tx) GetDeploymentVersion(deploymentId string, version int) (v model.
 	var strategy string
 	var created int64
 	var restart, notify int
-	var selections string
-	err = this.queryRow("SELECT deployment_id, version, model_version, xml, svg, update_strategy, incident_restart, incident_notify, selections, created_at FROM deployment_versions WHERE deployment_id = ? AND version = ?", deploymentId, version).
-		Scan(&v.DeploymentId, &v.Version, &v.ModelVersion, &v.Xml, &v.Svg, &strategy, &restart, &notify, &selections, &created)
+	var selections, parameters string
+	err = this.queryRow("SELECT deployment_id, version, model_version, xml, svg, update_strategy, incident_restart, incident_notify, selections, parameters, created_at FROM deployment_versions WHERE deployment_id = ? AND version = ?", deploymentId, version).
+		Scan(&v.DeploymentId, &v.Version, &v.ModelVersion, &v.Xml, &v.Svg, &strategy, &restart, &notify, &selections, &parameters, &created)
 	v.Selections = fromJson[map[string]model.Selection](selections)
+	v.Parameters = fromJson[map[string]model.ElementParameters](parameters)
 	v.UpdateStrategy = model.UpdateStrategy(strategy)
 	v.IncidentHandling = model.IncidentHandling{Restart: restart == 1, Notify: notify == 1}
 	v.CreatedAt = fromMillis(created)

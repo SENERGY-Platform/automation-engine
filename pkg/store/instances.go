@@ -34,13 +34,13 @@ type Instance struct {
 	SnapshotAt  time.Time
 }
 
-const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at"
+const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at, parent_id"
 
 func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 	var state, startVariables string
 	var created, started, lastActivity, snapshotAt int64
 	var ended, restartAt sql.NullInt64
-	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt)
+	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt, &i.ParentId)
 	if snapshotAt > 0 {
 		i.SnapshotAt = fromMillis(snapshotAt)
 	}
@@ -55,9 +55,9 @@ func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 }
 
 func (this *Tx) InsertInstance(i Instance) error {
-	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		i.Id, i.Namespace, i.Owner, i.DeploymentId, i.DeploymentName, i.DeploymentVersion, i.ModelId, i.ModelVersion, i.Run, string(i.State), i.EndReason, toJson(i.StartVariables),
-		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.SnapshotSeq, snapshotMillis(i.SnapshotAt))
+		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.SnapshotSeq, snapshotMillis(i.SnapshotAt), i.ParentId)
 	if err != nil {
 		return err
 	}
@@ -88,12 +88,25 @@ func (this *Tx) GetInstance(id string, lock bool) (Instance, error) {
 }
 
 func (this *Tx) DeleteInstance(id string) error {
+	// maintenance procedures go with their instance (SMS-13)
+	children, err := this.ChildInstances(id)
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		if err = this.DeleteInstance(child); err != nil {
+			return err
+		}
+	}
 	if err := this.queueRemovals("instances", "id = ?", id); err != nil {
+		return err
+	}
+	if err := this.queueModuleRemovals("instance_id = ?", id); err != nil {
 		return err
 	}
 	var namespace string
 	var activitySeq int64
-	err := this.queryRow("SELECT namespace, activity_seq FROM instances WHERE id = ?", id).Scan(&namespace, &activitySeq)
+	err = this.queryRow("SELECT namespace, activity_seq FROM instances WHERE id = ?", id).Scan(&namespace, &activitySeq)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
@@ -284,5 +297,16 @@ func (this *Tx) VariablesSize(instanceId string) (int, error) {
 
 func (this *Tx) DeleteVariables(instanceId string) error {
 	_, err := this.exec("DELETE FROM variables WHERE instance_id = ?", instanceId)
+	return err
+}
+
+func (this *Tx) DeleteVariable(instanceId string, name string) error {
+	_, err := this.exec("DELETE FROM variables WHERE instance_id = ? AND name = ?", instanceId, name)
+	return err
+}
+
+// SetStartVariables replaces the stored start variables, e.g. after a parameter change (SMS-09).
+func (this *Tx) SetStartVariables(instanceId string, variables map[string]any) error {
+	_, err := this.exec("UPDATE instances SET start_variables = ? WHERE id = ?", toJson(variables), instanceId)
 	return err
 }

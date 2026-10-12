@@ -135,6 +135,15 @@ type Namespace struct {
 	DeviceSelection DeviceSelection `json:"device_selection"`
 	// namespaces whose resources this namespace may create through task types (NS-08)
 	ReferencedNamespaces []string `json:"referenced_namespaces,omitempty"`
+	// non-string values of string form fields are stored as JSON strings, as Camunda did; models
+	// of smart services parse them, e.g. a list of selected devices (SMS-08)
+	JsonStringParameters bool `json:"json_string_parameters,omitempty"`
+	// message start events with a name are maintenance procedures of an instance and start only
+	// through it, not by correlation (SMS-13)
+	MessageStartsAreProcedures bool `json:"message_starts_are_procedures,omitempty"`
+	// reject sequence flow cycles at deploy, so that every run ends; for namespaces whose task
+	// types create modules, which are removed with every new run (SMS-03)
+	ForbidCycles bool `json:"forbid_cycles,omitempty"`
 
 	Models      LevelSettings `json:"models"`
 	Deployments LevelSettings `json:"deployments"`
@@ -193,6 +202,7 @@ func (this Namespace) WithDefaults() Namespace {
 	if this.UserDeletion == "" {
 		this.UserDeletion = UserDeletionReject
 	}
+
 	for _, policy := range []*HttpPolicy{&this.Http.Cloud, &this.Http.Fog} {
 		if policy.Timeout == "" {
 			policy.Timeout = "10s"
@@ -216,6 +226,7 @@ func (this Namespace) Validate() error {
 	if this.UserDeletion != UserDeletionReject && this.UserDeletion != UserDeletionCascade {
 		return BadRequest("user_deletion must be %v or %v", UserDeletionReject, UserDeletionCascade)
 	}
+
 	if this.Retention.DefaultDays < 0 || this.Retention.MaxDays < 0 {
 		return BadRequest("retention must not be negative")
 	}

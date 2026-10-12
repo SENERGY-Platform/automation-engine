@@ -71,6 +71,9 @@ func (this *Tx) OwnedCounts(userId string) (map[string]int, error) {
 // DeleteOwned deletes everything a user owns, in all namespaces (SEC-08): instances,
 // deployments with all their instances, models and the user's settings. Rights are queued for
 // removal from permissions-v2.
+//
+// Modules are not queued for removal: user-management removes the user's resources in the other
+// services itself, and a token of the deleted user would fail every attempt.
 func (this *Tx) DeleteOwned(userId string) error {
 	if err := this.queueRemovals("instances", "owner = ?", userId); err != nil {
 		return err

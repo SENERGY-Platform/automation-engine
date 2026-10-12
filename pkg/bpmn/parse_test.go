@@ -241,3 +241,23 @@ func TestStartParametersSkipIgnoredFields(t *testing.T) {
 		t.Fatalf("unexpected %#v", params)
 	}
 }
+
+func TestForbiddenCyclesNameTheFlowClosingTheLoop(t *testing.T) {
+	loop := b.Process(
+		b.Start("start"), b.Gateway("exclusive", "loop", ""), b.Script("work", "n", "1"), b.Gateway("exclusive", "check", ""), b.End("end"),
+		b.Flow("start", "loop"), b.Flow("loop", "work"), b.Flow("work", "check"), b.Cond("check", "loop", "n < 3"), b.Cond("check", "end", "n >= 3"),
+	)
+	parseValid(t, loop, Rules{})
+	_, issues, err := ParseAndValidate(loop, Rules{ForbidCycles: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 || issues[0].ElementId != b.FlowId("check", "loop") || !strings.Contains(issues[0].Message, "loop") {
+		t.Fatalf("the flow back to the loop start is reported (SMS-03): %+v", issues)
+	}
+	parallel := b.Process(
+		b.Start("start"), b.Gateway("parallel", "fork", ""), b.Script("a", "x", "1"), b.Script("b", "y", "2"), b.Gateway("parallel", "join", ""), b.End("end"),
+		b.Flow("start", "fork"), b.Flow("fork", "a"), b.Flow("fork", "b"), b.Flow("a", "join"), b.Flow("b", "join"), b.Flow("join", "end"),
+	)
+	parseValid(t, parallel, Rules{ForbidCycles: true})
+}

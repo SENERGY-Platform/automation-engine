@@ -876,6 +876,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/namespaces/{ns}/deployments/{id}/parameters": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Form fields of the start event with description, type, default and the options the caller may choose, IoT options through device-selection; fields with auto_select_all are filled at the start (SMS-08). Needs execute on the deployment.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "start parameters of a deployment with their options",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.ParameterDescription"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/namespaces/{ns}/deployments/{id}/reset-restarts": {
             "post": {
                 "security": [
@@ -2041,6 +2091,243 @@ const docTemplate = `{
                 }
             }
         },
+        "/namespaces/{ns}/instances/{id}/maintenance-procedures": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Further message start events of the model with own start parameters (SMS-13).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instances"
+                ],
+                "summary": "maintenance procedures of an instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.MaintenanceProcedure"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/instances/{id}/maintenance-procedures/{procedure}/parameters": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instances"
+                ],
+                "summary": "parameters of a maintenance procedure with their options",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "procedure id",
+                        "name": "procedure",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.ParameterDescription"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/instances/{id}/maintenance-procedures/{procedure}/start": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Starts the procedure as an instance that refers to the given one; it shares its variables and modules. Needs administrate on the instance, which must be ready without errors (SMS-13).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instances"
+                ],
+                "summary": "start a maintenance procedure",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "procedure id, the message name",
+                        "name": "procedure",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "parameters",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.MaintenanceStartInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.Instance"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/instances/{id}/parameters": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Starts a new run with the new parameters; the modules of the previous run and its maintenance procedures are removed (SMS-03, SMS-09). Needs administrate on the instance and execute on the deployment.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "instances"
+                ],
+                "summary": "change the start parameters of an instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "parameters",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.ParametersInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Instance"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/namespaces/{ns}/instances/{id}/restart": {
             "post": {
                 "security": [
@@ -2381,6 +2668,51 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "instances"
+                ],
+                "summary": "delete a variable of an instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "variable name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/model.Error"
                         }
@@ -2837,6 +3169,155 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/model.ModelVersion"
                         }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/modules": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Resources instances created through task types, e.g. deployments, imports or pipelines (SMS-12); only of instances the caller may read.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "modules"
+                ],
+                "summary": "modules of instances",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "modules of this instance",
+                        "name": "instance_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "module type",
+                        "name": "module_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "modules with this key",
+                        "name": "key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Page-model_Module"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/modules/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "modules"
+                ],
+                "summary": "module",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "module id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Module"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Needs administrate on the instance. The resource is removed afterwards, with retries until it succeeds (SMS-06).",
+                "tags": [
+                    "modules"
+                ],
+                "summary": "delete a module",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "module id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     },
                     "404": {
                         "description": "Not Found",
@@ -3594,7 +4075,10 @@ const docTemplate = `{
                 "task_completed",
                 "incident",
                 "join_waiting",
-                "restart_scheduled"
+                "restart_scheduled",
+                "variable_deleted",
+                "modules_changed",
+                "modules_removed"
             ],
             "x-enum-varnames": [
                 "ActivityRunStarted",
@@ -3615,7 +4099,10 @@ const docTemplate = `{
                 "ActivityTaskCompleted",
                 "ActivityIncident",
                 "ActivityTokenJoinWaiting",
-                "ActivityRestartScheduled"
+                "ActivityRestartScheduled",
+                "ActivityVariableDeleted",
+                "ActivityModulesChanged",
+                "ActivityModulesRemoved"
             ]
         },
         "model.ActivityPage": {
@@ -3827,6 +4314,10 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "managed_by": {
+                    "description": "the instance that manages the deployment through a module (NS-08)",
+                    "type": "string"
+                },
                 "model_deleted": {
                     "description": "the referenced model has been deleted; the deployment keeps its copy of the BPMN (MOD-08)",
                     "type": "boolean"
@@ -3887,6 +4378,13 @@ const docTemplate = `{
                 "owner": {
                     "type": "string"
                 },
+                "parameters": {
+                    "description": "overrides of inputs, event variables and timers per BPMN element id",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/model.ElementParameters"
+                    }
+                },
                 "retention_days": {
                     "type": "integer"
                 },
@@ -3931,6 +4429,13 @@ const docTemplate = `{
                 "model_version": {
                     "type": "integer"
                 },
+                "parameters": {
+                    "description": "overrides per BPMN element id",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/model.ElementParameters"
+                    }
+                },
                 "selections": {
                     "description": "device selection per BPMN element id (DEP-05)",
                     "type": "object",
@@ -3960,6 +4465,32 @@ const docTemplate = `{
                 },
                 "at_start": {
                     "type": "boolean"
+                }
+            }
+        },
+        "model.ElementParameters": {
+            "type": "object",
+            "properties": {
+                "defaults": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "timer": {
+                    "type": "string"
+                },
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -4410,6 +4941,10 @@ const docTemplate = `{
                 "owner": {
                     "type": "string"
                 },
+                "parent_id": {
+                    "description": "a maintenance procedure refers to the instance it belongs to (SMS-13)",
+                    "type": "string"
+                },
                 "restart_at": {
                     "description": "an automatic restart after an incident is due at this time (INC-02)",
                     "type": "string"
@@ -4426,6 +4961,17 @@ const docTemplate = `{
                 },
                 "state": {
                     "$ref": "#/definitions/model.InstanceState"
+                },
+                "status": {
+                    "description": "summary for users, derived on read (SMS-11)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.InstanceStatus"
+                        }
+                    ]
+                },
+                "status_message": {
+                    "type": "string"
                 }
             }
         },
@@ -4442,6 +4988,19 @@ const docTemplate = `{
                 "StateCompleted",
                 "StateTerminated",
                 "StateIncident"
+            ]
+        },
+        "model.InstanceStatus": {
+            "type": "string",
+            "enum": [
+                "running",
+                "ready",
+                "error"
+            ],
+            "x-enum-varnames": [
+                "StatusRunning",
+                "StatusReady",
+                "StatusError"
             ]
         },
         "model.IoBulk": {
@@ -4590,6 +5149,36 @@ const docTemplate = `{
                 }
             }
         },
+        "model.MaintenanceProcedure": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.StartParameter"
+                    }
+                }
+            }
+        },
+        "model.MaintenanceStartInput": {
+            "type": "object",
+            "properties": {
+                "variables": {
+                    "description": "values of the procedure's parameters; they extend the start variables of the instance",
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
         "model.MessageInput": {
             "type": "object",
             "properties": {
@@ -4729,6 +5318,75 @@ const docTemplate = `{
                 }
             }
         },
+        "model.Module": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "the instance whose task created the module, a maintenance procedure or the instance itself",
+                    "type": "string"
+                },
+                "delete_info": {
+                    "$ref": "#/definitions/model.ModuleDeleteInfo"
+                },
+                "element_id": {
+                    "type": "string"
+                },
+                "error": {
+                    "description": "finding of the last health check; shown in the status of the instance (SMS-11)",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "module_data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "module_type": {
+                    "type": "string"
+                },
+                "namespace": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.ModuleDeleteInfo": {
+            "type": "object",
+            "properties": {
+                "resource": {
+                    "description": "a deployment, instance or watch of the engine (NS-08)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ResourceRef"
+                        }
+                    ]
+                },
+                "url": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
         "model.NamedRef": {
             "type": "object",
             "properties": {
@@ -4758,6 +5416,10 @@ const docTemplate = `{
                 "elements": {
                     "$ref": "#/definitions/model.ListRule"
                 },
+                "forbid_cycles": {
+                    "description": "reject sequence flow cycles at deploy, so that every run ends; for namespaces whose task\ntypes create modules, which are removed with every new run (SMS-03)",
+                    "type": "boolean"
+                },
                 "http": {
                     "description": "targets of the task type http, separately for cloud and gateway (NS-04)",
                     "allOf": [
@@ -4777,8 +5439,16 @@ const docTemplate = `{
                 "instances": {
                     "$ref": "#/definitions/model.LevelSettings"
                 },
+                "json_string_parameters": {
+                    "description": "non-string values of string form fields are stored as JSON strings, as Camunda did; models\nof smart services parse them, e.g. a list of selected devices (SMS-08)",
+                    "type": "boolean"
+                },
                 "limits": {
                     "$ref": "#/definitions/model.Limits"
+                },
+                "message_starts_are_procedures": {
+                    "description": "message start events with a name are maintenance procedures of an instance and start only\nthrough it, not by correlation (SMS-13)",
+                    "type": "boolean"
                 },
                 "models": {
                     "$ref": "#/definitions/model.LevelSettings"
@@ -4959,6 +5629,26 @@ const docTemplate = `{
                 }
             }
         },
+        "model.Page-model_Module": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Module"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.Page-model_Schedule": {
             "type": "object",
             "properties": {
@@ -4976,6 +5666,83 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "model.ParameterDescription": {
+            "type": "object",
+            "properties": {
+                "characteristic": {},
+                "characteristic_id": {
+                    "type": "string"
+                },
+                "default_value": {},
+                "description": {
+                    "type": "string"
+                },
+                "has_no_valid_option": {
+                    "description": "a required IoT parameter without any option the user may choose",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "multiple": {
+                    "type": "boolean"
+                },
+                "optional": {
+                    "type": "boolean"
+                },
+                "options": {
+                    "description": "nil allows free input; IoT parameters always have a list",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ParameterOption"
+                    }
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "type": {
+                    "description": "https://schema.org/Text, Integer, Float, Boolean or the form field type",
+                    "type": "string"
+                }
+            }
+        },
+        "model.ParameterOption": {
+            "type": "object",
+            "properties": {
+                "entity_id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "needs_same_entity_id_in_parameter": {
+                    "description": "the option fits only to the entity selected in that parameter",
+                    "type": "string"
+                },
+                "value": {
+                    "description": "for IoT parameters the JSON of the selection, the value modules read"
+                }
+            }
+        },
+        "model.ParametersInput": {
+            "type": "object",
+            "properties": {
+                "deployment_version": {
+                    "description": "0 selects the current version of the deployment",
+                    "type": "integer"
+                },
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {}
                 }
             }
         },
@@ -5088,6 +5855,33 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ResourceKind": {
+            "type": "string",
+            "enum": [
+                "deployment",
+                "instance",
+                "watch"
+            ],
+            "x-enum-varnames": [
+                "ResourceDeployment",
+                "ResourceInstance",
+                "ResourceWatch"
+            ]
+        },
+        "model.ResourceRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/model.ResourceKind"
+                },
+                "namespace": {
+                    "type": "string"
+                }
+            }
+        },
         "model.RestartInput": {
             "type": "object",
             "properties": {
@@ -5179,14 +5973,16 @@ const docTemplate = `{
                 "restart",
                 "update",
                 "incident",
-                "migration"
+                "migration",
+                "parameters"
             ],
             "x-enum-varnames": [
                 "CauseStart",
                 "CauseRestart",
                 "CauseUpdate",
                 "CauseIncident",
-                "CauseMigration"
+                "CauseMigration",
+                "CauseParameters"
             ]
         },
         "model.Schedule": {

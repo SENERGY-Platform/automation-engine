@@ -326,6 +326,11 @@ func (this *parser) eventDefinition(e *Element, kind EventKind) {
 
 func (this *parser) message(e *Element, definition *etree.Element) {
 	ref := &MessageRef{}
+	if expression := e.Attributes["messageName"]; expression != "" {
+		ref.Expression = expression
+		e.Message = ref
+		return
+	}
 	for _, a := range deviceEventAttributes {
 		if _, ok := e.Attributes[a]; ok {
 			ref.DeviceEvent = true

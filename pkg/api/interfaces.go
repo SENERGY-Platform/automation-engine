@@ -86,6 +86,17 @@ type Controller interface {
 	EventEvaluations(ctx context.Context, token string, namespace string, id string, options model.EventReconstructionOptions) (model.EventReconstruction, error)
 	HistoryVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string, options model.HistoryOptions) (model.HistoryVariable, error)
 
+	UpdateParameters(ctx context.Context, token string, namespace string, id string, input model.ParametersInput) (model.Instance, error)
+	DeleteVariable(ctx context.Context, token string, namespace string, id string, name string) error
+	DeploymentParameters(ctx context.Context, token string, namespace string, id string) ([]model.ParameterDescription, error)
+	MaintenanceParameters(ctx context.Context, token string, namespace string, id string, procedure string) ([]model.ParameterDescription, error)
+	ListMaintenanceProcedures(ctx context.Context, token string, namespace string, id string) ([]model.MaintenanceProcedure, error)
+	StartMaintenance(ctx context.Context, token string, namespace string, id string, procedure string, input model.MaintenanceStartInput) (model.Instance, error)
+
+	ListModules(ctx context.Context, token string, namespace string, options model.ModuleListOptions) (model.Page[model.Module], error)
+	GetModule(ctx context.Context, token string, namespace string, id string) (model.Module, error)
+	DeleteModule(ctx context.Context, token string, namespace string, id string) error
+
 	ListIncidents(ctx context.Context, token string, namespace string, options model.IncidentListOptions) (model.Page[model.Incident], error)
 
 	CorrelateMessage(ctx context.Context, token string, input model.MessageInput) (model.CorrelationResult, error)

@@ -31,6 +31,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
+	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v2/lib/client"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/api"
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
@@ -42,6 +45,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/messaging"
 	"github.com/SENERGY-Platform/automation-engine/pkg/metrics"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/modules"
 	"github.com/SENERGY-Platform/automation-engine/pkg/namespaces"
 	"github.com/SENERGY-Platform/automation-engine/pkg/notification"
 	"github.com/SENERGY-Platform/automation-engine/pkg/permissions"
@@ -72,6 +76,10 @@ type Server struct {
 	Permissions *permissions.Service
 	Metrics     *metrics.Metrics
 	Live        *live.Hub
+	// removes the resources of deleted modules (SMS-06)
+	ModuleRemover *modules.Remover
+	// module task types and health checks (TASK-20 to TASK-29)
+	Modules *modules.Runtime
 	// nil if device commands are not configured
 	DeviceCommands *devicecommand.Type
 	config         configuration.Config
@@ -199,7 +207,14 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	io := processio.New(s, processio.Limits{MaxValuesPerUser: config.MaxIoValuesPerUser, MaxValueBytes: config.MaxIoValueBytes})
 	e.RegisterTaskType(processio.TaskType, processio.NewType(io))
 	e.RegisterTaskType(notify.TaskType, notify.New(notifier))
-	e.RegisterTaskType(httpcall.TaskType, httpcall.New(registry, config.Mode))
+	httpCalls := httpcall.New(registry, config.Mode)
+	e.RegisterTaskType(httpcall.TaskType, httpCalls)
+	moduleSettings := moduleSettings(config)
+	runtime, err := modules.NewRuntime(ctx, &sync.WaitGroup{}, s, moduleSettings, logger)
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
 
 	repo, aspects, err := deviceRepository(config, deps)
 	if err != nil {
@@ -221,6 +236,15 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		certs = &jwt.KeycloakCertProvider{CertUrl: config.KeycloakCertUrl}
 	}
 	c := controller.New(s, e, registry, authorizer, certs)
+	var characteristics parameters.Characteristics
+	if config.DeviceRepositoryUrl != "" {
+		characteristics = devicerepositoryclient.NewClient(config.DeviceRepositoryUrl, nil)
+	}
+	c.SetParameters(parameters.New(config.DeviceSelectionUrl, characteristics), userToken)
+	runtime.AddProcessModules(c, registry)
+	runtime.AddWatcher(c, httpCalls, modules.WatcherSettings{AllowGenericRequests: config.AllowGenericWatchRequests,
+		MinInterval: configuration.Duration(config.WatcherMinInterval), DefaultInterval: configuration.Duration(config.WatcherDefaultInterval)})
+	runtime.Register(e, moduleSettings)
 	c.SetIo(io)
 	var selection dsclient.Client
 	if config.DeviceSelectionUrl != "" {
@@ -263,7 +287,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	c.SetLive(hub, liveSettings)
 	return &Server{
 		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, api.Settings{VerifiesTokens: certs != nil}), Namespaces: registry, Permissions: service, Metrics: m,
-		Live: hub, DeviceCommands: commands, config: config, logger: logger,
+		Live: hub, ModuleRemover: modules.NewRemover(s, userToken, logger), Modules: runtime, DeviceCommands: commands, config: config, logger: logger,
 	}, nil
 }
 
@@ -408,6 +432,9 @@ func (this *Server) Start(ctx context.Context) {
 	}
 	go this.Metrics.Run(ctx, this.Store, time.Minute, this.logger)
 	go this.Live.Run(ctx)
+	go this.ModuleRemover.Run(ctx, 10*time.Second)
+	go this.Modules.RunHealthChecks(ctx, configuration.Duration(this.config.ModuleHealthCheckInterval))
+	go this.Modules.RunWatches(ctx, 5*time.Second)
 	if err := this.startKafka(ctx); err != nil {
 		this.logger.Error("unable to start kafka consumers", "error", err)
 	}
@@ -446,4 +473,17 @@ func (this *Server) Run(ctx context.Context) error {
 
 func (this *Server) Close() error {
 	return this.Store.Close()
+}
+
+// moduleSettings are the values of the former module workers (TASK-29)
+func moduleSettings(config configuration.Config) modules.Settings {
+	return modules.Settings{
+		DeviceRepositoryUrl: config.DeviceRepositoryUrl, DeviceSelectionUrl: config.DeviceSelectionUrl, DeviceManagerUrl: config.DeviceManagerUrl,
+		FlowEngineUrl: config.FlowEngineUrl, FlowParserUrl: config.FlowParserUrl, ImportDeployUrl: config.ImportDeployUrl, ServingServiceUrl: config.ServingServiceUrl,
+		AuthEndpoint: config.AuthEndpoint, AuthClientId: config.AuthClientId, AuthClientSecret: config.AuthClientSecret.Value(), LogLevel: config.LogLevel,
+		AnalyticsEnableMultiplePaths: config.AnalyticsEnableMultiplePaths, AnalyticsDevicePathPrefix: config.AnalyticsDevicePathPrefix,
+		AnalyticsGroupPathPrefix: config.AnalyticsGroupPathPrefix, AnalyticsImportPathPrefix: config.AnalyticsImportPathPrefix,
+		AnalyticsRemoveImportPathRoot: config.AnalyticsRemoveImportPathRoot, DeviceGroupNamePrefix: config.DeviceGroupNamePrefix,
+		DeviceGroupAttributeOrigin: config.DeviceGroupAttributeOrigin, InfoAdditionalModuleDataFields: config.InfoAdditionalModuleDataFields,
+	}
 }
