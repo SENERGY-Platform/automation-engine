@@ -118,7 +118,7 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 
 ### mgw-device-cloud-connector
 
-- [ ] **Aufgabe:** Upstream mit QoS 0 und Puffer nur im Speicher reicht für SYNC-02 nicht; bleibt als MQTT-Relay für `processes/...` mit geänderter Zustellung.
+- [x] Upstream mit QoS 0 und Puffer nur im Speicher: Das Sync-Protokoll der Engine bestätigt und sendet selbst erneut (M6); der Connector bleibt unverändert MQTT-Relay für `processes/...`.
 
 ### mgw-module-repository (`process/Modfile.yaml`)
 

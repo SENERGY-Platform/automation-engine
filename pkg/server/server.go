@@ -26,10 +26,12 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/gateway"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
 	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v3/lib/client"
@@ -81,6 +83,8 @@ type Server struct {
 	// fog: the broker of the gateway and the event worker in the process (FOG-01, FOG-06)
 	Broker mqtt.Broker
 	Events *events.Worker
+	// fog: the synchronisation with the cloud (SYNC-09)
+	Sync   *gateway.Agent
 	config configuration.Config
 	logger *slog.Logger
 }
@@ -314,13 +318,19 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		workerConfig.Local = true
 		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller), e, events.LocalConsumer(broker, 1, logger), logger)
 	}
+	var agent *gateway.Agent
+	if fog {
+		settings := gateway.DefaultSettings()
+		settings.EngineVersion, settings.StorageBudget = Version(), config.StorageBudget
+		agent = gateway.New(settings, s, e, registry, broker, logger)
+	}
 	hub := live.New(s, dsn, logger)
 	liveSettings := controller.DefaultLiveSettings()
 	liveSettings.MaxPerUser = config.MaxLiveConnectionsPerUser
 	c.SetLive(hub, liveSettings)
 	return &Server{
 		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, api.Settings{VerifiesTokens: certs != nil, Gateway: fog}), Namespaces: registry, Permissions: service, Metrics: m,
-		Live: hub, ModuleRemover: modules.NewRemover(s, userToken, logger), Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, config: config, logger: logger,
+		Live: hub, ModuleRemover: modules.NewRemover(s, userToken, logger), Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, Sync: agent, config: config, logger: logger,
 	}, nil
 }
 
@@ -446,6 +456,24 @@ func (this *Server) startKafka(ctx context.Context) error {
 	return invalidator.StartKnownCacheInvalidators(ctx, all, invalidator.KnownTopics{DeviceTopic: this.config.DeviceTopic, DeviceGroupTopic: this.config.DeviceGroupTopic}, nil)
 }
 
+// Version is the version of the engine from the build: the module version of a release, else
+// the revision of the source.
+func Version() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	if info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			return setting.Value
+		}
+	}
+	return "unknown"
+}
+
 // startLocal reads answers of device connectors and device events from the broker of a gateway
 func (this *Server) startLocal(ctx context.Context) error {
 	if this.Broker == nil {
@@ -453,6 +481,11 @@ func (this *Server) startLocal(ctx context.Context) error {
 	}
 	if this.Events != nil {
 		go this.Events.Run(ctx)
+	}
+	if this.Sync != nil {
+		if err := this.Sync.Start(ctx); err != nil {
+			return err
+		}
 	}
 	if this.DeviceCommands == nil {
 		return nil
