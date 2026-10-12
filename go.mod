@@ -15,6 +15,7 @@ require (
 	github.com/SENERGY-Platform/permissions-v2 v1.0.0
 	github.com/SENERGY-Platform/service-commons v0.0.0-20260915085610-4949c31a01ef
 	github.com/beevik/etree v1.8.1
+	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20261011204819-0c9fae1b959d
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
@@ -24,6 +25,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	go.opentelemetry.io/otel v1.44.0
+	go.opentelemetry.io/otel/sdk v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	modernc.org/sqlite v1.60.1
 )
@@ -151,7 +153,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.27.0 // indirect

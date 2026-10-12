@@ -57,6 +57,20 @@ type EventServer struct {
 	wg      sync.WaitGroup
 }
 
+// newUnmarshaller builds the unmarshalling of the event-worker, shared by the event role and
+// the event debugging of the engine role (EVT-10)
+func newUnmarshaller(ctx context.Context, wg *sync.WaitGroup, config configuration.Config) (events.Unmarshaller, error) {
+	ew := ewconfig.Config{
+		DeviceRepoUrl: config.DeviceRepositoryUrl, DeviceRepoCacheDuration: config.DeviceCacheTimeout,
+		AuthEndpoint: config.AuthEndpoint, AuthClientId: config.AuthClientId, AuthClientSecret: config.AuthClientSecret.Value(), AuthExpirationTimeBuffer: 2,
+	}
+	repo, err := ewdevicerepo.New(ctx, wg, ew, nil)
+	if err != nil {
+		return nil, err
+	}
+	return ewmarshaller.New(ctx, wg, ew, repo)
+}
+
 func NewEventServer(ctx context.Context, config configuration.Config, logger *slog.Logger, deps EventDependencies) (*EventServer, error) {
 	s, err := openStore(ctx, config)
 	if err != nil {
@@ -81,16 +95,7 @@ func NewEventServer(ctx context.Context, config configuration.Config, logger *sl
 
 	unmarshaller := deps.Unmarshaller
 	if unmarshaller == nil {
-		ew := ewconfig.Config{
-			DeviceRepoUrl: config.DeviceRepositoryUrl, DeviceRepoCacheDuration: config.DeviceCacheTimeout,
-			AuthEndpoint: config.AuthEndpoint, AuthClientId: config.AuthClientId, AuthClientSecret: config.AuthClientSecret.Value(), AuthExpirationTimeBuffer: 2,
-		}
-		repo, err := ewdevicerepo.New(ctx, &result.wg, ew, nil)
-		if err != nil {
-			s.Close()
-			return nil, err
-		}
-		if unmarshaller, err = ewmarshaller.New(ctx, &result.wg, ew, repo); err != nil {
+		if unmarshaller, err = newUnmarshaller(ctx, &result.wg, config); err != nil {
 			s.Close()
 			return nil, err
 		}

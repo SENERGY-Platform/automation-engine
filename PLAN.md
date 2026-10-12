@@ -9,7 +9,7 @@ Die Anforderungen beschreiben ein Programm, nicht eine einzelne Änderung. Sie w
 | M1 | Ausführungskern: BPMN-Teilmenge, JS-Sandbox, Token-Ausführung, Timer, Korrelation, Läufe, Verlauf, Namespaces aus Konfiguration, neue REST-API, Go-Client mit Test-Client | BPMN-01–18, EXPR-01–05, DATA-01–03, NS-01–03/06/11 (Konfiguration), MOD-01/03–05, DEP-02/04, RUN-01–12 (ohne 07), HIST-01–03/05, LONG-01–05/08/12/16, EVT-01/02/05, CLI-01/03/04/08/09 | umgesetzt, siehe unten |
 | M2 | permissions-v2 (Topics je Namespace, Startrechte, Owner-Schutz), Incident-Behandlung mit Restart und Backoff, Aufbewahrung mit Obergrenzen, Nutzer löschen, Admin-API für Namespaces, Prometheus-Metriken, Token-Provider im Client | NS-02/05/07, SEC-01–14, INC-02–04, HIST-04/06, LONG-03 (Alter), LONG-13/14, MOD-02/07/08, OPS-05, CLI-10 | umgesetzt, siehe unten |
 | M3 | Aufgabentypen Gerätekommando, Process-IO, Benachrichtigung, HTTP-Aufruf; Zeitpläne; Event-Worker als Rolle des Binaries, Eventbeschreibungen, Gruppen-Expansion; Vorbereitungs-API; Kafka `user` und Rechte-Signal | TASK-01–12, IO-01–03, BPMN-09/10, RUN-07, DEP-01/05–10, EVT-01–08, NS-04/11 | umgesetzt, siehe unten |
-| M4 | Debugging: Outbox, WebSocket-Live-Strom, historisches Debugging, Rekonstruktion von Event-Auswertungen | SYNC-03, DBG-*, EVT-09–13, CLI-05 | offen |
+| M4 | Debugging: Outbox, WebSocket-Live-Strom, historisches Debugging, Rekonstruktion von Event-Auswertungen | SYNC-03, DBG-*, EVT-09–13, CLI-05 | umgesetzt, siehe unten |
 | M5 | Smart-Services-Module, Watcher, Wartungsprozeduren | TASK-20–29, SMS-* | offen |
 | M6 | Fog-Betriebsart und Synchronisation | FOG-*, SYNC-*, LONG-06/07/09–11/14/15 | offen |
 | M7 | `deprecated/`-Schicht, Migration aus Camunda, Modell-Umschreibung | API-02/03/08, MIG-* | offen |
@@ -142,3 +142,40 @@ Abgelehnt: `DefaultPermissions` wörtlich zu nehmen, weil dann eine Freigabe fü
 
 - **Owner-Wechsel**: `HasAdministrate` fragt permissions-v2 mit `CheckPermission` und einem Token des neuen Owners (Keycloak-Token-Exchange) statt die Rechte der Ressource selbst auszuwerten. Damit zählen auch Rechte über Gruppen und Rollen.
 - **Tracing** nach dem Muster von smart-service-repository (Commit 573979f): `pkg/tracing`, Beschreibung im README. Offen: Datenbankzugriffe sind nicht instrumentiert (für `database/sql` gäbe es otelsql, eine weitere Abhängigkeit); Kafka-Nachrichten tragen keinen Trace-Kontext, weil die Gegenseiten ihn weder schreiben noch lesen; der Span einer Aufgabe ist nicht mit der Anfrage verknüpft, die die Instanz gestartet hat (dafür müsste der Trace-Kontext mit der Instanz gespeichert werden).
+
+## M4: Entscheidungen (2026-10-12)
+
+**Umfang.** Fog-Teile (DBG-12, DBG-15, EVT-13) kommen mit M6, DBG-17 (K) entfällt vorerst. Stufen: a) Änderungsstrom, Debug-Zustand, historisches Debugging, b) Live-Endpunkt und Client, c) Rekonstruktion von Event-Auswertungen und aktueller Wert.
+
+**Änderungsstrom (SYNC-03, entschieden: Outbox plus LISTEN/NOTIFY).** Jede Schreiboperation auf einer Instanz legt im selben Commit eine Zeile in `changes` an (Sequenz, Instanz, Aktivitätssequenz). Postgres meldet sie zusätzlich mit `pg_notify` beim Commit; jede Replica hält eine LISTEN-Verbindung. SQLite und Postgres pollen die Outbox als Rückfall, solange jemand zuschaut. Weckrufe sind nur Hinweise: Ein Zuschauer liest danach den Stand der Instanz selbst, verlorene oder doppelte Weckrufe schaden nicht. Die Synchronisation (M6) liest dieselbe Tabelle mit eigenen Positionen; bis dahin wird sie nach Alter aufgeräumt.
+
+**Ein Zustandsmodell für live und historisch (DBG-02, DBG-13).** `model.DebugState` beschreibt Instanz, aktive Elemente mit Wartegrund, Variablen mit Typ, letzter Änderung und änderndem Element, offene Incidents und Elementzähler. Live wird er aus dem Laufzeitzustand gebaut, historisch durch Abspielen des Aktivitätsverlaufs.
+
+**Vollstände (DBG-14).** In festen Abständen des Aktivitätsverlaufs (Obergrenze / 20) schreibt die Engine den Live-Zustand als Vollstand in `history_snapshots`, mit vollen Variablenwerten. Ein Schritt wird aus dem letzten Vollstand davor und den Aktivitäten dazwischen rekonstruiert. Vollstände unterhalb des ältesten verbliebenen Eintrags werden mit dem Ringpuffer verdrängt. Werte über `MaxActivityValueBytes` stehen im Verlauf gekürzt; zwischen zwei Vollständen zeigt die Rekonstruktion sie als gekürzt an.
+
+**Rekonstruktion auf dem Server (entschieden).** `GET .../instances/{id}/history?seq=<seq>` (oder `time=`) liefert den Zustand in Snapshot-Form; Go-Client und web-ui navigieren nur.
+
+**Live-Endpunkt (DBG-01, entschieden: coder/websocket v1.8.15, ISC).** Nach dem Snapshot berechnet der Server Deltas als Unterschied zum zuletzt gesendeten Zustand plus die neuen Aktivitäten; der Client übernimmt sie ohne eigene Ableitung. Zusammenfassen bei schnellen Schleifen ergibt sich daraus (DBG-10). Token per `Authorization`-Header (Go-Client, über Kong) oder als erste Nachricht (Browser); im zweiten Fall prüft die Engine die Signatur selbst, `KEYCLOAK_CERT_URL` ist dann Pflicht.
+
+**Event-Rekonstruktion (EVT-10).** Werte über timescale-wrapper `/queries` mit dem Token des Owners (Token Exchange), Spalten aus den Ausgaben des Service wie im timescale-tableworker, Auswertung mit `events.Evaluator` wie im Event-Worker. Grundlage ist die Eventbeschreibung, die aus der Deployment-Version des Laufs neu erzeugt wird, weil gespeichert nur die der aktuellen Version vorliegt; Gerätegruppen werden dabei mit ihrer heutigen Zusammensetzung expandiert.
+
+## M4: Stand
+
+- **Änderungsstrom** (`changes`, SYNC-03): eine Zeile je Schreiboperation einer Instanz im selben Commit, Postgres meldet sie zusätzlich per `pg_notify`. `pkg/live.Hub` weckt die Live-Ströme einer Replica über LISTEN und pollt die Outbox als Rückfall (Postgres alle 2 s, SQLite alle 250 ms, nur solange jemand zuschaut). Aufgeräumt nach einer Stunde.
+- **Debug-Zustand** (`pkg/debug`, `GET .../debug`, DBG-02): aktive Elemente, Wartegründe mit Gerätekommando-Teilaufgaben, Eventquellen, Timer und Joins, Variablen mit Typ, letzter Änderung und änderndem Element, offene Incidents, Zähler für Elemente und genommene Sequenzflüsse (DBG-06, DBG-07). Werte über 4 KiB werden gekürzt und einzeln geladen (DBG-04).
+- **Historisches Debugging** (`GET .../history`, DBG-13, DBG-14): Vollstände alle `MaxActivities/20` Einträge (mindestens 50) und mindestens täglich, höchstens 30 je Instanz; Rekonstruktion aus dem letzten Vollstand und den Aktivitäten danach. Ein Test vergleicht an jedem Schritt Rekonstruktion und Live-Zustand, auch nach Verdrängung im Ringpuffer.
+- **Live-Endpunkt** (`GET .../live`, DBG-01, DBG-03, DBG-08–10): Snapshot, Deltas als Unterschied zum zuletzt gesendeten Zustand plus neue Aktivitäten, Endzustand; Fortsetzen ab Sequenz; neue Snapshots bei großer Lücke oder langsamem Client; höchstens 5 Verbindungen je Nutzer und Replica (HTTP 429); Abbruch mit Code 4401 bei abgelaufenem Token.
+- **Event-Rekonstruktion** (`GET .../event-evaluations`, EVT-10–12) und aktueller Wert wartender Events (`evaluate_events`, DBG-18, im Live-Strom alle 30 s): Werte über timescale-wrapper mit dem Token des Owners, Auswertung mit `events.Evaluator`. Abweichungen zwischen Rekonstruktion und Korrelation werden mit möglichen Ursachen genannt, nur wenn alle Werte auf eine Seite passen.
+- **Client** (CLI-05): `Watch` in beiden Clients, `Follow` und `OpenHistory` darauf.
+- Elementzähler enthalten jetzt auch Sequenzflüsse; `GET .../element-stats` liefert entsprechend mehr Einträge.
+
+## M4: Lücken
+
+- Fog-Teile (DBG-12, DBG-15, EVT-13) folgen mit M6; DBG-17 (K) ist nicht umgesetzt.
+- Die Suche im Verlauf (DBG-16, S) beschränkt sich auf die vorhandenen Filter der Aktivitätsliste (Art, Element); eine Suche nach Variablenwerten fehlt.
+- Werte über 4 KiB stehen im Aktivitätsverlauf gekürzt. Zwischen zwei Vollständen zeigt die Rekonstruktion sie gekürzt, `history/variables` meldet sie dann als nicht verfügbar.
+- Die Zeit eines aktiven Elements stammt aus dem letzten Durchlauf des Elements; bei mehreren Token am selben Element ist sie die des jüngsten.
+- Auf Postgres folgt die Sequenz des Änderungsstroms der Einfügereihenfolge, nicht der Commit-Reihenfolge. Für das Live-Debugging genügt das, weil Weckrufe nur Hinweise sind; die Synchronisation (M6) läuft auf SQLite mit einem Schreiber.
+- Import-Events werden nicht rekonstruiert, solange offen ist, ob Importdaten in Timescale landen (EVT-12). Lange Listen mit festen Einträgen kommen aus Timescale als Map zurück; ein Unmarshalling, das eine Liste erwartet, scheitert dann und zeigt den Fehler an der Auswertung.
+- Wie weit die Rekonstruktion zurückreicht, regelt die Aufbewahrung in Timescale (timescale-rule-manager); die Engine kennt sie nicht.
+- Außerhalb dieses Repos: Kong muss das WebSocket-Upgrade für `/namespaces/*/instances/*/live` durchreichen und Ladon den Pfad freigeben; die web-ui braucht `KEYCLOAK_CERT_URL` in der Engine, wenn sie das Token als erste Nachricht schickt.

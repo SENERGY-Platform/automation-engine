@@ -18,6 +18,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -28,15 +29,21 @@ type Instance struct {
 	model.Instance
 	ActivitySeq    int64
 	ActivityMinSeq int64
+	// activity sequence and time of the latest history snapshot (DBG-14)
+	SnapshotSeq int64
+	SnapshotAt  time.Time
 }
 
-const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at"
+const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at"
 
 func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 	var state, startVariables string
-	var created, started, lastActivity int64
+	var created, started, lastActivity, snapshotAt int64
 	var ended, restartAt sql.NullInt64
-	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt)
+	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt)
+	if snapshotAt > 0 {
+		i.SnapshotAt = fromMillis(snapshotAt)
+	}
 	i.RestartAt = fromNullMillis(restartAt)
 	i.State = model.InstanceState(state)
 	i.StartVariables = fromJson[map[string]any](startVariables)
@@ -48,16 +55,29 @@ func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 }
 
 func (this *Tx) InsertInstance(i Instance) error {
-	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		i.Id, i.Namespace, i.Owner, i.DeploymentId, i.DeploymentName, i.DeploymentVersion, i.ModelId, i.ModelVersion, i.Run, string(i.State), i.EndReason, toJson(i.StartVariables),
-		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt))
-	return err
+		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.SnapshotSeq, snapshotMillis(i.SnapshotAt))
+	if err != nil {
+		return err
+	}
+	return this.changed(i.Id, i.Namespace, i.ActivitySeq, false)
+}
+
+func snapshotMillis(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return millis(t)
 }
 
 func (this *Tx) UpdateInstance(i Instance) error {
-	_, err := this.exec("UPDATE instances SET owner = ?, deployment_name = ?, deployment_version = ?, run = ?, state = ?, end_reason = ?, started_at = ?, ended_at = ?, last_activity_at = ?, activity_seq = ?, activity_min_seq = ?, restart_at = ? WHERE id = ?",
-		i.Owner, i.DeploymentName, i.DeploymentVersion, i.Run, string(i.State), i.EndReason, millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.Id)
-	return err
+	_, err := this.exec("UPDATE instances SET owner = ?, deployment_name = ?, deployment_version = ?, run = ?, state = ?, end_reason = ?, started_at = ?, ended_at = ?, last_activity_at = ?, activity_seq = ?, activity_min_seq = ?, restart_at = ?, snapshot_seq = ?, snapshot_at = ? WHERE id = ?",
+		i.Owner, i.DeploymentName, i.DeploymentVersion, i.Run, string(i.State), i.EndReason, millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.SnapshotSeq, snapshotMillis(i.SnapshotAt), i.Id)
+	if err != nil {
+		return err
+	}
+	return this.changed(i.Id, i.Namespace, i.ActivitySeq, false)
 }
 
 // GetInstance reads an instance; with lock, the row stays locked until the transaction ends,
@@ -71,8 +91,19 @@ func (this *Tx) DeleteInstance(id string) error {
 	if err := this.queueRemovals("instances", "id = ?", id); err != nil {
 		return err
 	}
-	_, err := this.exec("DELETE FROM instances WHERE id = ?", id)
-	return err
+	var namespace string
+	var activitySeq int64
+	err := this.queryRow("SELECT namespace, activity_seq FROM instances WHERE id = ?", id).Scan(&namespace, &activitySeq)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if _, err = this.exec("DELETE FROM instances WHERE id = ?", id); err != nil {
+		return err
+	}
+	if namespace == "" {
+		return nil
+	}
+	return this.changed(id, namespace, activitySeq, true)
 }
 
 func (this *Tx) ListInstances(namespace string, options model.InstanceListOptions, access Access) (result model.Page[model.Instance], err error) {

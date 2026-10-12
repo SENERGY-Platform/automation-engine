@@ -69,7 +69,8 @@ type ActivityPage struct {
 	Truncated bool `json:"truncated"`
 }
 
-// ElementStats counts passes instead of keeping one row per pass (LONG-04).
+// ElementStats counts passes instead of keeping one row per pass (LONG-04); taken sequence
+// flows are counted as well, so that the diagram can mark the path through gateways (DBG-07).
 type ElementStats struct {
 	ElementId string     `json:"element_id"`
 	Run       int        `json:"run"`

@@ -5,6 +5,23 @@ definitions:
       xml:
         type: string
     type: object
+  model.ActiveElement:
+    properties:
+      element_id:
+        type: string
+      element_type:
+        type: string
+      locals:
+        additionalProperties:
+          $ref: '#/definitions/model.DebugVariable'
+        type: object
+      name:
+        type: string
+      since:
+        type: string
+      tokens:
+        type: integer
+    type: object
   model.Activity:
     properties:
       data:
@@ -123,6 +140,68 @@ definitions:
         type: string
       function_id:
         type: string
+    type: object
+  model.DebugState:
+    properties:
+      active:
+        description: elements with a token, several through parallel branches and
+          event-based gateways
+        items:
+          $ref: '#/definitions/model.ActiveElement'
+        type: array
+      elements:
+        description: passes of elements and sequence flows in the run (DBG-06, DBG-07)
+        items:
+          $ref: '#/definitions/model.ElementStats'
+        type: array
+      first_seq:
+        type: integer
+      incidents:
+        items:
+          $ref: '#/definitions/model.Incident'
+        type: array
+      instance:
+        $ref: '#/definitions/model.Instance'
+      reconstructed:
+        description: |-
+          set by the history: the state was reconstructed from a snapshot and activity entries;
+          FirstSeq is the earliest step that can still be reconstructed (DBG-14)
+        type: boolean
+      runs:
+        items:
+          $ref: '#/definitions/model.Run'
+        type: array
+      seq:
+        description: last activity entry the state includes
+        type: integer
+      time:
+        type: string
+      truncated:
+        description: older activity entries were evicted (LONG-03)
+        type: boolean
+      variables:
+        additionalProperties:
+          $ref: '#/definitions/model.DebugVariable'
+        description: instance variables; local variables are at their element in Active
+        type: object
+      waits:
+        items:
+          $ref: '#/definitions/model.Wait'
+        type: array
+    type: object
+  model.DebugVariable:
+    properties:
+      element_id:
+        type: string
+      size:
+        type: integer
+      truncated:
+        type: boolean
+      type:
+        type: string
+      updated_at:
+        type: string
+      value: {}
     type: object
   model.Dependent:
     properties:
@@ -274,6 +353,7 @@ definitions:
     - conflict
     - unavailable
     - internal
+    - too_many_requests
     type: string
     x-enum-varnames:
     - KindBadRequest
@@ -283,6 +363,7 @@ definitions:
     - KindConflict
     - KindUnavailable
     - KindInternal
+    - KindTooMany
   model.EventDescription:
     properties:
       aspect_ids:
@@ -342,6 +423,96 @@ definitions:
         type: object
       version:
         type: integer
+    type: object
+  model.EventEvaluation:
+    properties:
+      error:
+        type: string
+      logs:
+        items:
+          type: string
+        type: array
+      raw: {}
+      time:
+        type: string
+      triggered:
+        type: boolean
+      value: {}
+    type: object
+  model.EventReconstruction:
+    properties:
+      correlations:
+        items:
+          $ref: '#/definitions/model.Activity'
+        type: array
+      deployment_version:
+        type: integer
+      element_id:
+        type: string
+      evaluations:
+        items:
+          $ref: '#/definitions/model.SourceEvaluation'
+        type: array
+      hints:
+        items:
+          type: string
+        type: array
+      limitations:
+        items:
+          type: string
+        type: array
+      message_name:
+        type: string
+      next:
+        description: more evaluations follow; pass it as After for the next page
+        type: string
+      run:
+        type: integer
+      sources:
+        items:
+          $ref: '#/definitions/model.EventSource'
+        type: array
+      waiting:
+        items:
+          $ref: '#/definitions/model.WaitPeriod'
+        type: array
+    type: object
+  model.EventSource:
+    properties:
+      current:
+        allOf:
+        - $ref: '#/definitions/model.EventEvaluation'
+        description: evaluation of the current value of the source, on request (DBG-18)
+      device_group_id:
+        type: string
+      device_id:
+        type: string
+      event_description_id:
+        type: string
+      import_id:
+        type: string
+      script:
+        type: string
+      service_id:
+        type: string
+      value_variable:
+        type: string
+      variables:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  model.HistoryVariable:
+    properties:
+      available:
+        type: boolean
+      element_id:
+        type: string
+      name:
+        type: string
+      seq:
+        type: integer
+      value: {}
     type: object
   model.HttpPolicy:
     properties:
@@ -514,6 +685,13 @@ definitions:
       message:
         type: string
     type: object
+  model.JoinWait:
+    properties:
+      arrived:
+        type: integer
+      required:
+        type: integer
+    type: object
   model.Kind:
     enum:
     - models
@@ -593,6 +771,17 @@ definitions:
       variables:
         additionalProperties: {}
         type: object
+    type: object
+  model.MessageWait:
+    properties:
+      events:
+        description: sources of a device or import event; empty for messages sent
+          through the API
+        items:
+          $ref: '#/definitions/model.EventSource'
+        type: array
+      name:
+        type: string
     type: object
   model.Model:
     properties:
@@ -1052,6 +1241,23 @@ definitions:
           $ref: '#/definitions/model.NamedRef'
         type: array
     type: object
+  model.SourceEvaluation:
+    properties:
+      error:
+        type: string
+      event_description_id:
+        type: string
+      logs:
+        items:
+          type: string
+        type: array
+      raw: {}
+      time:
+        type: string
+      triggered:
+        type: boolean
+      value: {}
+    type: object
   model.StartInstanceInput:
     properties:
       deployment_id:
@@ -1078,6 +1284,54 @@ definitions:
           type: string
         type: object
       type:
+        type: string
+    type: object
+  model.SubtaskState:
+    properties:
+      device_id:
+        type: string
+      done:
+        type: boolean
+      id:
+        type: string
+      last_try:
+        type: string
+      service_id:
+        type: string
+      tries:
+        type: integer
+    type: object
+  model.TaskWait:
+    properties:
+      attempt:
+        type: integer
+      due_at:
+        type: string
+      job_id:
+        type: string
+      last_error:
+        type: string
+      retries:
+        type: integer
+      state:
+        type: string
+      subtasks:
+        description: 'device commands: one per device, with groups several (TASK-04)'
+        items:
+          $ref: '#/definitions/model.SubtaskState'
+        type: array
+      task_type:
+        type: string
+      timeout:
+        type: string
+    type: object
+  model.TimerWait:
+    properties:
+      definition:
+        type: string
+      due_at:
+        type: string
+      kind:
         type: string
     type: object
   model.UpdateStrategy:
@@ -1130,6 +1384,48 @@ definitions:
   model.VariableInput:
     properties:
       value: {}
+    type: object
+  model.Wait:
+    properties:
+      element_id:
+        type: string
+      gateway_id:
+        description: the event-based gateway the wait belongs to; the first event
+          cancels the others
+        type: string
+      join:
+        $ref: '#/definitions/model.JoinWait'
+      kind:
+        $ref: '#/definitions/model.WaitKind'
+      message:
+        $ref: '#/definitions/model.MessageWait'
+      since:
+        type: string
+      task:
+        $ref: '#/definitions/model.TaskWait'
+      timer:
+        $ref: '#/definitions/model.TimerWait'
+    type: object
+  model.WaitKind:
+    enum:
+    - message
+    - timer
+    - task
+    - join
+    type: string
+    x-enum-varnames:
+    - WaitMessage
+    - WaitTimer
+    - WaitTask
+    - WaitJoin
+  model.WaitPeriod:
+    properties:
+      correlated:
+        type: boolean
+      from:
+        type: string
+      to:
+        type: string
     type: object
 info:
   contact: {}
@@ -2210,6 +2506,42 @@ paths:
       summary: activity log of an instance in sequence order
       tags:
       - instances
+  /namespaces/{ns}/instances/{id}/debug:
+    get:
+      description: Active elements with their wait reasons, variables, open incidents
+        and pass counters (DBG-02). Values above the transfer limit are cut and marked;
+        GET .../variables/{name} loads them (DBG-04).
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: evaluate the current value of waiting device events (DBG-18)
+        in: query
+        name: evaluate_events
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DebugState'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: live state of an instance for the debugger
+      tags:
+      - debugging
   /namespaces/{ns}/instances/{id}/element-stats:
     get:
       parameters:
@@ -2242,9 +2574,192 @@ paths:
             $ref: '#/definitions/model.Error'
       security:
       - Bearer: []
-      summary: pass counters and last errors per element
+      summary: pass counters and last errors per element and taken sequence flow
       tags:
       - instances
+  /namespaces/{ns}/instances/{id}/event-evaluations:
+    get:
+      description: For the times the element waited, the values of the event sources
+        are read from timescale-wrapper with the token of the owner and evaluated
+        like the event worker does. They are shown next to the actual correlations;
+        deviations come with their possible causes (EVT-10, EVT-11). Paged per source;
+        next continues.
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: BPMN element id of the event
+        in: query
+        name: element_id
+        required: true
+        type: string
+      - description: run, default the current one
+        in: query
+        name: run
+        type: integer
+      - description: evaluations after this RFC 3339 time, the next of the previous
+          page
+        in: query
+        name: after
+        type: string
+      - description: evaluations per source, default 100, max 1000
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.EventReconstruction'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: evaluations of a device event reconstructed from the time series
+      tags:
+      - debugging
+  /namespaces/{ns}/instances/{id}/history:
+    get:
+      description: Reconstructed from the latest snapshot before the step and the
+        activity entries after it (DBG-13, DBG-14). Without seq and time the latest
+        step. first_seq is the earliest step that can still be reconstructed.
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: activity sequence number
+        in: query
+        name: seq
+        type: integer
+      - description: last step at or before this RFC 3339 time
+        in: query
+        name: time
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DebugState'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: state of an instance after a step of its history
+      tags:
+      - debugging
+  /namespaces/{ns}/instances/{id}/history/variables/{name}:
+    get:
+      description: Values the activity log holds cut are complete only at snapshots;
+        available is false otherwise (DBG-04).
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: variable name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: local variable of this element
+        in: query
+        name: element_id
+        type: string
+      - description: activity sequence number
+        in: query
+        name: seq
+        type: integer
+      - description: last step at or before this RFC 3339 time
+        in: query
+        name: time
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.HistoryVariable'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: complete value of a variable at a step of the history
+      tags:
+      - debugging
+  /namespaces/{ns}/instances/{id}/live:
+    get:
+      description: 'Upgrades to a WebSocket and sends model.DebugMessage values as
+        JSON: a snapshot, deltas with sequence numbers, and the end state when the
+        instance ends (DBG-01). The token goes in the Authorization header or, for
+        browsers, as first message {"type":"auth","token":"..."}, never as query parameter
+        (DBG-08). The stream closes with code 4401 when the token expires and with
+        4000 plus the HTTP status of other errors.'
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: resume after this sequence number
+        in: query
+        name: after
+        type: integer
+      - description: evaluate the current value of waiting device events (DBG-18)
+        in: query
+        name: evaluate_events
+        type: boolean
+      responses:
+        "101":
+          description: Switching Protocols
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: live debug stream of an instance (WebSocket)
+      tags:
+      - debugging
   /namespaces/{ns}/instances/{id}/restart:
     post:
       consumes:
@@ -2381,6 +2896,43 @@ paths:
       tags:
       - instances
   /namespaces/{ns}/instances/{id}/variables/{name}:
+    get:
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: variable name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: local variable of a token at this element
+        in: query
+        name: element_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Variable'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: complete current value of a variable
+      tags:
+      - debugging
     put:
       consumes:
       - application/json

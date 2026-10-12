@@ -93,6 +93,11 @@ func (this *Tx) TrimHistory(column string, value string, before time.Time) error
 	}
 	// keeps the truncation marker of the activity log right (LONG-03)
 	_, err := this.exec("UPDATE instances SET activity_min_seq = COALESCE((SELECT MIN(a.seq) FROM activities a WHERE a.instance_id = instances.id), activity_seq + 1) WHERE "+column+" = ?", value)
+	if err != nil {
+		return err
+	}
+	// snapshots before the oldest kept entry cannot start a reconstruction anymore (DBG-14)
+	_, err = this.exec("DELETE FROM history_snapshots WHERE instance_id IN ("+instances+") AND seq < (SELECT i.activity_min_seq - 1 FROM instances i WHERE i.id = history_snapshots.instance_id)", value)
 	return err
 }
 

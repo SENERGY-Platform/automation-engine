@@ -34,6 +34,8 @@ const (
 	KindConflict    ErrorKind = "conflict"
 	KindUnavailable ErrorKind = "unavailable"
 	KindInternal    ErrorKind = "internal"
+	// a limit per user is reached, e.g. live connections (DBG-10)
+	KindTooMany ErrorKind = "too_many_requests"
 )
 
 // sentinel errors for errors.Is; an *Error matches the sentinel of its kind
@@ -45,6 +47,7 @@ var (
 	ErrConflict    = errors.New(string(KindConflict))
 	ErrUnavailable = errors.New(string(KindUnavailable))
 	ErrInternal    = errors.New(string(KindInternal))
+	ErrTooMany     = errors.New(string(KindTooMany))
 )
 
 // Issue is a validation finding, bound to a BPMN element where possible (BPMN-18).
@@ -96,6 +99,8 @@ func (this ErrorKind) sentinel() error {
 		return ErrConflict
 	case KindUnavailable:
 		return ErrUnavailable
+	case KindTooMany:
+		return ErrTooMany
 	default:
 		return ErrInternal
 	}
@@ -113,6 +118,8 @@ func (this ErrorKind) HttpStatus() int {
 		return http.StatusConflict
 	case KindUnavailable:
 		return http.StatusServiceUnavailable
+	case KindTooMany:
+		return http.StatusTooManyRequests
 	default:
 		return http.StatusInternalServerError
 	}
@@ -130,6 +137,8 @@ func KindFromHttpStatus(status int) ErrorKind {
 		return KindConflict
 	case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout:
 		return KindUnavailable
+	case http.StatusTooManyRequests:
+		return KindTooMany
 	default:
 		return KindInternal
 	}
@@ -157,6 +166,10 @@ func Conflict(format string, args ...any) *Error {
 
 func Unavailable(format string, args ...any) *Error {
 	return NewError(KindUnavailable, format, args...)
+}
+
+func TooMany(format string, args ...any) *Error {
+	return NewError(KindTooMany, format, args...)
 }
 
 func ValidationFailed(issues []Issue) *Error {

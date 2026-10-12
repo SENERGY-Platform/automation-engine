@@ -317,7 +317,7 @@ func (this *Tx) ConsecutiveIncidentRuns(instanceId string) (int, error) {
 // StorageRows counts rows per table, for the storage metrics (LONG-14).
 func (this *Tx) StorageRows() (map[string]int, error) {
 	result := map[string]int{}
-	for _, table := range []string{"tokens", "subscriptions", "jobs", "variables", "activities", "incidents", "instances", "permission_removals", "notifications"} {
+	for _, table := range []string{"tokens", "subscriptions", "jobs", "variables", "activities", "incidents", "instances", "permission_removals", "notifications", "changes", "history_snapshots"} {
 		n, err := this.count("SELECT COUNT(*) FROM " + table)
 		if err != nil {
 			return nil, err

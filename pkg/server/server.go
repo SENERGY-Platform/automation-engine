@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/api"
@@ -37,6 +38,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
+	"github.com/SENERGY-Platform/automation-engine/pkg/live"
 	"github.com/SENERGY-Platform/automation-engine/pkg/messaging"
 	"github.com/SENERGY-Platform/automation-engine/pkg/metrics"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -69,6 +71,7 @@ type Server struct {
 	Namespaces  *namespaces.Registry
 	Permissions *permissions.Service
 	Metrics     *metrics.Metrics
+	Live        *live.Hub
 	// nil if device commands are not configured
 	DeviceCommands *devicecommand.Type
 	config         configuration.Config
@@ -88,6 +91,9 @@ type Dependencies struct {
 	Marshaller       marshaller.Interface
 	Timescale        timescale.Interface
 	Producer         messaging.Producer
+	// event debugging: stored device messages and their unmarshalling (EVT-10, DBG-18)
+	EventSeries       events.Series
+	EventUnmarshaller events.Unmarshaller
 }
 
 func openStore(ctx context.Context, config configuration.Config) (*store.Store, error) {
@@ -234,9 +240,30 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	if service != nil && config.PermissionsKafkaTopic != "" && config.KafkaUrl != "" {
 		service.PublishTo(config.PermissionsKafkaTopic)
 	}
+	dsn := ""
+	if config.Database == "postgres" {
+		dsn = config.PostgresDsn.Value()
+	}
+	series, unmarshaller := deps.EventSeries, deps.EventUnmarshaller
+	if series == nil && config.TimescaleWrapperUrl != "" {
+		series = events.NewTimescale(config.TimescaleWrapperUrl)
+	}
+	if series != nil && unmarshaller == nil && config.DeviceRepositoryUrl != "" {
+		if unmarshaller, err = newUnmarshaller(ctx, &sync.WaitGroup{}, config); err != nil {
+			s.Close()
+			return nil, err
+		}
+	}
+	if series != nil && unmarshaller != nil {
+		c.SetEventDebugging(series, events.NewEvaluator(unmarshaller), userToken)
+	}
+	hub := live.New(s, dsn, logger)
+	liveSettings := controller.DefaultLiveSettings()
+	liveSettings.MaxPerUser = config.MaxLiveConnectionsPerUser
+	c.SetLive(hub, liveSettings)
 	return &Server{
-		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger), Namespaces: registry, Permissions: service, Metrics: m,
-		DeviceCommands: commands, config: config, logger: logger,
+		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, api.Settings{VerifiesTokens: certs != nil}), Namespaces: registry, Permissions: service, Metrics: m,
+		Live: hub, DeviceCommands: commands, config: config, logger: logger,
 	}, nil
 }
 
@@ -380,6 +407,7 @@ func (this *Server) Start(ctx context.Context) {
 		go this.Permissions.Run(ctx, time.Second)
 	}
 	go this.Metrics.Run(ctx, this.Store, time.Minute, this.logger)
+	go this.Live.Run(ctx)
 	if err := this.startKafka(ctx); err != nil {
 		this.logger.Error("unable to start kafka consumers", "error", err)
 	}

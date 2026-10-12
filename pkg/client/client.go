@@ -331,6 +331,55 @@ func (this *ClientImpl) ListElementStats(ctx context.Context, token string, name
 	return result, err
 }
 
+func (this *ClientImpl) GetVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string) (result model.Variable, err error) {
+	q := url.Values{}
+	set(q, "element_id", elementId)
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "instances", id, "variables", name), q, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) DebugState(ctx context.Context, token string, namespace string, id string, options model.DebugOptions) (result model.DebugState, err error) {
+	q := url.Values{}
+	if options.EvaluateEvents {
+		q.Set("evaluate_events", "true")
+	}
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "instances", id, "debug"), q, nil, &result)
+	return result, err
+}
+
+func historyQuery(options model.HistoryOptions) url.Values {
+	q := url.Values{}
+	setInt(q, "seq", options.Seq)
+	if options.Time != nil {
+		q.Set("time", options.Time.Format(time.RFC3339Nano))
+	}
+	return q
+}
+
+func (this *ClientImpl) HistoryState(ctx context.Context, token string, namespace string, id string, options model.HistoryOptions) (result model.DebugState, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "instances", id, "history"), historyQuery(options), nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) HistoryVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string, options model.HistoryOptions) (result model.HistoryVariable, err error) {
+	q := historyQuery(options)
+	set(q, "element_id", elementId)
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "instances", id, "history", "variables", name), q, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) EventEvaluations(ctx context.Context, token string, namespace string, id string, options model.EventReconstructionOptions) (result model.EventReconstruction, err error) {
+	q := url.Values{}
+	set(q, "element_id", options.ElementId)
+	setInt(q, "run", int64(options.Run))
+	setInt(q, "limit", int64(options.Limit))
+	if options.After != nil {
+		q.Set("after", options.After.Format(time.RFC3339Nano))
+	}
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "instances", id, "event-evaluations"), q, nil, &result)
+	return result, err
+}
+
 func (this *ClientImpl) ListIncidents(ctx context.Context, token string, namespace string, options model.IncidentListOptions) (result model.Page[model.Incident], err error) {
 	q := pageQuery(options.PageOptions)
 	set(q, "instance_id", options.InstanceId)

@@ -59,6 +59,14 @@ var pg struct {
 // if AE_TEST_POSTGRES=off or no container runtime is available.
 func OpenPostgres(t testing.TB) *store.Store {
 	t.Helper()
+	s, _ := OpenPostgresDsn(t)
+	return s
+}
+
+// OpenPostgresDsn is OpenPostgres that also returns the connection string of the database,
+// e.g. for a second connection that listens for notifications.
+func OpenPostgresDsn(t testing.TB) (*store.Store, string) {
+	t.Helper()
 	if os.Getenv("AE_TEST_POSTGRES") == "off" {
 		t.Skip("AE_TEST_POSTGRES=off")
 	}
@@ -77,12 +85,13 @@ func OpenPostgres(t testing.TB) *store.Store {
 	if _, err = admin.Exec("CREATE DATABASE " + name); err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(context.Background(), store.Postgres, strings.Replace(pg.dsn, "/postgres?", "/"+name+"?", 1))
+	dsn := strings.Replace(pg.dsn, "/postgres?", "/"+name+"?", 1)
+	s, err := store.Open(context.Background(), store.Postgres, dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	return s
+	return s, dsn
 }
 
 func startPostgres() (string, error) {

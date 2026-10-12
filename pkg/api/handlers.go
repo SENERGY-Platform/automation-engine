@@ -693,7 +693,7 @@ func (h *handlers) listActivities(w http.ResponseWriter, r *http.Request) {
 
 // listElementStats godoc
 //
-//	@Summary	pass counters and last errors per element
+//	@Summary	pass counters and last errors per element and taken sequence flow
 //	@Tags		instances
 //	@Security	Bearer
 //	@Produce	json

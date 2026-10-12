@@ -78,6 +78,8 @@ type Config struct {
 	// OTLP collector over gRPC for traces; empty selects the platform default of
 	// gin-middleware/otelx, "off" disables tracing
 	OtelEndpoint string `json:"otel_endpoint" env_var:"OTEL_ENDPOINT"`
+	// live debug streams per user and replica (DBG-10)
+	MaxLiveConnectionsPerUser int `json:"max_live_connections_per_user" env_var:"MAX_LIVE_CONNECTIONS_PER_USER"`
 
 	// Kafka for device commands, their answers and cache invalidation; empty disables Kafka
 	KafkaUrl           string `json:"kafka_url" env_var:"KAFKA_URL"`
@@ -164,6 +166,7 @@ func Default() Config {
 		UserTopic:                  "user",
 		MaxIoValuesPerUser:         10000,
 		MaxIoValueBytes:            256 << 10,
+		MaxLiveConnectionsPerUser:  5,
 		Namespaces:                 DefaultNamespaces(),
 	}
 }

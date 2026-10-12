@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
@@ -64,6 +65,13 @@ type Config struct {
 	// false in roles that advance processes but do not execute jobs, e.g. the event worker:
 	// jobs are created without checking that the task type runs here
 	ExecutesTasks bool
+	// full states for the history are written every MaxActivities/SnapshotsPerLog activity
+	// entries, at least every SnapshotMaxAge, and at most SnapshotsKept are kept (DBG-14)
+	SnapshotsPerLog int
+	SnapshotMaxAge  time.Duration
+	SnapshotsKept   int
+	// how long the change stream keeps entries (SYNC-03)
+	ChangeRetention time.Duration
 }
 
 func DefaultConfig() Config {
@@ -86,6 +94,10 @@ func DefaultConfig() Config {
 		ModelVersionsKept:         50,
 		HousekeepingInterval:      time.Minute,
 		ExecutesTasks:             true,
+		SnapshotsPerLog:           20,
+		SnapshotMaxAge:            24 * time.Hour,
+		SnapshotsKept:             30,
+		ChangeRetention:           time.Hour,
 	}
 }
 
@@ -313,4 +325,19 @@ func (this *Engine) Run(ctx context.Context) {
 		case <-this.wake:
 		}
 	}
+}
+
+// DebugState builds the live state of an instance for the debugger (DBG-02).
+func (this *Engine) DebugState(tx *store.Tx, inst store.Instance) (model.DebugState, error) {
+	proc, err := this.process(tx, inst.DeploymentId, inst.DeploymentVersion)
+	if err != nil {
+		return model.DebugState{}, err
+	}
+	return debug.Live(tx, inst, proc)
+}
+
+// ActivityValueLimit is the size above which values are cut in the activity log and in
+// transfers of the debugger (DBG-04).
+func (this *Engine) ActivityValueLimit() int {
+	return this.config.MaxActivityValueBytes
 }

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
@@ -114,6 +115,12 @@ func (this *runner) finish() error {
 		if err := this.tx.TrimActivities(this.inst.Id, this.inst.ActivityMinSeq); err != nil {
 			return err
 		}
+		if err := this.tx.TrimSnapshots(this.inst.Id, this.inst.ActivityMinSeq, this.e.config.SnapshotsKept); err != nil {
+			return err
+		}
+	}
+	if err := this.snapshot(); err != nil {
+		return err
 	}
 	if err := this.tx.UpdateInstance(*this.inst); err != nil {
 		return err
@@ -122,6 +129,26 @@ func (this *runner) finish() error {
 		this.e.signal()
 	}
 	return nil
+}
+
+// snapshot writes the full state for the history when enough activity entries or time passed
+// since the last one (DBG-14); tokens, subscriptions and variables of this transaction are
+// already written
+func (this *runner) snapshot() error {
+	interval := int64(max(50, this.limits.MaxActivities/max(1, this.e.config.SnapshotsPerLog)))
+	since := this.inst.ActivitySeq - this.inst.SnapshotSeq
+	if since <= 0 || (since < interval && this.now.Sub(this.inst.SnapshotAt) < this.e.config.SnapshotMaxAge) {
+		return nil
+	}
+	state, err := debug.Live(this.tx, *this.inst, this.proc)
+	if err != nil {
+		return err
+	}
+	if err = this.tx.SaveSnapshot(this.inst.Id, this.inst.ActivitySeq, this.inst.Run, this.now, state); err != nil {
+		return err
+	}
+	this.inst.SnapshotSeq, this.inst.SnapshotAt = this.inst.ActivitySeq, this.now
+	return this.tx.TrimSnapshots(this.inst.Id, this.inst.ActivityMinSeq, this.e.config.SnapshotsKept)
 }
 
 // loop executes ready tokens; afterwards it activates inclusive joins that no other token
@@ -440,6 +467,11 @@ func (this *runner) execute(t *store.Token) error {
 // event-based gateway the group is the token id
 func (this *runner) subscribe(element *bpmn.Element, t *store.Token, group string) error {
 	s := store.Subscription{Id: uuid.NewString(), InstanceId: this.inst.Id, Run: this.inst.Run, TokenId: t.Id, ElementId: element.Id, GroupId: group, CreatedAt: this.now}
+	data := map[string]any{}
+	if group != "" {
+		// the token waits at the event-based gateway; leaving it cancels this wait
+		data["gateway_id"] = t.ElementId
+	}
 	switch element.Kind {
 	case bpmn.EventMessage:
 		s.Kind = store.SubscriptionMessage
@@ -447,7 +479,8 @@ func (this *runner) subscribe(element *bpmn.Element, t *store.Token, group strin
 		if err := this.tx.InsertSubscription(s); err != nil {
 			return err
 		}
-		return this.log(model.ActivityMessageWaiting, element, map[string]any{"message_name": s.MessageName})
+		data["message_name"] = s.MessageName
+		return this.log(model.ActivityMessageWaiting, element, data)
 	case bpmn.EventTimer:
 		value, err := this.timerValue(element, t)
 		if err != nil {
@@ -464,7 +497,8 @@ func (this *runner) subscribe(element *bpmn.Element, t *store.Token, group strin
 		if err = this.tx.InsertSubscription(s); err != nil {
 			return err
 		}
-		return this.log(model.ActivityTimerScheduled, element, map[string]any{"due": due, "definition": value, "kind": string(element.Timer.Kind)})
+		data["due"], data["definition"], data["kind"] = due, value, string(element.Timer.Kind)
+		return this.log(model.ActivityTimerScheduled, element, data)
 	default:
 		return incidentf(element.Id, "catch event without message or timer")
 	}
@@ -590,6 +624,10 @@ func (this *runner) take(element *bpmn.Element, t *store.Token, flows []*bpmn.Fl
 	}
 	for i, flow := range flows {
 		if err := this.log(model.ActivityFlowTaken, element, map[string]any{"flow_id": flow.Id, "target": flow.Target.Id}); err != nil {
+			return err
+		}
+		// taken flows are marked in the diagram like passed elements (DBG-07)
+		if err := this.tx.CountElementPass(this.inst.Id, this.inst.Run, flow.Id, this.now); err != nil {
 			return err
 		}
 		if i == 0 {

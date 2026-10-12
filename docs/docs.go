@@ -1671,6 +1671,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/namespaces/{ns}/instances/{id}/debug": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Active elements with their wait reasons, variables, open incidents and pass counters (DBG-02). Values above the transfer limit are cut and marked; GET .../variables/{name} loads them (DBG-04).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "debugging"
+                ],
+                "summary": "live state of an instance for the debugger",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "evaluate the current value of waiting device events (DBG-18)",
+                        "name": "evaluate_events",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.DebugState"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/namespaces/{ns}/instances/{id}/element-stats": {
             "get": {
                 "security": [
@@ -1684,7 +1737,7 @@ const docTemplate = `{
                 "tags": [
                     "instances"
                 ],
-                "summary": "pass counters and last errors per element",
+                "summary": "pass counters and last errors per element and taken sequence flow",
                 "parameters": [
                     {
                         "type": "string",
@@ -1719,6 +1772,268 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/instances/{id}/event-evaluations": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "For the times the element waited, the values of the event sources are read from timescale-wrapper with the token of the owner and evaluated like the event worker does. They are shown next to the actual correlations; deviations come with their possible causes (EVT-10, EVT-11). Paged per source; next continues.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "debugging"
+                ],
+                "summary": "evaluations of a device event reconstructed from the time series",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "BPMN element id of the event",
+                        "name": "element_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "run, default the current one",
+                        "name": "run",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "evaluations after this RFC 3339 time, the next of the previous page",
+                        "name": "after",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "evaluations per source, default 100, max 1000",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.EventReconstruction"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/instances/{id}/history": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Reconstructed from the latest snapshot before the step and the activity entries after it (DBG-13, DBG-14). Without seq and time the latest step. first_seq is the earliest step that can still be reconstructed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "debugging"
+                ],
+                "summary": "state of an instance after a step of its history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "activity sequence number",
+                        "name": "seq",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "last step at or before this RFC 3339 time",
+                        "name": "time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.DebugState"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/instances/{id}/history/variables/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Values the activity log holds cut are complete only at snapshots; available is false otherwise (DBG-04).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "debugging"
+                ],
+                "summary": "complete value of a variable at a step of the history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "variable name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "local variable of this element",
+                        "name": "element_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "activity sequence number",
+                        "name": "seq",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "last step at or before this RFC 3339 time",
+                        "name": "time",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.HistoryVariable"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/instances/{id}/live": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Upgrades to a WebSocket and sends model.DebugMessage values as JSON: a snapshot, deltas with sequence numbers, and the end state when the instance ends (DBG-01). The token goes in the Authorization header or, for browsers, as first message {\"type\":\"auth\",\"token\":\"...\"}, never as query parameter (DBG-08). The stream closes with code 4401 when the token expires and with 4000 plus the HTTP status of other errors.",
+                "tags": [
+                    "debugging"
+                ],
+                "summary": "live debug stream of an instance (WebSocket)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "resume after this sequence number",
+                        "name": "after",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "evaluate the current value of waiting device events (DBG-18)",
+                        "name": "evaluate_events",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "101": {
+                        "description": "Switching Protocols"
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/model.Error"
                         }
@@ -1940,6 +2255,63 @@ const docTemplate = `{
             }
         },
         "/namespaces/{ns}/instances/{id}/variables/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "debugging"
+                ],
+                "summary": "complete current value of a variable",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "variable name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "local variable of a token at this element",
+                        "name": "element_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Variable"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            },
             "put": {
                 "security": [
                     {
@@ -3145,6 +3517,32 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ActiveElement": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "string"
+                },
+                "element_type": {
+                    "type": "string"
+                },
+                "locals": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/model.DebugVariable"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "since": {
+                    "type": "string"
+                },
+                "tokens": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.Activity": {
             "type": "object",
             "properties": {
@@ -3305,6 +3703,92 @@ const docTemplate = `{
                 "function_id": {
                     "type": "string"
                 }
+            }
+        },
+        "model.DebugState": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "description": "elements with a token, several through parallel branches and event-based gateways",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ActiveElement"
+                    }
+                },
+                "elements": {
+                    "description": "passes of elements and sequence flows in the run (DBG-06, DBG-07)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ElementStats"
+                    }
+                },
+                "first_seq": {
+                    "type": "integer"
+                },
+                "incidents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Incident"
+                    }
+                },
+                "instance": {
+                    "$ref": "#/definitions/model.Instance"
+                },
+                "reconstructed": {
+                    "description": "set by the history: the state was reconstructed from a snapshot and activity entries;\nFirstSeq is the earliest step that can still be reconstructed (DBG-14)",
+                    "type": "boolean"
+                },
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Run"
+                    }
+                },
+                "seq": {
+                    "description": "last activity entry the state includes",
+                    "type": "integer"
+                },
+                "time": {
+                    "type": "string"
+                },
+                "truncated": {
+                    "description": "older activity entries were evicted (LONG-03)",
+                    "type": "boolean"
+                },
+                "variables": {
+                    "description": "instance variables; local variables are at their element in Active",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/model.DebugVariable"
+                    }
+                },
+                "waits": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Wait"
+                    }
+                }
+            }
+        },
+        "model.DebugVariable": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "truncated": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "value": {}
             }
         },
         "model.Dependent": {
@@ -3528,7 +4012,8 @@ const docTemplate = `{
                 "forbidden",
                 "conflict",
                 "unavailable",
-                "internal"
+                "internal",
+                "too_many_requests"
             ],
             "x-enum-varnames": [
                 "KindBadRequest",
@@ -3537,7 +4022,8 @@ const docTemplate = `{
                 "KindForbidden",
                 "KindConflict",
                 "KindUnavailable",
-                "KindInternal"
+                "KindInternal",
+                "KindTooMany"
             ]
         },
         "model.EventDescription": {
@@ -3624,6 +4110,143 @@ const docTemplate = `{
                 "version": {
                     "type": "integer"
                 }
+            }
+        },
+        "model.EventEvaluation": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "raw": {},
+                "time": {
+                    "type": "string"
+                },
+                "triggered": {
+                    "type": "boolean"
+                },
+                "value": {}
+            }
+        },
+        "model.EventReconstruction": {
+            "type": "object",
+            "properties": {
+                "correlations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Activity"
+                    }
+                },
+                "deployment_version": {
+                    "type": "integer"
+                },
+                "element_id": {
+                    "type": "string"
+                },
+                "evaluations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.SourceEvaluation"
+                    }
+                },
+                "hints": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "limitations": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "message_name": {
+                    "type": "string"
+                },
+                "next": {
+                    "description": "more evaluations follow; pass it as After for the next page",
+                    "type": "string"
+                },
+                "run": {
+                    "type": "integer"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.EventSource"
+                    }
+                },
+                "waiting": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.WaitPeriod"
+                    }
+                }
+            }
+        },
+        "model.EventSource": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "description": "evaluation of the current value of the source, on request (DBG-18)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.EventEvaluation"
+                        }
+                    ]
+                },
+                "device_group_id": {
+                    "type": "string"
+                },
+                "device_id": {
+                    "type": "string"
+                },
+                "event_description_id": {
+                    "type": "string"
+                },
+                "import_id": {
+                    "type": "string"
+                },
+                "script": {
+                    "type": "string"
+                },
+                "service_id": {
+                    "type": "string"
+                },
+                "value_variable": {
+                    "type": "string"
+                },
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "model.HistoryVariable": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "element_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "seq": {
+                    "type": "integer"
+                },
+                "value": {}
             }
         },
         "model.HttpPolicy": {
@@ -3880,6 +4503,17 @@ const docTemplate = `{
                 }
             }
         },
+        "model.JoinWait": {
+            "type": "object",
+            "properties": {
+                "arrived": {
+                    "type": "integer"
+                },
+                "required": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.Kind": {
             "type": "string",
             "enum": [
@@ -3985,6 +4619,21 @@ const docTemplate = `{
                 "variables": {
                     "type": "object",
                     "additionalProperties": {}
+                }
+            }
+        },
+        "model.MessageWait": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "description": "sources of a device or import event; empty for messages sent through the API",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.EventSource"
+                    }
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -4671,6 +5320,31 @@ const docTemplate = `{
                 }
             }
         },
+        "model.SourceEvaluation": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "event_description_id": {
+                    "type": "string"
+                },
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "raw": {},
+                "time": {
+                    "type": "string"
+                },
+                "triggered": {
+                    "type": "boolean"
+                },
+                "value": {}
+            }
+        },
         "model.StartInstanceInput": {
             "type": "object",
             "properties": {
@@ -4709,6 +5383,79 @@ const docTemplate = `{
                     }
                 },
                 "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.SubtaskState": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "string"
+                },
+                "done": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_try": {
+                    "type": "string"
+                },
+                "service_id": {
+                    "type": "string"
+                },
+                "tries": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.TaskWait": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "due_at": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "retries": {
+                    "type": "integer"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "subtasks": {
+                    "description": "device commands: one per device, with groups several (TASK-04)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.SubtaskState"
+                    }
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "timeout": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.TimerWait": {
+            "type": "object",
+            "properties": {
+                "definition": {
+                    "type": "string"
+                },
+                "due_at": {
+                    "type": "string"
+                },
+                "kind": {
                     "type": "string"
                 }
             }
@@ -4784,6 +5531,65 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "value": {}
+            }
+        },
+        "model.Wait": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "string"
+                },
+                "gateway_id": {
+                    "description": "the event-based gateway the wait belongs to; the first event cancels the others",
+                    "type": "string"
+                },
+                "join": {
+                    "$ref": "#/definitions/model.JoinWait"
+                },
+                "kind": {
+                    "$ref": "#/definitions/model.WaitKind"
+                },
+                "message": {
+                    "$ref": "#/definitions/model.MessageWait"
+                },
+                "since": {
+                    "type": "string"
+                },
+                "task": {
+                    "$ref": "#/definitions/model.TaskWait"
+                },
+                "timer": {
+                    "$ref": "#/definitions/model.TimerWait"
+                }
+            }
+        },
+        "model.WaitKind": {
+            "type": "string",
+            "enum": [
+                "message",
+                "timer",
+                "task",
+                "join"
+            ],
+            "x-enum-varnames": [
+                "WaitMessage",
+                "WaitTimer",
+                "WaitTask",
+                "WaitJoin"
+            ]
+        },
+        "model.WaitPeriod": {
+            "type": "object",
+            "properties": {
+                "correlated": {
+                    "type": "boolean"
+                },
+                "from": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
             }
         }
     },

@@ -22,11 +22,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
@@ -196,7 +198,46 @@ type env struct {
 	srv    *server.Server
 	worker *events.Worker
 	repo   *fakeRepo
+	series *fakeSeries
 	topics []string
+}
+
+// fakeSeries holds stored messages of every device and service in time order
+type fakeSeries struct {
+	mux    sync.Mutex
+	rows   []events.Row
+	tokens []string
+}
+
+func (this *fakeSeries) add(at time.Time, value any) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	this.rows = append(this.rows, events.Row{Time: at, Values: map[string]any{"value": value}})
+}
+
+func (this *fakeSeries) Range(_ context.Context, token string, _ string, _ string, columns []string, from time.Time, to time.Time, limit int) (result []events.Row, err error) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	this.tokens = append(this.tokens, token)
+	if len(columns) != 1 || columns[0] != "value" {
+		return nil, errors.New("unexpected columns")
+	}
+	for _, row := range this.rows {
+		if row.Time.After(from) && row.Time.Before(to) && len(result) < limit {
+			result = append(result, row)
+		}
+	}
+	return result, nil
+}
+
+func (this *fakeSeries) Last(context.Context, string, string, string, []string) (*events.Row, error) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	if len(this.rows) == 0 {
+		return nil, nil
+	}
+	last := this.rows[len(this.rows)-1]
+	return &last, nil
 }
 
 func newEnv(t *testing.T) *env {
@@ -205,12 +246,14 @@ func newEnv(t *testing.T) *env {
 	config := configuration.Default()
 	config.SqlitePath = storetest.MemoryDsn()
 	repo := &fakeRepo{groups: map[string]devicemodel.DeviceGroup{"g": {Id: "g", DeviceIds: []string{"d1"}}}}
+	series := &fakeSeries{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv, err := server.New(ctx, config, logger, server.Dependencies{DeviceRepository: repo, AspectNodes: aspects()})
+	srv, err := server.New(ctx, config, logger, server.Dependencies{DeviceRepository: repo, AspectNodes: aspects(),
+		EventSeries: series, EventUnmarshaller: fakeUnmarshaller{}, UserToken: auth.UnsignedTokens})
 	if err != nil {
 		t.Fatal(err)
 	}
-	this := &env{t: t, srv: srv, repo: repo}
+	this := &env{t: t, srv: srv, repo: repo, series: series}
 	consume := func(context.Context, []string, func(events.Message) error) error { return nil }
 	this.worker = events.NewWorker(events.DefaultWorkerConfig(), srv.Store, events.NewEvaluator(fakeUnmarshaller{}), srv.Engine, consume, logger)
 	return this
@@ -348,5 +391,84 @@ func TestDeviceGroupChangeRecomputesDescriptions(t *testing.T) {
 	list, _ = c.ListEventDescriptions(ctx, alice, "processes", d.Id)
 	if len(list) != 2 {
 		t.Fatalf("the new device gets a description (DEP-08): %+v", list)
+	}
+}
+
+func TestReconstructionShowsEvaluationsNextToCorrelations(t *testing.T) {
+	e := newEnv(t)
+	c := e.srv.Controller
+	d, err := c.CreateDeployment(ctx, alice, "processes", model.DeploymentInput{Xml: eventProcess(), Selections: map[string]model.Selection{"reading": {DeviceId: "d1", ServiceId: "urn:infai:ses:service:event"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := c.StartInstance(ctx, alice, "processes", model.StartInstanceInput{DeploymentId: d.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.sync()
+	time.Sleep(5 * time.Millisecond)
+	low := time.Now()
+	e.series.add(low, 10.0)
+	e.series.add(low.Add(time.Millisecond), 25.0)
+	time.Sleep(5 * time.Millisecond)
+	e.send(1, "d1", 25.0, time.Now())
+	time.Sleep(5 * time.Millisecond)
+	// stored, but never delivered to the worker
+	missed := time.Now()
+	e.series.add(missed, 30.0)
+	time.Sleep(5 * time.Millisecond)
+
+	result, err := c.EventEvaluations(ctx, alice, "processes", inst.Id, model.EventReconstructionOptions{ElementId: "reading"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Waiting) != 2 || !result.Waiting[0].Correlated || result.Waiting[1].To != nil || len(result.Correlations) != 1 {
+		t.Fatalf("waiting periods and correlations come from the activity log (EVT-09): %+v %+v", result.Waiting, result.Correlations)
+	}
+	triggered := []bool{}
+	for _, evaluation := range result.Evaluations {
+		triggered = append(triggered, evaluation.Triggered)
+	}
+	if !reflect.DeepEqual(triggered, []bool{false, true, true}) || result.Evaluations[1].Value != 25.0 {
+		t.Fatalf("values are evaluated like in the event worker (EVT-10): %+v", result.Evaluations)
+	}
+	if len(result.Hints) != 1 || !strings.Contains(result.Hints[0], "would have triggered") {
+		t.Fatalf("the missed value is a deviation (EVT-11): %v", result.Hints)
+	}
+	if e.series.tokens[0] != auth.UnsignedToken("alice") {
+		t.Fatalf("the time series is read with the token of the owner: %v", e.series.tokens[0])
+	}
+	var paged []any
+	options := model.EventReconstructionOptions{ElementId: "reading", Limit: 1}
+	for range 5 {
+		page, err := c.EventEvaluations(ctx, alice, "processes", inst.Id, options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.Next != nil && len(page.Hints) > 0 {
+			t.Fatalf("a partial page names no deviations: %v", page.Hints)
+		}
+		for _, evaluation := range page.Evaluations {
+			paged = append(paged, evaluation.Value)
+		}
+		if page.Next == nil {
+			break
+		}
+		options.After = page.Next
+	}
+	if !reflect.DeepEqual(paged, []any{10.0, 25.0, 30.0}) {
+		t.Fatalf("pages of one evaluation per source continue with next: %v", paged)
+	}
+
+	state, err := c.DebugState(ctx, alice, "processes", inst.Id, model.DebugOptions{EvaluateEvents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Waits) != 1 || state.Waits[0].Message == nil || len(state.Waits[0].Message.Events) != 1 {
+		t.Fatalf("the wait names its event source (DBG-02): %+v", state.Waits)
+	}
+	current := state.Waits[0].Message.Events[0].Current
+	if current == nil || !current.Triggered || current.Value != 30.0 {
+		t.Fatalf("the current value is evaluated on request (DBG-18): %+v", current)
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -259,8 +260,13 @@ func TestInstanceLifecycle(t *testing.T) {
 			t.Fatalf("activities after a sequence number: %v %v", len(later.Items), err)
 		}
 		stats, err := c.ListElementStats(ctx, alice, ns, inst.Id, 0)
-		if err != nil || len(stats) != 4 {
-			t.Fatalf("element stats: %+v %v", stats, err)
+		counted := map[string]int64{}
+		for _, s := range stats {
+			counted[s.ElementId] = s.Count
+		}
+		want := map[string]int64{"start": 1, "init": 1, "wait": 1, "end": 1, "f_start_init": 1, "f_init_wait": 1, "f_wait_end": 1}
+		if err != nil || !reflect.DeepEqual(counted, want) {
+			t.Fatalf("passes of elements and taken flows (LONG-04, DBG-07): %+v %v", counted, err)
 		}
 
 		restarted, err := c.RestartInstance(ctx, alice, ns, inst.Id, model.RestartInput{})

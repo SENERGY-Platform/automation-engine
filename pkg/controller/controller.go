@@ -20,11 +20,14 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"sync"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/api"
+	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
+	"github.com/SENERGY-Platform/automation-engine/pkg/live"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/permissions"
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
@@ -78,6 +81,15 @@ type Controller struct {
 	selectionAccess *prepare.Access
 	io              *processio.Service
 	describer       *events.Describer
+	// live debug streams (DBG-01) and their number per user (DBG-10)
+	live         *live.Hub
+	liveSettings LiveSettings
+	liveMux      sync.Mutex
+	liveCount    map[string]int
+	// event debugging; nil without timescale-wrapper (EVT-10, DBG-18)
+	series    events.Series
+	evaluator *events.Evaluator
+	userToken auth.UserTokenSource
 }
 
 // SetIo enables the process-io API (IO-02).

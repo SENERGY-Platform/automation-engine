@@ -51,8 +51,8 @@ type Pinger interface {
 //	@in							header
 //	@name						Authorization
 //	@description				Type "Bearer" followed by a space and JWT token.
-func New(controller Controller, pinger Pinger, logger *slog.Logger) http.Handler {
-	h := &handlers{c: controller, pinger: pinger}
+func New(controller Controller, pinger Pinger, logger *slog.Logger, settings Settings) http.Handler {
+	h := &handlers{c: controller, pinger: pinger, settings: settings, logger: logger}
 	mux := http.NewServeMux()
 	for _, route := range h.routes() {
 		mux.HandleFunc(route.pattern, route.handler)
@@ -60,9 +60,18 @@ func New(controller Controller, pinger Pinger, logger *slog.Logger) http.Handler
 	return recovery(accessLog(mux, logger), logger)
 }
 
+// Settings of the API that depend on the deployment.
+type Settings struct {
+	// the engine verifies token signatures itself; then a live stream may take its token as
+	// first message, which does not pass Kong (DBG-08)
+	VerifiesTokens bool
+}
+
 type handlers struct {
-	c      Controller
-	pinger Pinger
+	c        Controller
+	pinger   Pinger
+	settings Settings
+	logger   *slog.Logger
 }
 
 type route struct {
@@ -117,6 +126,12 @@ func (h *handlers) routes() []route {
 		{"GET /namespaces/{ns}/instances/{id}/variables", h.getVariables},
 		{"PUT /namespaces/{ns}/instances/{id}/variables/{name}", h.setVariable},
 		{"GET /namespaces/{ns}/instances/{id}/activities", h.listActivities},
+		{"GET /namespaces/{ns}/instances/{id}/variables/{name}", h.getVariable},
+		{"GET /namespaces/{ns}/instances/{id}/debug", h.getDebugState},
+		{"GET /namespaces/{ns}/instances/{id}/live", h.watchInstance},
+		{"GET /namespaces/{ns}/instances/{id}/history", h.getHistoryState},
+		{"GET /namespaces/{ns}/instances/{id}/history/variables/{name}", h.getHistoryVariable},
+		{"GET /namespaces/{ns}/instances/{id}/event-evaluations", h.getEventEvaluations},
 		{"GET /namespaces/{ns}/instances/{id}/element-stats", h.listElementStats},
 		{"PUT /namespaces/{ns}/instances/{id}/owner", h.setOwner(model.KindInstance)},
 
@@ -272,6 +287,11 @@ type statusRecorder struct {
 func (this *statusRecorder) WriteHeader(status int) {
 	this.status = status
 	this.ResponseWriter.WriteHeader(status)
+}
+
+// Unwrap gives access to the underlying writer, e.g. to hijack the connection of a WebSocket
+func (this *statusRecorder) Unwrap() http.ResponseWriter {
+	return this.ResponseWriter
 }
 
 func recovery(next http.Handler, logger *slog.Logger) http.Handler {

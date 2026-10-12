@@ -20,6 +20,7 @@ package auth
 import (
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,4 +102,23 @@ func UnsignedTokens(userId string) (string, error) {
 // Static returns a fixed token; for tests.
 func Static(token string) TokenSource {
 	return func() (string, error) { return token, nil }
+}
+
+// Expiry reads the exp claim of a token without verifying it; false if there is none.
+func Expiry(token string) (time.Time, bool) {
+	parts := strings.Split(strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(token, "Bearer "), "bearer ")), ".")
+	if len(parts) < 2 {
+		return time.Time{}, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return time.Time{}, false
+	}
+	var claims struct {
+		Exp float64 `json:"exp"`
+	}
+	if json.Unmarshal(raw, &claims) != nil || claims.Exp == 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(int64(claims.Exp), 0), true
 }

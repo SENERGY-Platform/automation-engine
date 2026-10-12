@@ -19,7 +19,18 @@ Für den Plattformbetrieb kommen dazu:
 - `DEVICE_REPOSITORY_URL`, `MARSHALLER_URL`, `TIMESCALE_WRAPPER_URL`, `DEVICE_SELECTION_URL`, `IMPORT_DEPLOY_URL`, `IMPORT_REPOSITORY_URL`: Dienste für Gerätekommandos, Geräteauswahl und Geräteevents. Gerätekommandos brauchen zusätzlich `AUTH_ENDPOINT` für den Token-Exchange.
 - `MODE` (`cloud` oder `fog`, Vorgabe `cloud`): wählt die Richtlinie für HTTP-Aufrufe aus Prozessen.
 - `MAX_IO_VALUES_PER_USER`, `MAX_IO_VALUE_BYTES`: Grenzen für Process-IO.
+- `MAX_LIVE_CONNECTIONS_PER_USER` (Vorgabe 5): Live-Debug-Verbindungen je Nutzer und Replica.
 - `OTEL_ENDPOINT`: OTLP-Collector (gRPC) für Traces. Leer heißt Vorgabe von `gin-middleware/otelx` (`jaeger.logging.svc.cluster.local:4317`), `off` schaltet Tracing ab, etwa im Fog oder lokal.
+
+## Debugging
+
+- `GET .../instances/{id}/debug`: aktueller Zustand mit aktiven Elementen, Wartegründen, Variablen, offenen Incidents und Durchlaufzählern von Elementen und Sequenzflüssen. Große Werte kommen gekürzt, `GET .../instances/{id}/variables/{name}` liefert sie einzeln.
+- `GET .../instances/{id}/live`: WebSocket mit Snapshot, Deltas und Endzustand; `after=<seq>` setzt nach einem Abbruch fort. Das Token kommt im `Authorization`-Header oder, für Browser, als erste Nachricht `{"type":"auth","token":"..."}`. Die zweite Variante gibt es nur mit `KEYCLOAK_CERT_URL`, weil das Token dann nicht über Kong läuft und die Engine die Signatur selbst prüft. Kong muss das Upgrade durchreichen.
+- `GET .../instances/{id}/history?seq=|time=`: Zustand nach einem Schritt des Verlaufs, rekonstruiert aus Vollständen und Aktivitäten; `first_seq` nennt den frühesten noch rekonstruierbaren Schritt.
+- `GET .../instances/{id}/event-evaluations?element_id=`: Auswertungen eines Geräteevents, rekonstruiert aus den Werten in Timescale, neben den tatsächlichen Korrelationen. Braucht `TIMESCALE_WRAPPER_URL`, `DEVICE_REPOSITORY_URL` und `AUTH_ENDPOINT` (Token des Owners); dieselben Werte erlauben `evaluate_events=true` am Debug-Zustand und am Live-Strom.
+- Im Go-Client: `client.Follow` führt Snapshot und Deltas zusammen und setzt nach Abbrüchen fort, `client.OpenHistory` geht Schritt für Schritt durch den Verlauf.
+
+Mehrere Replicas brauchen keine Sticky Sessions: Jede Schreiboperation einer Instanz landet im Änderungsstrom (Tabelle `changes`), Postgres meldet ihn per LISTEN/NOTIFY, SQLite wird gepollt.
 
 ## Tracing
 

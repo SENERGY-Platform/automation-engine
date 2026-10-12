@@ -78,6 +78,13 @@ type Controller interface {
 	SetVariable(ctx context.Context, token string, namespace string, id string, name string, value any) error
 	ListActivities(ctx context.Context, token string, namespace string, id string, options model.ActivityListOptions) (model.ActivityPage, error)
 	ListElementStats(ctx context.Context, token string, namespace string, id string, run int) ([]model.ElementStats, error)
+	GetVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string) (model.Variable, error)
+
+	DebugState(ctx context.Context, token string, namespace string, id string, options model.DebugOptions) (model.DebugState, error)
+	Watch(ctx context.Context, token string, namespace string, id string, options model.WatchOptions) (<-chan model.DebugMessage, error)
+	HistoryState(ctx context.Context, token string, namespace string, id string, options model.HistoryOptions) (model.DebugState, error)
+	EventEvaluations(ctx context.Context, token string, namespace string, id string, options model.EventReconstructionOptions) (model.EventReconstruction, error)
+	HistoryVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string, options model.HistoryOptions) (model.HistoryVariable, error)
 
 	ListIncidents(ctx context.Context, token string, namespace string, options model.IncidentListOptions) (model.Page[model.Incident], error)
 
