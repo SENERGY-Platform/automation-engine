@@ -40,6 +40,7 @@
 package protocol
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -56,10 +57,13 @@ const (
 	// down
 	KindDesired = "desired"
 	KindUpAck   = "ack"
+	KindRequest = "request"
 	// up
 	KindStatus     = "status"
 	KindChanges    = "changes"
 	KindDesiredAck = "applied"
+	// up, followed by the replica that asked: response/{replica}
+	KindResponse = "response"
 )
 
 // CloudCommandTopic is where the cloud sends a message of a kind to a network.
@@ -83,6 +87,17 @@ func CloudStateFilter(group string) string {
 		return filter
 	}
 	return "$share/" + group + "/" + filter
+}
+
+// GatewayResponseTopic is where a gateway answers a request of a replica.
+func GatewayResponseTopic(replica string) string {
+	return GatewayStateTopic(KindResponse + "/" + replica)
+}
+
+// CloudResponseFilter subscribes the answers to the requests of one replica, of every gateway;
+// not shared, the replica waits for them itself.
+func CloudResponseFilter(replica string) string {
+	return root + "+/state/" + path + KindResponse + "/" + replica
 }
 
 // KindOf reads the kind of a message from its topic, on either side; network is empty on a gateway.
@@ -219,4 +234,52 @@ type Storage struct {
 // its own version and window versions before it (SYNC-11).
 func Compatible(gatewayProtocol int, window int) bool {
 	return gatewayProtocol <= Version && gatewayProtocol >= Version-window
+}
+
+// Requests read the history and the state of an instance on its gateway, where it stays
+// (DBG-15), or watch it live while the cloud renews the request (DBG-12).
+const (
+	MethodDebugState       = "debug_state"
+	MethodHistoryState     = "history_state"
+	MethodListRuns         = "list_runs"
+	MethodListActivities   = "list_activities"
+	MethodListElementStats = "list_element_stats"
+	MethodGetVariables     = "get_variables"
+	MethodGetVariable      = "get_variable"
+	MethodHistoryVariable  = "history_variable"
+	// a stream of debug messages; the gateway ends it without renewal within WatchLease
+	MethodWatch   = "watch"
+	MethodUnwatch = "unwatch"
+)
+
+// WatchLease is how long a gateway streams after the last watch request.
+const WatchLease = time.Minute
+
+// Request asks a gateway; the answer goes to GatewayResponseTopic(ReplyTo).
+type Request struct {
+	Envelope
+	Id        string `json:"id"`
+	ReplyTo   string `json:"reply_to"`
+	Method    string `json:"method"`
+	Namespace string `json:"namespace"`
+	Instance  string `json:"instance"`
+	// method parameters: options of the method, a variable name, element id or run
+	Args RequestArgs `json:"args"`
+}
+
+type RequestArgs struct {
+	Name      string          `json:"name,omitempty"`
+	ElementId string          `json:"element_id,omitempty"`
+	Run       int             `json:"run,omitempty"`
+	Options   json.RawMessage `json:"options,omitempty"`
+}
+
+// Response answers a request; a watch answers with one response per debug message and a final
+// one when it ends.
+type Response struct {
+	Envelope
+	RequestId string          `json:"request_id"`
+	Result    json.RawMessage `json:"result,omitempty"`
+	Error     *model.Error    `json:"error,omitempty"`
+	Final     bool            `json:"final,omitempty"`
 }

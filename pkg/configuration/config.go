@@ -166,6 +166,8 @@ type Config struct {
 	SyncResendAfter string `json:"sync_resend_after" env_var:"SYNC_RESEND_AFTER"`
 	// a gateway without status since this time counts as offline
 	SyncOfflineAfter string `json:"sync_offline_after" env_var:"SYNC_OFFLINE_AFTER"`
+	// how long a read of the history of a gateway waits for its answer (DBG-15)
+	SyncCallTimeout string `json:"sync_call_timeout" env_var:"SYNC_CALL_TIMEOUT"`
 	// data of a gateway without contact since this time is removed (SYNC-07)
 	NetworkCleanupMaxAge string `json:"network_cleanup_max_age" env_var:"NETWORK_CLEANUP_MAX_AGE"`
 	// protocol versions of gateways before the own one the cloud serves (SYNC-11)
@@ -216,6 +218,7 @@ func Default() Config {
 		SyncShareGroup:             "automation-engine",
 		SyncResendAfter:            "1m",
 		SyncOfflineAfter:           "15m",
+		SyncCallTimeout:            "10s",
 		NetworkCleanupMaxAge:       "730h",
 		SyncProtocolWindow:         1,
 		Role:                       "engine",
@@ -297,7 +300,7 @@ func Load(path string) (Config, error) {
 const DefaultGatewayStorageBudget = 1 << 30
 
 func (this Config) validate() error {
-	for _, d := range []string{this.ScriptTimeout, this.TaskTimeout, this.PollInterval, this.StalledAfter, this.ConceptRefreshInterval, this.SyncResendAfter, this.SyncOfflineAfter, this.NetworkCleanupMaxAge} {
+	for _, d := range []string{this.ScriptTimeout, this.TaskTimeout, this.PollInterval, this.StalledAfter, this.ConceptRefreshInterval, this.SyncResendAfter, this.SyncOfflineAfter, this.SyncCallTimeout, this.NetworkCleanupMaxAge} {
 		if _, err := time.ParseDuration(d); err != nil {
 			return fmt.Errorf("invalid duration %q: %w", d, err)
 		}

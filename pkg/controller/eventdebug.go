@@ -26,6 +26,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
@@ -68,6 +69,36 @@ func (this *Controller) EventEvaluations(ctx context.Context, token string, name
 	var activities []model.Activity
 	var descriptions []model.EventDescription
 	var runEnd *time.Time
+	// the history of an instance of a gateway stays there; device data reaches timescale through
+	// the connector, with the ids of the cloud (EVT-13)
+	networkId, gatewayInstance, err := this.onGateway(ctx, token, namespace, id)
+	if err != nil {
+		return result, err
+	}
+	var runs []model.Run
+	if networkId != "" {
+		if err = this.networks.Call(ctx, networkId, protocol.MethodListRuns, namespace, id, protocol.RequestArgs{}, &runs); err != nil {
+			return result, err
+		}
+		run := options.Run
+		if run <= 0 {
+			run = gatewayInstance.Run
+		}
+		for after := int64(0); ; {
+			var page model.ActivityPage
+			err = this.networks.Call(ctx, networkId, protocol.MethodListActivities, namespace, id,
+				requestOptions(model.ActivityListOptions{Run: run, ElementId: options.ElementId, AfterSeq: after, Limit: model.MaxPageLimit}), &page)
+			if err != nil {
+				return result, err
+			}
+			activities = append(activities, page.Items...)
+			if len(page.Items) < model.MaxPageLimit {
+				break
+			}
+			after = page.Items[len(page.Items)-1].Seq
+		}
+		result.Limitations = append(result.Limitations, "device data of a gateway reaches timescale only while it is connected; data of offline periods is missing")
+	}
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		if inst, err = this.readInstance(ctx, tx, token, namespace, id, Read); err != nil {
 			return err
@@ -76,9 +107,10 @@ func (this *Controller) EventEvaluations(ctx context.Context, token string, name
 		if result.Run <= 0 {
 			result.Run = inst.Run
 		}
-		runs, err := tx.ListRuns(id)
-		if err != nil {
-			return err
+		if networkId == "" {
+			if runs, err = tx.ListRuns(id); err != nil {
+				return err
+			}
 		}
 		result.DeploymentVersion = -1
 		for _, r := range runs {
@@ -89,7 +121,7 @@ func (this *Controller) EventEvaluations(ctx context.Context, token string, name
 		if result.DeploymentVersion < 0 {
 			return model.NotFound("run %v of instance %v not found", result.Run, id)
 		}
-		for after := int64(0); ; {
+		for after := int64(0); networkId == ""; {
 			page, err := tx.ListActivities(id, model.ActivityListOptions{Run: result.Run, ElementId: options.ElementId, AfterSeq: after, Limit: model.MaxPageLimit})
 			if err != nil {
 				return err

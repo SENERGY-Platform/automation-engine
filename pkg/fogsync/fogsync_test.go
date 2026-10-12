@@ -21,6 +21,7 @@ package fogsync_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -35,6 +36,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
+	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/permissions"
@@ -89,6 +91,7 @@ func newEnv(t *testing.T, configure ...func(*configuration.Config)) *env {
 	config.SqlitePath = storetest.MemoryDsn()
 	config.PollInterval = "20ms"
 	config.SyncResendAfter = "300ms"
+	config.SyncCallTimeout = "500ms"
 	for _, c := range configure {
 		c(&config)
 	}
@@ -115,6 +118,7 @@ func newEnv(t *testing.T, configure ...func(*configuration.Config)) *env {
 		t.Fatal(err)
 	}
 	deps.SyncBroker = cloudBroker
+	deps.EventSeries, deps.EventUnmarshaller = series{}, unmarshaller{}
 	if this.cloud, err = server.New(ctx, config, logger, deps); err != nil {
 		t.Fatal(err)
 	}
@@ -364,3 +368,139 @@ func TestProcessDeploymentChoosesTheGatewayOfTheDevices(t *testing.T) {
 }
 
 const measuring = "urn:infai:ses:measuring-function:temperature"
+
+// series has a reading of every device at the start of each waiting period
+type series struct{}
+
+func (series) Range(_ context.Context, _ string, _ string, _ string, columns []string, from time.Time, _ time.Time, _ int) ([]events.Row, error) {
+	return []events.Row{{Time: from.Add(time.Millisecond), Values: map[string]any{columns[0]: 25.0}}}, nil
+}
+
+func (series) Last(context.Context, string, string, string, []string) (*events.Row, error) {
+	return nil, nil
+}
+
+type unmarshaller struct{}
+
+func (unmarshaller) Unmarshal(desc events.MessageDesc) (any, error) {
+	return 25.0, nil
+}
+
+// The history of an instance on a gateway stays there; the cloud reads it on demand, and
+// shows its own copy, marked, while the gateway is offline (DBG-15, DBG-12).
+func TestDebuggingReadsTheGateway(t *testing.T) {
+	e := newEnv(t)
+	c := e.cloud.Controller
+	d, err := c.CreateDeployment(ctx, alice, "processes", model.DeploymentInput{Xml: waitProcess(), NetworkId: network})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := c.StartInstance(ctx, alice, "processes", model.StartInstanceInput{DeploymentId: d.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the running instance", func() bool { return e.cloudInstance(inst.Id).State == model.StateRunning })
+
+	state, err := c.DebugState(ctx, alice, "processes", inst.Id, model.DebugOptions{})
+	if err != nil || state.Offline || len(state.Active) != 1 || state.Active[0].ElementId != "wait" {
+		t.Fatalf("the state comes from the gateway: %+v %v", state, err)
+	}
+	activities, err := c.ListActivities(ctx, alice, "processes", inst.Id, model.ActivityListOptions{})
+	if err != nil || len(activities.Items) == 0 {
+		t.Fatalf("the history comes from the gateway: %+v %v", activities, err)
+	}
+	runs, err := c.ListRuns(ctx, alice, "processes", inst.Id)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs come from the gateway: %+v %v", runs, err)
+	}
+	history, err := c.HistoryState(ctx, alice, "processes", inst.Id, model.HistoryOptions{Seq: activities.Items[0].Seq})
+	if err != nil || history.Offline || history.Seq != activities.Items[0].Seq {
+		t.Fatalf("a step of the history comes from the gateway: %+v %v", history, err)
+	}
+	if _, err = c.DebugState(ctx, client.TestToken("carol"), "processes", inst.Id, model.DebugOptions{}); err == nil {
+		t.Errorf("reading needs the right on the instance")
+	}
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	stream, err := c.Watch(watchCtx, alice, "processes", inst.Id, model.WatchOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case message := <-stream:
+		if message.State == nil || message.State.Instance.Id != inst.Id {
+			t.Errorf("the live stream starts with the state of the gateway: %+v", message)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no live message from the gateway")
+	}
+	if _, err = e.gateway.Engine.Correlate(ctx, engine.CorrelationRequest{MessageInput: model.MessageInput{Name: "go", InstanceId: inst.Id}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case message := <-stream:
+		if message.Seq == 0 {
+			t.Errorf("a change on the gateway streams to the cloud: %+v", message)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no live change from the gateway")
+	}
+	cancel()
+
+	e.online.Store(false)
+	start := time.Now()
+	state, err = c.DebugState(ctx, alice, "processes", inst.Id, model.DebugOptions{})
+	if err != nil || !state.Offline || state.Instance.Id != inst.Id {
+		t.Errorf("an offline gateway yields the copy of the cloud, marked: %+v %v", state, err)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Errorf("the wait for the gateway is bounded")
+	}
+	if _, err = c.ListActivities(ctx, alice, "processes", inst.Id, model.ActivityListOptions{}); !errors.Is(err, model.ErrUnavailable) {
+		t.Errorf("the history of an offline gateway is unavailable: %v", err)
+	}
+}
+
+// Event evaluations of an instance on a gateway are reconstructed in the cloud: the waiting
+// periods come from the gateway, the device data from timescale with the ids of the cloud (EVT-13).
+func TestEventsOfAGatewayAreReconstructedInTheCloud(t *testing.T) {
+	output := []models.Content{{ContentVariable: models.ContentVariable{Name: "value", FunctionId: measuring, AspectId: "air"}}}
+	answers := map[string]any{
+		"/devices/d1":       models.Device{Id: "d1", LocalId: "local-d1", DeviceTypeId: "dt"},
+		"/device-types/dt":  models.DeviceType{Id: "dt", Services: []models.Service{{Id: "s1", LocalId: "temperature", Interaction: models.EVENT, Outputs: output}}},
+		"/aspect-nodes/air": models.AspectNode{Id: "air", RootId: "air"},
+	}
+	repository := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if answer, ok := answers[r.URL.Path]; ok {
+			_ = json.NewEncoder(w).Encode(answer)
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer repository.Close()
+	e := newEnv(t, func(c *configuration.Config) { c.DeviceRepositoryUrl = repository.URL })
+	c := e.cloud.Controller
+	d, err := c.CreateDeployment(ctx, alice, "processes", model.DeploymentInput{NetworkId: network, Xml: b.Process(
+		b.Start("start"),
+		`<bpmn:intermediateCatchEvent id="reading" senergy:function="`+measuring+`" senergy:aspect="air" senergy:characteristic="c" senergy:script="x &gt; 20" senergy:value_variable_name="x"><bpmn:messageEventDefinition/></bpmn:intermediateCatchEvent>`,
+		b.End("end"), b.Flow("start", "reading"), b.Flow("reading", "end"),
+	), Selections: map[string]model.Selection{"reading": {DeviceId: "d1", ServiceId: "s1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := c.StartInstance(ctx, alice, "processes", model.StartInstanceInput{DeploymentId: d.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the running instance", func() bool { return e.cloudInstance(inst.Id).State == model.StateRunning })
+	result, err := c.EventEvaluations(ctx, alice, "processes", inst.Id, model.EventReconstructionOptions{ElementId: "reading"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Waiting) != 1 || result.Waiting[0].To != nil || len(result.Sources) != 1 || len(result.Evaluations) == 0 {
+		t.Fatalf("the waiting period of the gateway and the data of the cloud make the reconstruction: %+v", result)
+	}
+	if !strings.Contains(strings.Join(result.Limitations, " "), "gateway") {
+		t.Errorf("gaps of offline periods are named: %v", result.Limitations)
+	}
+}

@@ -18,8 +18,10 @@ package controller
 
 import (
 	"context"
+	"errors"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
@@ -27,6 +29,15 @@ import (
 // DebugState returns the live state of an instance (DBG-02) with the read right on it or as
 // admin (DBG-08); large values are cut and can be loaded with GetVariable (DBG-04).
 func (this *Controller) DebugState(ctx context.Context, token string, namespace string, id string, options model.DebugOptions) (result model.DebugState, err error) {
+	if networkId, inst, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
+		if err == nil {
+			err = this.networks.Call(ctx, networkId, protocol.MethodDebugState, namespace, id, requestOptions(options), &result)
+			if errors.Is(err, model.ErrUnavailable) {
+				return offlineState(inst), nil
+			}
+		}
+		return result, err
+	}
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		inst, err := this.readInstance(ctx, tx, token, namespace, id, Read)
 		if err != nil {
@@ -46,6 +57,15 @@ func (this *Controller) DebugState(ctx context.Context, token string, namespace 
 
 // HistoryState reconstructs the state of an instance after an activity entry (DBG-13).
 func (this *Controller) HistoryState(ctx context.Context, token string, namespace string, id string, options model.HistoryOptions) (result model.DebugState, err error) {
+	if networkId, inst, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
+		if err == nil {
+			err = this.networks.Call(ctx, networkId, protocol.MethodHistoryState, namespace, id, requestOptions(options), &result)
+			if errors.Is(err, model.ErrUnavailable) {
+				return offlineState(inst), nil
+			}
+		}
+		return result, err
+	}
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		result, err = this.historyState(ctx, tx, token, namespace, id, options)
 		return err
@@ -74,6 +94,12 @@ func (this *Controller) historyState(ctx context.Context, tx *store.Tx, token st
 // HistoryVariable returns the complete value of a variable at a step of the history; with
 // elementId the local variable of that element (DBG-04).
 func (this *Controller) HistoryVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string, options model.HistoryOptions) (result model.HistoryVariable, err error) {
+	if networkId, _, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
+		if err == nil {
+			err = this.networks.Call(ctx, networkId, protocol.MethodHistoryVariable, namespace, id, protocol.RequestArgs{Name: name, ElementId: elementId, Options: requestOptions(options).Options}, &result)
+		}
+		return result, err
+	}
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		state, err := this.historyState(ctx, tx, token, namespace, id, options)
 		if err != nil {
@@ -95,6 +121,12 @@ func (this *Controller) HistoryVariable(ctx context.Context, token string, names
 // GetVariable returns the complete current value of a variable; with elementId the local
 // variable of a token at that element (DBG-04).
 func (this *Controller) GetVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string) (result model.Variable, err error) {
+	if networkId, _, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
+		if err == nil {
+			err = this.networks.Call(ctx, networkId, protocol.MethodGetVariable, namespace, id, protocol.RequestArgs{Name: name, ElementId: elementId}, &result)
+		}
+		return result, err
+	}
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		inst, err := this.readInstance(ctx, tx, token, namespace, id, Read)
 		if err != nil {

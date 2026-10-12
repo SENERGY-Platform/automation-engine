@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -37,6 +38,9 @@ type Networks interface {
 	Wake()
 	// the networks with the ids, all if ids is nil, with their resources if detailed
 	Overview(ctx context.Context, ids []string, detailed bool) ([]model.Network, error)
+	// reads from a gateway (DBG-15) and watches an instance there (DBG-12)
+	Call(ctx context.Context, networkId string, method string, namespace string, instance string, args protocol.RequestArgs, result any) error
+	Watch(ctx context.Context, networkId string, namespace string, instance string, options model.WatchOptions) (<-chan model.DebugMessage, error)
 }
 
 // HubChecker checks rights on gateways in permissions-v2, topic hubs (SEC-05).
@@ -217,4 +221,33 @@ func (this *Controller) localOnly(ctx context.Context, id string) error {
 		}
 		return inCloud(inst.Instance)
 	})
+}
+
+// onGateway reads an instance with the right to read it and, for an instance of a gateway, the
+// right to read the gateway; networkId is empty for an instance of the cloud
+func (this *Controller) onGateway(ctx context.Context, token string, namespace string, id string) (networkId string, inst model.Instance, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		read, err := this.readInstance(ctx, tx, token, namespace, id, Read)
+		inst = read.Instance
+		return err
+	})
+	if err != nil || inst.NetworkId == "" || this.networks == nil {
+		return "", inst, err
+	}
+	user, err := this.parseToken(token)
+	if err != nil {
+		return "", inst, err
+	}
+	return inst.NetworkId, inst, this.checkNetwork(ctx, user, inst.NetworkId, Read)
+}
+
+// requestOptions is the JSON of request options
+func requestOptions(value any) protocol.RequestArgs {
+	raw, _ := json.Marshal(value)
+	return protocol.RequestArgs{Options: raw}
+}
+
+// offlineState is the state of an instance of an unreachable gateway: what the cloud has (DBG-15)
+func offlineState(inst model.Instance) model.DebugState {
+	return model.DebugState{Instance: inst, Offline: true, Active: []model.ActiveElement{}, Waits: []model.Wait{}, Variables: map[string]model.DebugVariable{}, Incidents: []model.Incident{}}
 }

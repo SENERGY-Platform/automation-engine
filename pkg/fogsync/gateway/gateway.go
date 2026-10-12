@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -53,6 +54,20 @@ func DefaultSettings() Settings {
 	return Settings{ResendAfter: 30 * time.Second, MaxResendAfter: 5 * time.Minute, StatusInterval: 5 * time.Minute, BatchSize: 100}
 }
 
+// Local is the API of the gateway the cloud reads through requests: the history stays on the
+// gateway (DBG-15), the live stream runs while the cloud renews it (DBG-12).
+type Local interface {
+	DebugState(ctx context.Context, token string, namespace string, id string, options model.DebugOptions) (model.DebugState, error)
+	HistoryState(ctx context.Context, token string, namespace string, id string, options model.HistoryOptions) (model.DebugState, error)
+	ListRuns(ctx context.Context, token string, namespace string, id string) ([]model.Run, error)
+	ListActivities(ctx context.Context, token string, namespace string, id string, options model.ActivityListOptions) (model.ActivityPage, error)
+	ListElementStats(ctx context.Context, token string, namespace string, id string, run int) ([]model.ElementStats, error)
+	GetVariables(ctx context.Context, token string, namespace string, id string) ([]model.Variable, error)
+	GetVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string) (model.Variable, error)
+	HistoryVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string, options model.HistoryOptions) (model.HistoryVariable, error)
+	Watch(ctx context.Context, token string, namespace string, id string, options model.WatchOptions) (<-chan model.DebugMessage, error)
+}
+
 // Namespaces stores namespaces replicated from the cloud (NS-10).
 type Namespaces interface {
 	Get(name string) (model.Namespace, bool)
@@ -76,11 +91,24 @@ type Agent struct {
 	resendAfter  time.Duration
 	lastStatus   time.Time
 	wake         chan struct{}
+
+	local   Local
+	watches map[string]*watch
+}
+
+type watch struct {
+	cancel  context.CancelFunc
+	renewed time.Time
+}
+
+// SetLocal lets the cloud read instances of the gateway.
+func (this *Agent) SetLocal(local Local) {
+	this.local = local
 }
 
 func New(settings Settings, s *store.Store, e *engine.Engine, namespaces Namespaces, broker mqtt.Broker, logger *slog.Logger) *Agent {
 	return &Agent{settings: settings, store: s, engine: e, namespaces: namespaces, broker: broker, logger: logger, now: time.Now,
-		resendAfter: settings.ResendAfter, wake: make(chan struct{}, 1)}
+		resendAfter: settings.ResendAfter, wake: make(chan struct{}, 1), watches: map[string]*watch{}}
 }
 
 // SetClock replaces the clock, for tests.
@@ -138,6 +166,7 @@ func (this *Agent) Tick(ctx context.Context) error {
 	if statusDue {
 		errs = append(errs, this.SendStatus(ctx))
 	}
+	this.endExpiredWatches()
 	return errors.Join(append(errs, this.SendChanges(ctx))...)
 }
 
@@ -164,6 +193,12 @@ func (this *Agent) Handle(ctx context.Context, topic string, payload []byte) err
 		}
 		results := this.ApplyAll(ctx, desired.Resources)
 		return this.publish(ctx, protocol.KindDesiredAck, protocol.Applied{Envelope: this.envelope(), Results: results})
+	case protocol.KindRequest:
+		var request protocol.Request
+		if err := json.Unmarshal(payload, &request); err != nil {
+			return nil
+		}
+		return this.answer(ctx, request)
 	case protocol.KindUpAck:
 		var ack protocol.UpAck
 		if err := json.Unmarshal(payload, &ack); err != nil {
@@ -493,4 +528,130 @@ func ignoreNotFound(err error) error {
 		return nil
 	}
 	return err
+}
+
+// gatewayAdmin reads for the cloud; the cloud has checked the rights of the user
+var gatewayAdmin = auth.UnsignedToken("gateway", "admin")
+
+// answer reads what the cloud asks for and sends it to the replica that asked
+func (this *Agent) answer(ctx context.Context, request protocol.Request) error {
+	respond := func(result any, err error, final bool) error {
+		response := protocol.Response{Envelope: this.envelope(), RequestId: request.Id, Final: final}
+		if err != nil {
+			response.Error = model.AsError(err)
+		} else if result != nil {
+			raw, err := json.Marshal(result)
+			if err != nil {
+				response.Error = model.AsError(err)
+			}
+			response.Result = raw
+		}
+		return this.publish(ctx, protocol.KindResponse+"/"+request.ReplyTo, response)
+	}
+	if this.local == nil {
+		return respond(nil, model.Unavailable("the gateway answers no requests"), true)
+	}
+	ns, id, args := request.Namespace, request.Instance, request.Args
+	options := func(target any) error {
+		if len(args.Options) == 0 {
+			return nil
+		}
+		return json.Unmarshal(args.Options, target)
+	}
+	var result any
+	var err error
+	switch request.Method {
+	case protocol.MethodDebugState:
+		var o model.DebugOptions
+		if err = options(&o); err == nil {
+			result, err = this.local.DebugState(ctx, gatewayAdmin, ns, id, o)
+		}
+	case protocol.MethodHistoryState:
+		var o model.HistoryOptions
+		if err = options(&o); err == nil {
+			result, err = this.local.HistoryState(ctx, gatewayAdmin, ns, id, o)
+		}
+	case protocol.MethodListRuns:
+		result, err = this.local.ListRuns(ctx, gatewayAdmin, ns, id)
+	case protocol.MethodListActivities:
+		var o model.ActivityListOptions
+		if err = options(&o); err == nil {
+			result, err = this.local.ListActivities(ctx, gatewayAdmin, ns, id, o)
+		}
+	case protocol.MethodListElementStats:
+		result, err = this.local.ListElementStats(ctx, gatewayAdmin, ns, id, args.Run)
+	case protocol.MethodGetVariables:
+		result, err = this.local.GetVariables(ctx, gatewayAdmin, ns, id)
+	case protocol.MethodGetVariable:
+		result, err = this.local.GetVariable(ctx, gatewayAdmin, ns, id, args.Name, args.ElementId)
+	case protocol.MethodHistoryVariable:
+		var o model.HistoryOptions
+		if err = options(&o); err == nil {
+			result, err = this.local.HistoryVariable(ctx, gatewayAdmin, ns, id, args.Name, args.ElementId, o)
+		}
+	case protocol.MethodWatch:
+		return this.watch(ctx, request, respond)
+	case protocol.MethodUnwatch:
+		this.mux.Lock()
+		if w, ok := this.watches[request.Id]; ok {
+			w.cancel()
+			delete(this.watches, request.Id)
+		}
+		this.mux.Unlock()
+		return nil
+	default:
+		err = model.BadRequest("unknown method %v", request.Method)
+	}
+	return respond(result, err, true)
+}
+
+// watch streams the debug messages of an instance while the cloud renews the request (DBG-12)
+func (this *Agent) watch(ctx context.Context, request protocol.Request, respond func(any, error, bool) error) error {
+	this.mux.Lock()
+	if w, ok := this.watches[request.Id]; ok {
+		w.renewed = this.now()
+		this.mux.Unlock()
+		return nil
+	}
+	this.mux.Unlock()
+	var o model.WatchOptions
+	if len(request.Args.Options) > 0 {
+		if err := json.Unmarshal(request.Args.Options, &o); err != nil {
+			return respond(nil, model.BadRequest("invalid options: %v", err), true)
+		}
+	}
+	watchCtx, cancel := context.WithCancel(ctx)
+	messages, err := this.local.Watch(watchCtx, gatewayAdmin, request.Namespace, request.Instance, o)
+	if err != nil {
+		cancel()
+		return respond(nil, err, true)
+	}
+	this.mux.Lock()
+	this.watches[request.Id] = &watch{cancel: cancel, renewed: this.now()}
+	this.mux.Unlock()
+	go func() {
+		defer cancel()
+		for message := range messages {
+			if err := respond(message, nil, false); err != nil {
+				this.logger.Warn("unable to stream a debug message", "error", err)
+			}
+		}
+		this.mux.Lock()
+		delete(this.watches, request.Id)
+		this.mux.Unlock()
+		_ = respond(nil, nil, true)
+	}()
+	return nil
+}
+
+// endExpiredWatches stops streams nobody renewed within the lease
+func (this *Agent) endExpiredWatches() {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	for id, w := range this.watches {
+		if this.now().Sub(w.renewed) > protocol.WatchLease {
+			w.cancel()
+			delete(this.watches, id)
+		}
+	}
 }

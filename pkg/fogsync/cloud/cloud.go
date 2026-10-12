@@ -25,12 +25,14 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/google/uuid"
 )
 
 type Settings struct {
@@ -45,10 +47,14 @@ type Settings struct {
 	CleanupMaxAge time.Duration
 	// protocol versions before the own one the cloud still serves (SYNC-11)
 	ProtocolWindow int
+	// answers of gateways to the requests of this replica come to it alone
+	ReplicaId string
+	// how long a request waits for the gateway (DBG-15)
+	CallTimeout time.Duration
 }
 
 func DefaultSettings() Settings {
-	return Settings{Group: "automation-engine", ResendAfter: time.Minute, OfflineAfter: 15 * time.Minute, CleanupMaxAge: 730 * time.Hour, ProtocolWindow: 1}
+	return Settings{Group: "automation-engine", ResendAfter: time.Minute, OfflineAfter: 15 * time.Minute, CleanupMaxAge: 730 * time.Hour, ProtocolWindow: 1, CallTimeout: 10 * time.Second}
 }
 
 type Cloud struct {
@@ -58,10 +64,16 @@ type Cloud struct {
 	logger   *slog.Logger
 	now      func() time.Time
 	wake     chan struct{}
+
+	mux     sync.Mutex
+	waiting map[string]chan protocol.Response
 }
 
 func New(settings Settings, s *store.Store, broker mqtt.Broker, logger *slog.Logger) *Cloud {
-	return &Cloud{settings: settings, store: s, broker: broker, logger: logger, now: time.Now, wake: make(chan struct{}, 1)}
+	if settings.ReplicaId == "" {
+		settings.ReplicaId = uuid.NewString()
+	}
+	return &Cloud{settings: settings, store: s, broker: broker, logger: logger, now: time.Now, wake: make(chan struct{}, 1), waiting: map[string]chan protocol.Response{}}
 }
 
 // SetClock replaces the clock, for tests.
@@ -85,6 +97,13 @@ func (this *Cloud) publish(ctx context.Context, networkId string, kind string, m
 func (this *Cloud) Start(ctx context.Context) error {
 	err := this.broker.Subscribe(protocol.CloudStateFilter(this.settings.Group), 1, func(topic string, payload []byte) error {
 		return this.Handle(ctx, topic, payload)
+	})
+	if err != nil {
+		return err
+	}
+	err = this.broker.Subscribe(protocol.CloudResponseFilter(this.settings.ReplicaId), 1, func(topic string, payload []byte) error {
+		this.response(payload)
+		return nil
 	})
 	if err != nil {
 		return err
@@ -457,4 +476,142 @@ func optional(t time.Time) *time.Time {
 		return nil
 	}
 	return &t
+}
+
+// response hands an answer of a gateway to the request waiting for it
+func (this *Cloud) response(payload []byte) {
+	var response protocol.Response
+	if err := json.Unmarshal(payload, &response); err != nil {
+		return
+	}
+	this.mux.Lock()
+	ch, ok := this.waiting[response.RequestId]
+	this.mux.Unlock()
+	if !ok {
+		return
+	}
+	select {
+	case ch <- response:
+	default:
+		this.logger.Warn("answer of a gateway dropped, the receiver is too slow", "request_id", response.RequestId)
+	}
+}
+
+func (this *Cloud) register(id string, size int) chan protocol.Response {
+	ch := make(chan protocol.Response, size)
+	this.mux.Lock()
+	this.waiting[id] = ch
+	this.mux.Unlock()
+	return ch
+}
+
+func (this *Cloud) unregister(id string) {
+	this.mux.Lock()
+	delete(this.waiting, id)
+	this.mux.Unlock()
+}
+
+// reachable rejects requests to gateways that are offline or need an update
+func (this *Cloud) reachable(ctx context.Context, networkId string) error {
+	var network store.Network
+	var found bool
+	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+		network, found, err = tx.GetNetwork(networkId)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if !found || this.now().Sub(network.LastContact) >= this.settings.OfflineAfter {
+		return model.Unavailable("gateway %v is offline", networkId)
+	}
+	if !network.Compatible {
+		return model.Unavailable("gateway %v needs an update of its engine", networkId)
+	}
+	return nil
+}
+
+func (this *Cloud) request(ctx context.Context, networkId string, id string, method string, namespace string, instance string, args protocol.RequestArgs) error {
+	return this.publish(ctx, networkId, protocol.KindRequest, protocol.Request{Envelope: this.envelope(), Id: id, ReplyTo: this.settings.ReplicaId,
+		Method: method, Namespace: namespace, Instance: instance, Args: args})
+}
+
+// Call reads from a gateway: the state or history of an instance, which stay there (DBG-15).
+// An offline gateway or one that does not answer in time is unavailable.
+func (this *Cloud) Call(ctx context.Context, networkId string, method string, namespace string, instance string, args protocol.RequestArgs, result any) error {
+	if err := this.reachable(ctx, networkId); err != nil {
+		return err
+	}
+	id := uuid.NewString()
+	ch := this.register(id, 1)
+	defer this.unregister(id)
+	if err := this.request(ctx, networkId, id, method, namespace, instance, args); err != nil {
+		return model.Unavailable("unable to reach gateway %v: %v", networkId, err)
+	}
+	timer := time.NewTimer(this.settings.CallTimeout)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return model.Unavailable("gateway %v did not answer in %v", networkId, this.settings.CallTimeout)
+	case response := <-ch:
+		if response.Error != nil {
+			return response.Error
+		}
+		if result == nil || len(response.Result) == 0 {
+			return nil
+		}
+		return json.Unmarshal(response.Result, result)
+	}
+}
+
+// Watch streams the debug messages of an instance of a gateway; the gateway streams only while
+// the request is renewed, so the stream ends with ctx or a lost gateway (DBG-12).
+func (this *Cloud) Watch(ctx context.Context, networkId string, namespace string, instance string, options model.WatchOptions) (<-chan model.DebugMessage, error) {
+	if err := this.reachable(ctx, networkId); err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(options)
+	if err != nil {
+		return nil, err
+	}
+	args := protocol.RequestArgs{Options: raw}
+	id := uuid.NewString()
+	ch := this.register(id, 256)
+	if err = this.request(ctx, networkId, id, protocol.MethodWatch, namespace, instance, args); err != nil {
+		this.unregister(id)
+		return nil, model.Unavailable("unable to reach gateway %v: %v", networkId, err)
+	}
+	out := make(chan model.DebugMessage, 16)
+	go func() {
+		defer close(out)
+		defer this.unregister(id)
+		renew := time.NewTicker(protocol.WatchLease / 3)
+		defer renew.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				_ = this.request(context.Background(), networkId, id, protocol.MethodUnwatch, namespace, instance, protocol.RequestArgs{})
+				return
+			case <-renew.C:
+				if err := this.request(ctx, networkId, id, protocol.MethodWatch, namespace, instance, args); err != nil {
+					this.logger.Warn("unable to renew a live stream of a gateway", "network_id", networkId, "error", err)
+				}
+			case response := <-ch:
+				if response.Final || response.Error != nil {
+					return
+				}
+				var message model.DebugMessage
+				if json.Unmarshal(response.Result, &message) != nil {
+					continue
+				}
+				select {
+				case out <- message:
+				case <-ctx.Done():
+				}
+			}
+		}
+	}()
+	return out, nil
 }

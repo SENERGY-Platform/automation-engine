@@ -86,6 +86,7 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 ### web-ui und Prozess-Designer
 
 - [ ] **Aufgabe:** Fog-Deployments über dieselbe API mit `network_id` statt über process-fog-deployment und process-sync; Netzübersicht über `GET /networks` und `GET /networks/{id}` mit Soll- und Ist-Zustand je Ressource; Instanzen eines Gateways sind bis zur ersten Meldung `pending` (DEP-09, SYNC-12, SYNC-13, M6). Instanzen eines Gateways lassen sich aus der Cloud starten, stoppen und löschen, nicht neu starten oder in Variablen und Parametern ändern.
+- [ ] **Aufgabe:** Debug-Ansicht einer Gateway-Instanz: `offline: true` im Debug-Zustand heißt zuletzt gemeldeter Stand, das Gateway ist nicht erreichbar; Variablen, Durchläufe und Verlauf sind dann nicht abrufbar (503) (DBG-15, M6).
 
 - [ ] **Aufgabe:** Umstellung auf die neue API anhand der OpenAPI in `docs/swagger.json` (API-04, API-07), mit Namespaces (NS-09), Update-Dialog mit Strategie (DEP-04), Modellversionen (MOD-05) und Aufbewahrungseinstellungen (HIST-04).
 - [ ] **Aufgabe:** Smart-Service-Designer: Warten auf den Abschluss eines Deployments mit `senergy:messageName` (JavaScript, z. B. `done_event`) statt eines `${...}`-Nachrichtennamens; keine Schleifen im Sequenzfluss in `smart-services` (M5). Start- und Prozedur-Dialoge über `.../parameters`, Status über `status`/`status_message`, Module über `/modules`.

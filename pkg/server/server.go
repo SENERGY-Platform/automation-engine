@@ -345,6 +345,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		settings.EngineVersion, settings.Group, settings.ProtocolWindow = Version(), config.SyncShareGroup, config.SyncProtocolWindow
 		settings.ResendAfter, settings.OfflineAfter = configuration.Duration(config.SyncResendAfter), configuration.Duration(config.SyncOfflineAfter)
 		settings.CleanupMaxAge = configuration.Duration(config.NetworkCleanupMaxAge)
+		settings.CallTimeout = configuration.Duration(config.SyncCallTimeout)
 		networks = cloud.New(settings, s, syncBroker, logger)
 		c.SetNetworks(networks)
 	}
@@ -353,6 +354,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		settings := gateway.DefaultSettings()
 		settings.EngineVersion, settings.StorageBudget = Version(), config.StorageBudget
 		agent = gateway.New(settings, s, e, registry, broker, logger)
+		agent.SetLocal(c)
 	}
 	hub := live.New(s, dsn, logger)
 	liveSettings := controller.DefaultLiveSettings()

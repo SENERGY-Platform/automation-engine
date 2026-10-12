@@ -62,10 +62,7 @@ func (this *Controller) Watch(ctx context.Context, token string, namespace strin
 	if err != nil {
 		return nil, err
 	}
-	err = this.store.Tx(ctx, func(tx *store.Tx) error {
-		_, err := this.readInstance(ctx, tx, token, namespace, id, Read)
-		return err
-	})
+	networkId, _, err := this.onGateway(ctx, token, namespace, id)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +74,33 @@ func (this *Controller) Watch(ctx context.Context, token string, namespace strin
 	}
 	this.liveCount[userId]++
 	this.liveMux.Unlock()
+	if networkId != "" {
+		// the stream of the gateway runs only while somebody watches (DBG-12)
+		remote, err := this.networks.Watch(ctx, networkId, namespace, id, options)
+		if err != nil {
+			this.liveMux.Lock()
+			if this.liveCount[userId]--; this.liveCount[userId] <= 0 {
+				delete(this.liveCount, userId)
+			}
+			this.liveMux.Unlock()
+			return nil, err
+		}
+		out := make(chan model.DebugMessage, 16)
+		go func() {
+			defer func() {
+				close(out)
+				this.liveMux.Lock()
+				if this.liveCount[userId]--; this.liveCount[userId] <= 0 {
+					delete(this.liveCount, userId)
+				}
+				this.liveMux.Unlock()
+			}()
+			for message := range remote {
+				out <- message
+			}
+		}()
+		return out, nil
+	}
 	wake, unsubscribe := this.live.Subscribe(id)
 	out := make(chan model.DebugMessage, 16)
 	go func() {

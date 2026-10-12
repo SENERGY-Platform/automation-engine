@@ -4301,6 +4301,10 @@ const docTemplate = `{
                 "instance": {
                     "$ref": "#/definitions/model.Instance"
                 },
+                "offline": {
+                    "description": "the gateway of the instance did not answer; the state is the copy the cloud has (DBG-15)",
+                    "type": "boolean"
+                },
                 "reconstructed": {
                     "description": "set by the history: the state was reconstructed from a snapshot and activity entries;\nFirstSeq is the earliest step that can still be reconstructed (DBG-14)",
                     "type": "boolean"

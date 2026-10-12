@@ -24,7 +24,9 @@ import (
 // of the history (DBG-13). Both have the same form; the live stream is the end of the history.
 type DebugState struct {
 	Instance Instance `json:"instance"`
-	Runs     []Run    `json:"runs,omitempty"`
+	// the gateway of the instance did not answer; the state is the copy the cloud has (DBG-15)
+	Offline bool  `json:"offline,omitempty"`
+	Runs    []Run `json:"runs,omitempty"`
 	// last activity entry the state includes
 	Seq  int64     `json:"seq"`
 	Time time.Time `json:"time"`
