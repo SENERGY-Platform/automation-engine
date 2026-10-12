@@ -137,3 +137,7 @@ Abgelehnt: `DefaultPermissions` wörtlich zu nehmen, weil dann eine Freigabe fü
 - Die Importe aus external-task-worker v0.1.2 und event-worker v1.2.0 bleiben, bis CLI-11 einen stabilen Ort schafft.
 - `PERMISSIONS_KAFKA_TOPIC` ist ohne Wert abgeschaltet; ohne das Signal bleibt ein in permissions-v2 entzogenes Administrationsrecht des Owners dort entzogen. Zugriff in der Engine behält der Owner trotzdem, weil sie den Owner lokal prüft.
 - Außerhalb dieses Repos: der cost-calculator muss die Engine-Pods statt der external-task-worker-Pods abfragen; die Repos event-worker, event-deployment und der Topic `process-deployment-done` werden mit der Umstellung stillgelegt; Kong darf den internen Port nicht routen.
+
+## Nach M3 (2026-10-12)
+
+- **Owner-Wechsel**: `HasAdministrate` fragt permissions-v2 mit `CheckPermission` und einem Token des neuen Owners (Keycloak-Token-Exchange) statt die Rechte der Ressource selbst auszuwerten. Damit zählen auch Rechte über Gruppen und Rollen.

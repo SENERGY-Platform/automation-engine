@@ -79,6 +79,8 @@ type Dependencies struct {
 	// a permissions-v2 client, e.g. permissions-v2's in-process test client
 	Permissions permclient.Client
 	AdminToken  auth.TokenSource
+	// tokens of other users; the Keycloak token exchange if not given
+	UserToken auth.UserTokenSource
 	// device command dependencies; set together, they enable device commands without URLs
 	DeviceRepository devicerepository.RepoInterface
 	AspectNodes      *devices.AspectNodes
@@ -151,22 +153,25 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		return nil, err
 	}
 
-	permissionsClient, adminToken := deps.Permissions, deps.AdminToken
+	permissionsClient, adminToken, userToken := deps.Permissions, deps.AdminToken, deps.UserToken
 	if permissionsClient == nil && config.PermissionsV2Url != "" {
 		permissionsClient = permclient.New(config.PermissionsV2Url)
 	}
 	if adminToken == nil && config.AuthEndpoint != "" {
 		adminToken = auth.ClientCredentials(config.AuthEndpoint, config.AuthClientId, config.AuthClientSecret.Value())
 	}
+	if userToken == nil && config.AuthEndpoint != "" {
+		userToken = auth.NewTokenExchange(config.AuthEndpoint, config.AuthClientId, config.AuthClientSecret.Value()).Token
+	}
 	var authorizer permissions.Authorizer = permissions.OwnerOnly{}
 	var service *permissions.Service
 	var topics namespaces.Topics
 	if permissionsClient != nil {
-		if adminToken == nil {
+		if adminToken == nil || userToken == nil {
 			s.Close()
-			return nil, errors.New("permissions-v2 needs an admin token source")
+			return nil, errors.New("permissions-v2 needs admin and user token sources, configure auth_endpoint")
 		}
-		service = permissions.New(permissionsClient, adminToken, nil, s, logger)
+		service = permissions.New(permissionsClient, adminToken, userToken, nil, s, logger)
 		authorizer, topics = service, service
 	}
 	registry, err := namespaces.New(ctx, s, config.Namespaces, topics, logger)

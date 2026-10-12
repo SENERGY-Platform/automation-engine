@@ -54,7 +54,7 @@ func TestRightsMessageWithoutOwnerAdministrateRegistersAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := New(nil, nil, nil, s, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	service := New(nil, nil, nil, nil, s, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	kept := `{"command":"RIGHTS","id":"m","rights":{"user_rights":{"alice":{"read":true,"write":true,"execute":true,"administrate":true},"bob":{"read":true}}}}`
 	if err = service.HandleRightsMessage(ctx, []byte(kept)); err != nil {
 		t.Fatal(err)

@@ -30,6 +30,9 @@ import (
 // TokenSource returns a token including the "Bearer " prefix.
 type TokenSource func() (string, error)
 
+// UserTokenSource returns a token of a user including the "Bearer " prefix.
+type UserTokenSource func(userId string) (string, error)
+
 // ClientCredentials gets and refreshes a token of a Keycloak client; endpoint is the Keycloak
 // base URL, e.g. http://keycloak:8080.
 func ClientCredentials(endpoint string, clientId string, clientSecret string) TokenSource {
@@ -88,6 +91,11 @@ func UnsignedToken(userId string, roles ...string) string {
 	header := encode(map[string]string{"alg": "none", "typ": "JWT"})
 	payload := encode(map[string]any{"sub": userId, "preferred_username": userId, "realm_access": map[string]any{"roles": roles}, "exp": time.Now().Add(time.Hour).Unix()})
 	return "Bearer " + header + "." + payload + ".none"
+}
+
+// UnsignedTokens returns unsigned tokens of users with the role "user"; for tests.
+func UnsignedTokens(userId string) (string, error) {
+	return UnsignedToken(userId), nil
 }
 
 // Static returns a fixed token; for tests.

@@ -79,6 +79,8 @@ type Service struct {
 	kafkaTopic string
 	client     permclient.Client
 	adminToken auth.TokenSource
+	// tokens of other users, for checks of their rights in permissions-v2
+	userToken  auth.UserTokenSource
 	namespaces Namespaces
 	store      *store.Store
 	logger     *slog.Logger
@@ -88,8 +90,8 @@ type Service struct {
 
 var _ Authorizer = (*Service)(nil)
 
-func New(client permclient.Client, adminToken auth.TokenSource, namespaces Namespaces, s *store.Store, logger *slog.Logger) *Service {
-	return &Service{client: client, adminToken: adminToken, namespaces: namespaces, store: s, logger: logger, batchSize: 100, now: time.Now}
+func New(client permclient.Client, adminToken auth.TokenSource, userToken auth.UserTokenSource, namespaces Namespaces, s *store.Store, logger *slog.Logger) *Service {
+	return &Service{client: client, adminToken: adminToken, userToken: userToken, namespaces: namespaces, store: s, logger: logger, batchSize: 100, now: time.Now}
 }
 
 // PublishTo makes permissions-v2 publish rights changes of the engine topics to a Kafka topic.
@@ -151,20 +153,22 @@ func (this *Service) Access(ctx context.Context, token jwt.Token, namespace stri
 	return result, nil
 }
 
-// HasAdministrate reports whether user holds administrate on a resource in permissions-v2 (SEC-11).
+// HasAdministrate reports whether user holds administrate on a resource in permissions-v2,
+// directly or through a group or role (SEC-11). permissions-v2 evaluates the rights with a
+// token of that user.
 func (this *Service) HasAdministrate(ctx context.Context, namespace string, kind model.Kind, id string, user string) (bool, error) {
-	token, err := this.adminToken()
+	token, err := this.userToken(user)
 	if err != nil {
-		return false, model.Unavailable("no admin token: %v", err)
+		return false, model.Unavailable("no token of the user: %v", err)
 	}
-	resource, err, code := this.client.GetResourceContext(ctx, token, model.Topic(namespace, kind), id)
+	allowed, err, code := this.client.CheckPermissionContext(ctx, token, model.Topic(namespace, kind), id, Administrate)
 	if code == http.StatusNotFound {
 		return false, nil
 	}
 	if err != nil {
 		return false, codeErr(err, code)
 	}
-	return resource.UserPermissions[user].Administrate, nil
+	return allowed, nil
 }
 
 func toPermissions(p model.Principals) permmodel.ResourcePermissions {

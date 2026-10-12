@@ -78,6 +78,26 @@ func TestSharedModelsAreVisibleNotSharedDeploymentsAreNot(t *testing.T) {
 	})
 }
 
+func TestOwnerChangeAcceptsAdministrateThroughRole(t *testing.T) {
+	eachEnv(t, func(t *testing.T, e env) {
+		roles := model.Namespace{Models: model.LevelSettings{Shareable: true, InitialRights: model.Principals{Roles: map[string]model.Rights{"user": {Read: true, Administrate: true}}}}}
+		if _, err := e.PutNamespace(ctx, admin, "roles", roles); err != nil {
+			t.Fatal(err)
+		}
+		m, err := e.CreateModel(ctx, alice, "roles", model.ModelInput{Xml: waitingModel()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.sync(t)
+		if err = e.SetOwner(ctx, alice, "roles", model.KindModel, m.Id, model.OwnerInput{Owner: "bob"}); err != nil {
+			t.Fatalf("bob administrates the model through the role user (SEC-11): %v", err)
+		}
+		if got, _ := e.GetModel(ctx, bob, "roles", m.Id); got.Owner != "bob" {
+			t.Fatalf("owner not changed: %+v", got)
+		}
+	})
+}
+
 func TestInitialRightsAndOwnerChange(t *testing.T) {
 	eachEnv(t, func(t *testing.T, e env) {
 		custom := model.Namespace{Models: model.LevelSettings{Shareable: true, InitialRights: model.Principals{Roles: map[string]model.Rights{"user": {Read: true}}}}}

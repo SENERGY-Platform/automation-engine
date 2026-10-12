@@ -87,7 +87,7 @@ func TestDependencies(ctx context.Context) (server.Dependencies, error) {
 			return server.Dependencies{}, err
 		}
 	}
-	return server.Dependencies{Permissions: permissions, AdminToken: auth.Static(admin)}, nil
+	return server.Dependencies{Permissions: permissions, AdminToken: auth.Static(admin), UserToken: auth.UnsignedTokens}, nil
 }
 
 // TestToken creates an unsigned token for user with the given realm roles, e.g. "admin".
