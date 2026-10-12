@@ -49,6 +49,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/httpcall"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/notify"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/processio"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
 	"github.com/SENERGY-Platform/external-task-worker/lib/devicerepository"
 	"github.com/SENERGY-Platform/external-task-worker/lib/marshaller"
@@ -399,7 +400,8 @@ func (this *Server) Run(ctx context.Context) error {
 			_ = internal.Close()
 		}()
 	}
-	srv := &http.Server{Addr: net.JoinHostPort("", strconv.Itoa(this.config.ServerPort)), Handler: this.Handler, ReadHeaderTimeout: 10 * time.Second}
+	handler := tracing.Handler(this.config.OtelEndpoint, this.Handler)
+	srv := &http.Server{Addr: net.JoinHostPort("", strconv.Itoa(this.config.ServerPort)), Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)

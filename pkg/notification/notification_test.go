@@ -26,6 +26,10 @@ import (
 	"testing"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestNotifyPostsTheNotifierFormatWithDuplicateWindow(t *testing.T) {
@@ -63,5 +67,25 @@ func TestNotifyReportsRejectedMessagesForRetry(t *testing.T) {
 func TestNotifyWithoutTargetsDoesNothing(t *testing.T) {
 	if err := New("", "", slog.Default()).Notify(context.Background(), store.Notification{}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNotifyCarriesTraceContextAndBaggage(t *testing.T) {
+	previous := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	t.Cleanup(func() { otel.SetTextMapPropagator(previous) })
+	var header http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header = r.Header.Clone()
+	}))
+	defer server.Close()
+	spanContext := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}, TraceFlags: trace.FlagsSampled})
+	ctx := tracing.WithBaggage(trace.ContextWithSpanContext(context.Background(), spanContext), tracing.KeyInstanceId, "i")
+	n := New(server.URL, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := n.Notify(ctx, store.Notification{UserId: "u", Title: "t", Message: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	if header.Get("traceparent") == "" || header.Get("baggage") != tracing.KeyInstanceId+"=i" {
+		t.Fatalf("the notifier is a platform service and gets trace context and baggage: %v", header)
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 )
 
 func (this *Controller) StartInstance(ctx context.Context, token string, namespace string, input model.StartInstanceInput) (model.Instance, error) {
@@ -76,6 +77,11 @@ func (this *Controller) startInstance(ctx context.Context, token string, namespa
 	result, _, err := this.engine.StartInstance(ctx, engine.StartRequest{
 		DeploymentId: input.DeploymentId, DeploymentVersion: input.DeploymentVersion, InstanceId: id, Owner: instanceOwner, Variables: input.Variables,
 	})
+	if err == nil {
+		// marks the span of the request with the new instance; its later work carries the id
+		// in spans of its own
+		tracing.WithBaggage(ctx, tracing.KeyInstanceId, result.Id)
+	}
 	return result, err
 }
 

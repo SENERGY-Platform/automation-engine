@@ -19,6 +19,16 @@ Für den Plattformbetrieb kommen dazu:
 - `DEVICE_REPOSITORY_URL`, `MARSHALLER_URL`, `TIMESCALE_WRAPPER_URL`, `DEVICE_SELECTION_URL`, `IMPORT_DEPLOY_URL`, `IMPORT_REPOSITORY_URL`: Dienste für Gerätekommandos, Geräteauswahl und Geräteevents. Gerätekommandos brauchen zusätzlich `AUTH_ENDPOINT` für den Token-Exchange.
 - `MODE` (`cloud` oder `fog`, Vorgabe `cloud`): wählt die Richtlinie für HTTP-Aufrufe aus Prozessen.
 - `MAX_IO_VALUES_PER_USER`, `MAX_IO_VALUE_BYTES`: Grenzen für Process-IO.
+- `OTEL_ENDPOINT`: OTLP-Collector (gRPC) für Traces. Leer heißt Vorgabe von `gin-middleware/otelx` (`jaeger.logging.svc.cluster.local:4317`), `off` schaltet Tracing ab, etwa im Fog oder lokal.
+
+## Tracing
+
+Wie in den anderen Plattformdiensten über `gin-middleware/otelx`:
+- Eingehende Anfragen übernehmen Trace-Kontext und Baggage des Aufrufers; otelx legt `user_id` und `username` aus dem Token in die Baggage.
+- Anfragen an Plattformdienste (permissions-v2, Notifier, import-deploy, HTTP-Antwortziele von Gerätekommandos) tragen Trace-Kontext und Baggage weiter. Nicht weitergegeben wird an device-selection, device-repository und Marshaller, deren Clients keinen Kontext annehmen.
+- Der Aufgabentyp `http` gibt nichts weiter: seine Ziele liegen außerhalb der Plattform, und die Baggage enthält Nutzer-IDs.
+- Jede Ausführung einer Aufgabe und jede Auswertung eines Geräteevents ist ein eigener Span; Instanz, Deployment, Namespace und Owner stehen als `automation_instance_id`, `automation_deployment_id`, `automation_namespace` und `user_id` in Span und Baggage. Die Ausführung läuft im Hintergrund, ihr Span beginnt deshalb einen eigenen Trace statt an der startenden Anfrage zu hängen.
+- Logeinträge mit Kontext (`InfoContext`, ...) tragen die Baggage und werden Ereignisse des Spans.
 
 ## Rollen
 

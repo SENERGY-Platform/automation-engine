@@ -141,3 +141,4 @@ Abgelehnt: `DefaultPermissions` wörtlich zu nehmen, weil dann eine Freigabe fü
 ## Nach M3 (2026-10-12)
 
 - **Owner-Wechsel**: `HasAdministrate` fragt permissions-v2 mit `CheckPermission` und einem Token des neuen Owners (Keycloak-Token-Exchange) statt die Rechte der Ressource selbst auszuwerten. Damit zählen auch Rechte über Gruppen und Rollen.
+- **Tracing** nach dem Muster von smart-service-repository (Commit 573979f): `pkg/tracing`, Beschreibung im README. Offen: Datenbankzugriffe sind nicht instrumentiert (für `database/sql` gäbe es otelsql, eine weitere Abhängigkeit); Kafka-Nachrichten tragen keinen Trace-Kontext, weil die Gegenseiten ihn weder schreiben noch lesen; der Span einer Aufgabe ist nicht mit der Anfrage verknüpft, die die Instanz gestartet hat (dafür müsste der Trace-Kontext mit der Instanz gespeichert werden).

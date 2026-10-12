@@ -79,7 +79,7 @@ func (this *Engine) fireSchedules(ctx context.Context, now time.Time) error {
 			_, _, err = this.startInstance(tx, StartRequest{DeploymentId: deployment.Id, Owner: deployment.Owner}, model.CauseStart)
 			var modelErr *model.Error
 			if errors.As(err, &modelErr) && modelErr.Kind != model.KindInternal && modelErr.Kind != model.KindUnavailable {
-				this.logger.Warn("scheduled start failed", "schedule_id", s.Id, "deployment_id", deployment.Id, "error", err)
+				this.logger.WarnContext(ctx, "scheduled start failed", "schedule_id", s.Id, "deployment_id", deployment.Id, "error", err)
 				return tx.SaveSchedule(s)
 			}
 			return err

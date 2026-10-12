@@ -30,6 +30,7 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 )
 
 func main() {
@@ -45,6 +46,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if err = tracing.Init(ctx, config.OtelEndpoint); err != nil {
+		logger.Warn("unable to init open-telemetry, continuing without tracing", "error", err)
+	}
 
 	if config.Role == "event" {
 		worker, err := server.NewEventServer(ctx, config, logger, server.EventDependencies{})

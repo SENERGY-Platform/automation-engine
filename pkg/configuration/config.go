@@ -26,6 +26,7 @@ import (
 	confighdl "github.com/SENERGY-Platform/go-service-base/config-hdl"
 	"github.com/SENERGY-Platform/go-service-base/config-hdl/types"
 	structlogger "github.com/SENERGY-Platform/go-service-base/struct-logger"
+	"github.com/SENERGY-Platform/go-service-base/struct-logger/handlers"
 )
 
 type Config struct {
@@ -74,6 +75,9 @@ type Config struct {
 	InternalPort int `json:"internal_port" env_var:"INTERNAL_PORT"`
 	// running instances without element change for this long count as stalled (LONG-13)
 	StalledAfter string `json:"stalled_after" env_var:"STALLED_AFTER"`
+	// OTLP collector over gRPC for traces; empty selects the platform default of
+	// gin-middleware/otelx, "off" disables tracing
+	OtelEndpoint string `json:"otel_endpoint" env_var:"OTEL_ENDPOINT"`
 
 	// Kafka for device commands, their answers and cache invalidation; empty disables Kafka
 	KafkaUrl           string `json:"kafka_url" env_var:"KAFKA_URL"`
@@ -263,12 +267,15 @@ func (this Config) Location() (*time.Location, error) {
 	return time.LoadLocation(this.Timezone)
 }
 
+// Logger writes structured logs. Records logged with a context (InfoContext, ...) carry the
+// baggage of that context and become events of its span.
 func (this Config) Logger() *slog.Logger {
-	return structlogger.New(structlogger.Config{
+	base := structlogger.New(structlogger.Config{
 		Handler:    structlogger.JsonHandlerSelector,
 		Level:      this.LogLevel,
 		TimeFormat: time.RFC3339Nano,
 		TimeUtc:    true,
 		AddMeta:    true,
 	}, os.Stdout, "github.com/SENERGY-Platform", "automation-engine")
+	return slog.New(handlers.NewOpenTelemetryHandler(base.Handler()))
 }

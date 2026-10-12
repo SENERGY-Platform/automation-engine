@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	devnotifications "github.com/SENERGY-Platform/developer-notifications/pkg/client"
 )
 
@@ -76,6 +77,9 @@ func (this *Notifier) Send(ctx context.Context, n store.Notification) error {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		if err = tracing.Inject(ctx, req); err != nil {
+			return err
+		}
 		resp, err := this.http.Do(req)
 		if err != nil {
 			return err

@@ -31,6 +31,8 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type WorkerConfig struct {
@@ -263,7 +265,7 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 		go func() {
 			defer func() { <-this.async }()
 			if err := this.process(ctx, d, payload, messageId, ageSeconds); err != nil {
-				this.logger.Warn("event correlation failed", "event", d.MessageName, "error", err)
+				this.logger.WarnContext(ctx, "event correlation failed", "event", d.MessageName, "error", err)
 			}
 		}()
 	}
@@ -271,7 +273,10 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 }
 
 // process returns only errors worth reading the message again for
-func (this *Worker) process(ctx context.Context, d model.EventDescription, payload map[string]any, messageId string, ageSeconds float64) error {
+func (this *Worker) process(ctx context.Context, d model.EventDescription, payload map[string]any, messageId string, ageSeconds float64) (err error) {
+	ctx, span := tracing.Start(ctx, "event "+d.MessageName, tracing.Instance{Namespace: d.Namespace, DeploymentId: d.DeploymentId, Owner: d.Owner},
+		attribute.String("element_id", d.ElementId), attribute.String("message_id", messageId))
+	defer func() { tracing.End(span, err) }()
 	evaluation, err := this.evaluator.Evaluate(d, payload)
 	if err != nil {
 		this.notifyError(ctx, d, err)
@@ -289,7 +294,7 @@ func (this *Worker) process(ctx context.Context, d model.EventDescription, paylo
 	})
 	var modelErr *model.Error
 	if errors.As(err, &modelErr) && modelErr.Kind != model.KindInternal && modelErr.Kind != model.KindUnavailable {
-		this.logger.Warn("event correlation rejected", "event", d.MessageName, "error", err)
+		this.logger.WarnContext(ctx, "event correlation rejected", "event", d.MessageName, "error", err)
 		return nil
 	}
 	return err
@@ -312,6 +317,6 @@ func (this *Worker) notifyError(ctx context.Context, d model.EventDescription, e
 	}
 	message := fmt.Sprintf("The event %v of deployment %v could not be evaluated for %v: %v", d.ElementId, d.DeploymentId, strings.TrimSpace(source), err)
 	if notifyErr := this.correlator.QueueNotification(ctx, d.Owner, "Event evaluation failed", message); notifyErr != nil {
-		this.logger.Warn("unable to queue event error notification", "error", notifyErr)
+		this.logger.WarnContext(ctx, "unable to queue event error notification", "error", notifyErr)
 	}
 }

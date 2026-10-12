@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
 	permmodel "github.com/SENERGY-Platform/permissions-v2/pkg/model"
 )
@@ -105,6 +106,9 @@ func (this *Access) visibleImports(ctx context.Context, token string) (map[strin
 		return nil, err
 	}
 	req.Header.Set("Authorization", token)
+	if err = tracing.Inject(ctx, req); err != nil {
+		return nil, err
+	}
 	resp, err := this.http.Do(req)
 	if err != nil {
 		return nil, model.Unavailable("import-deploy: %v", err)

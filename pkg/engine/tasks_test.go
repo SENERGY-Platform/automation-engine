@@ -26,6 +26,8 @@ import (
 
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
+	"go.opentelemetry.io/otel/baggage"
 )
 
 func serviceProcess(extra string) string {
@@ -54,6 +56,23 @@ func TestServiceTaskReceivesInputsAndMapsResult(t *testing.T) {
 		}
 		if _, ok := h.vars(inst.Id)["result"]; ok {
 			t.Errorf("result is a local variable of the task (TASK-10)")
+		}
+	})
+}
+
+func TestTaskContextCarriesItsInstanceInTheBaggage(t *testing.T) {
+	run(t, func(t *testing.T, h *harness) {
+		var bag baggage.Baggage
+		h.e.RegisterTaskType("echo", TaskTypeFunc(func(ctx context.Context, task Task) (TaskResult, error) {
+			bag = baggage.FromContext(ctx)
+			return TaskResult{Output: map[string]any{"result": []any{1}}}, nil
+		}))
+		d := h.deploy(serviceProcess(""))
+		inst := h.start(d, map[string]any{"x": 1})
+		h.process()
+		h.expectState(inst.Id, model.StateCompleted)
+		if bag.Member(tracing.KeyInstanceId).Value() != inst.Id || bag.Member(tracing.KeyDeploymentId).Value() != d || bag.Member(tracing.KeyUserId).Value() != "user" {
+			t.Fatalf("requests and logs of a task can be traced back to its instance: %v", bag)
 		}
 	})
 }

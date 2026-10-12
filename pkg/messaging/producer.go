@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	"github.com/SENERGY-Platform/service-commons/pkg/kafka"
 )
 
@@ -55,6 +56,9 @@ func (this *Switch) Produce(ctx context.Context, topic string, key string, paylo
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		if err = tracing.Inject(ctx, req); err != nil {
+			return err
+		}
 		resp, err := this.http.Do(req)
 		if err != nil {
 			return err

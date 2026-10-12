@@ -260,7 +260,7 @@ func accessLog(next http.Handler, logger *slog.Logger) http.Handler {
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
 		// the query may contain ids but never the token, which travels in the header
-		logger.Info("request", "method", r.Method, "path", r.URL.Path, "status", recorder.status, "duration", time.Since(start).String())
+		logger.InfoContext(r.Context(), "request", "method", r.Method, "path", r.URL.Path, "status", recorder.status, "duration", time.Since(start).String())
 	})
 }
 
@@ -278,7 +278,7 @@ func recovery(next http.Handler, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if p := recover(); p != nil {
-				logger.Error("panic in request handler", "method", r.Method, "path", r.URL.Path, "panic", fmt.Sprint(p))
+				logger.ErrorContext(r.Context(), "panic in request handler", "method", r.Method, "path", r.URL.Path, "panic", fmt.Sprint(p))
 				writeError(w, errors.New("internal error"))
 			}
 		}()

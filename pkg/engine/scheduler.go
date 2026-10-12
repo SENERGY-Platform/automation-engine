@@ -27,7 +27,9 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/timer"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // ProcessDue fires due timers and start timers and executes due jobs. Every timer and job is
@@ -295,18 +297,26 @@ func (this *Engine) timeoutResult(ctx context.Context, tx *store.Tx, inst store.
 	return result, true, nil
 }
 
-func (this *Engine) execute(ctx context.Context, c claimed) error {
+func (this *Engine) execute(ctx context.Context, c claimed) (err error) {
+	// the span covers the task and the commit of its result; finishJob and the store run on
+	// spanCtx, so that they carry the trace but not the timeout of the task
+	spanCtx, span := tracing.Start(ctx, "task "+c.job.TaskType, tracing.Instance{
+		Namespace: c.task.Namespace, DeploymentId: c.task.DeploymentId, InstanceId: c.task.InstanceId, Owner: c.task.Owner,
+	}, attribute.String("element_id", c.job.ElementId), attribute.Int("attempt", c.job.Attempt))
+	var taskErr error
+	defer func() { tracing.End(span, errors.Join(taskErr, err)) }()
 	taskType, ok := this.taskType(c.job.TaskType)
 	if !ok {
-		return this.finishJob(ctx, c.job.Id, c.job.LockOwner, nil, fmt.Errorf("task type %q is not available", c.job.TaskType), false)
+		taskErr = fmt.Errorf("task type %q is not available", c.job.TaskType)
+		return this.finishJob(spanCtx, c.job.Id, c.job.LockOwner, nil, taskErr, false)
 	}
-	taskCtx, cancel := context.WithTimeout(ctx, c.job.Timeout)
+	taskCtx, cancel := context.WithTimeout(spanCtx, c.job.Timeout)
 	defer cancel()
 	started := time.Now()
-	result, err := safeExecute(taskCtx, taskType, c.task)
+	result, taskErr := safeExecute(taskCtx, taskType, c.task)
 	outcome := "completed"
 	switch {
-	case err != nil:
+	case taskErr != nil:
 		outcome = "failed"
 	case result.Async:
 		outcome = "async"
@@ -316,8 +326,8 @@ func (this *Engine) execute(ctx context.Context, c claimed) error {
 		// the engine shuts down; the lock expires and the job is retried
 		return nil
 	}
-	if err == nil && result.Async {
-		return this.store.Tx(ctx, func(tx *store.Tx) error {
+	if taskErr == nil && result.Async {
+		return this.store.Tx(spanCtx, func(tx *store.Tx) error {
 			job, err := tx.GetJob(c.job.Id)
 			if err != nil || job == nil || job.LockOwner != c.job.LockOwner || job.State != store.JobRunning {
 				return err
@@ -326,7 +336,7 @@ func (this *Engine) execute(ctx context.Context, c claimed) error {
 			return tx.SaveJob(*job)
 		})
 	}
-	return this.finishJob(ctx, c.job.Id, c.job.LockOwner, result.Output, err, false)
+	return this.finishJob(spanCtx, c.job.Id, c.job.LockOwner, result.Output, taskErr, false)
 }
 
 func safeExecute(ctx context.Context, taskType TaskType, task Task) (result TaskResult, err error) {
