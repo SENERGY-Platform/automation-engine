@@ -17,8 +17,11 @@
 package debug
 
 import (
+	"cmp"
 	"encoding/json"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 )
@@ -106,6 +109,13 @@ func Apply(state model.DebugState, delta model.DebugMessage) model.DebugState {
 			state.Elements = append(state.Elements, e)
 		}
 	}
+	// the order of the store, so that an applied state equals a read one
+	slices.SortStableFunc(state.Elements, func(a, b model.ElementStats) int {
+		if a.Run != b.Run {
+			return cmp.Compare(a.Run, b.Run)
+		}
+		return strings.Compare(a.ElementId, b.ElementId)
+	})
 	if n := len(delta.Activities); n > 0 {
 		state.Time = delta.Activities[n-1].Time
 	}

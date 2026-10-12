@@ -18,6 +18,8 @@ package debug
 
 import (
 	"encoding/json"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -36,8 +38,9 @@ func state(seq int64, active []string, variables map[string]any, counts map[stri
 	for name, value := range variables {
 		s.Variables[name] = Variable(value, at, "", 0)
 	}
-	for id, count := range counts {
-		s.Elements = append(s.Elements, model.ElementStats{ElementId: id, Count: count, LastAt: at})
+	// sorted like the store reads them
+	for _, id := range slices.Sorted(maps.Keys(counts)) {
+		s.Elements = append(s.Elements, model.ElementStats{ElementId: id, Count: counts[id], LastAt: at})
 	}
 	return s
 }
