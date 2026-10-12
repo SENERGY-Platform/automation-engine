@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 )
 
@@ -57,7 +58,30 @@ func New(controller Controller, pinger Pinger, logger *slog.Logger, settings Set
 	for _, route := range h.routes() {
 		mux.HandleFunc(route.pattern, route.handler)
 	}
-	return recovery(accessLog(mux, logger), logger)
+	var handler http.Handler = mux
+	if settings.Gateway {
+		handler = gatewayOnly(mux)
+	}
+	return recovery(accessLog(handler, logger), logger)
+}
+
+// gatewayAdmin reads the API of a gateway; there is no identity provider on a gateway
+const gatewayAdmin = "gateway"
+
+// gatewayOnly lets only reading requests through: deployments, starts, stops and deletions
+// come from the cloud by the synchronisation. A request without token reads as admin, like
+// the other services of a gateway, which check no tokens either.
+func gatewayOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+			writeError(w, model.Forbidden("the api of a gateway is read-only; changes come from the cloud"))
+			return
+		}
+		if r.Header.Get("Authorization") == "" {
+			r.Header.Set("Authorization", auth.UnsignedToken(gatewayAdmin, "admin"))
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Settings of the API that depend on the deployment.
@@ -65,6 +89,8 @@ type Settings struct {
 	// the engine verifies token signatures itself; then a live stream may take its token as
 	// first message, which does not pass Kong (DBG-08)
 	VerifiesTokens bool
+	// the engine runs on a gateway: the API is read-only and needs no token (FOG, M6)
+	Gateway bool
 }
 
 type handlers struct {

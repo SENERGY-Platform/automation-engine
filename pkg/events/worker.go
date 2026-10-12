@@ -32,6 +32,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
+	"github.com/SENERGY-Platform/models/go/models"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -45,6 +46,9 @@ type WorkerConfig struct {
 	ErrorNotificationWindow time.Duration
 	// concurrent evaluations of qos 0 descriptions
 	AsyncWorkers int
+	// on a gateway: descriptions carry the topic event/{local device}/{local service}, and
+	// messages are the raw payload of the device (FOG-06)
+	Local bool
 }
 
 func DefaultWorkerConfig() WorkerConfig {
@@ -105,11 +109,18 @@ func serviceKey(deviceId string, serviceId string) string {
 	return "s|" + deviceId + "|" + serviceId
 }
 
+func topicKey(topic string) string {
+	return "t|" + topic
+}
+
 func importKey(importId string) string {
 	return "i|" + importId
 }
 
-func keyOf(d model.EventDescription) string {
+func (this *Worker) keyOf(d model.EventDescription) string {
+	if this.config.Local {
+		return topicKey(d.Topic)
+	}
 	if d.ImportId != "" {
 		return importKey(d.ImportId)
 	}
@@ -153,7 +164,7 @@ func (this *Worker) Sync(ctx context.Context) ([]string, error) {
 	this.importTopics = map[string]bool{}
 	topics := map[string]bool{}
 	for id, d := range this.byId {
-		this.index[keyOf(d)] = append(this.index[keyOf(d)], id)
+		this.index[this.keyOf(d)] = append(this.index[this.keyOf(d)], id)
 		topics[d.Topic] = true
 		if d.ImportId != "" {
 			this.importTopics[d.Topic] = true
@@ -238,6 +249,8 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 		}
 		importId, _ := payload["import_id"].(string)
 		key = importKey(importId)
+	} else if this.config.Local {
+		key = topicKey(m.Topic)
 	} else {
 		var e envelope
 		if err := json.Unmarshal(m.Value, &e); err != nil {
@@ -257,6 +270,15 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 	ageSeconds := float64(int64(max(age, 0).Seconds()))
 	var errs []error
 	for _, d := range descriptions {
+		payload := payload
+		if this.config.Local {
+			decoded, err := decodeFor(d, m.Value)
+			if err != nil {
+				this.notifyError(ctx, d, fmt.Errorf("unable to read the device message: %w", err))
+				continue
+			}
+			payload = decoded
+		}
 		if d.Qos == 1 {
 			errs = append(errs, this.process(ctx, d, payload, messageId, ageSeconds))
 			continue
@@ -322,4 +344,13 @@ func (this *Worker) notifyError(ctx context.Context, d model.EventDescription, e
 	if notifyErr := this.correlator.QueueNotification(ctx, d.Owner, "Event evaluation failed", message); notifyErr != nil {
 		this.logger.WarnContext(ctx, "unable to queue event error notification", "error", notifyErr)
 	}
+}
+
+// decodeFor reads the raw payload of a local event with the service of the description
+func decodeFor(d model.EventDescription, raw []byte) (map[string]any, error) {
+	var service models.Service
+	if err := json.Unmarshal(d.Service, &service); err != nil {
+		return nil, fmt.Errorf("invalid service of event description: %w", err)
+	}
+	return DecodeLocalEvent(raw, service)
 }

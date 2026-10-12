@@ -55,6 +55,9 @@ type Config struct {
 	ResponseTo       string
 	ErrorTo          string
 	TimescaleTimeout time.Duration
+	// on a gateway: the prefix of the command ids on its broker, which tells answers to this
+	// engine apart from those to device-command and the cloud (FOG-01)
+	LocalCommandPrefix string
 }
 
 // Completer delivers asynchronous answers to the engine.

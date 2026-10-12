@@ -68,6 +68,16 @@ type Describer struct {
 	repo    devices.Repository
 	aspects *devices.AspectNodes
 	imports Imports
+	// descriptions for a gateway read the topics of its broker (FOG-06)
+	local bool
+}
+
+// Local makes the describer describe events for a gateway: the topic is
+// event/{local device id}/{local service id}, and imports are not available.
+func (this *Describer) Local() *Describer {
+	result := *this
+	result.local = true
+	return &result
 }
 
 func NewDescriber(repo devices.Repository, aspects *devices.AspectNodes, imports Imports) *Describer {
@@ -193,6 +203,12 @@ func (this *Describer) deviceDescriptions(token devices.Token, base model.EventD
 		d.DeviceId = deviceId
 		d.ServiceId = s.Id
 		d.Topic = devices.ServiceIdToTopic(s.Id)
+		if this.local {
+			if device.LocalId == "" || s.LocalId == "" {
+				return nil, model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: fmt.Sprintf("device %v or its service %v has no local id", deviceId, s.Id)}})
+			}
+			d.Topic = LocalEventTopic(device.LocalId, s.LocalId)
+		}
 		raw, err := json.Marshal(s)
 		if err != nil {
 			return nil, err
@@ -205,6 +221,9 @@ func (this *Describer) deviceDescriptions(token devices.Token, base model.EventD
 }
 
 func (this *Describer) importDescription(token devices.Token, base model.EventDescription, selection model.Selection) ([]model.EventDescription, error) {
+	if this.local {
+		return nil, model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: "import events are not available on gateways"}})
+	}
 	if this.imports == nil {
 		return nil, model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: "import events are not configured"}})
 	}

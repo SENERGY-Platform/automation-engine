@@ -252,3 +252,30 @@ Grundlage sind die Analysen der acht Worker, von `smart-service-module-worker-li
 - Gerätekommandos: Eine Antwort von device-repository außer 2xx ist ein Fehler mit Pfad und Status. Bisher wurde der Inhalt trotzdem gelesen, und es folgten Folgefehler wie ein leeres Gerät oder „service not found“.
 - Gerätekommandos mit `prefer_event`: Liefert timescale-wrapper weniger Abfragen oder Spalten zurück als angefragt, ist das ein Fehler. Bisher lief der Zugriff in einen Panic.
 - Event-Rolle: Ist device-repository nicht erreichbar (5xx oder Transportfehler), wird eine QoS-1-Nachricht erneut gelesen, und der Owner wird nicht benachrichtigt. Das entspricht dem event-worker. Seit M3 hatte die Engine stattdessen benachrichtigt und die Nachricht verworfen.
+
+## M6: Entscheidungen (2026-10-12)
+
+Grundlage sind die Analysen von process-sync (`master` und Branch `feat/platform-source-of-truth`), mgw-process-sync-client, mgw-external-task-worker, event-worker im Fog-Modus, mgw-device-cloud-connector, mgw-last-value, dem device-repository-Mirror und dem Prozessmodul `main/process` (v1.5.4) in mgw-module-repository.
+
+**Protokoll (entschieden: nur das neue).** Die Cloud-Engine spricht nur das neue, versionierte Sync-Protokoll. Gateways mit Camunda bleiben bei process-sync, bis ihr Prozessmodul aktualisiert und migriert ist (M7); beide Protokolle laufen parallel, ohne sich zu stören. Verworfen: das alte Protokoll zusätzlich bedienen, weil die Engine dann Camunda-IDs, `known`-Listen und Warden-Logik erben würde.
+
+**Transport.** Wie bisher über mgw-device-cloud-connector, der nur `processes/{nid}/cmd/#` (Cloud → Gateway, lokal `processes/cmd/...`) und `processes/state/#` (Gateway → Cloud, in der Cloud `processes/{nid}/state/...`) überbrückt. Die neuen Nachrichten liegen darunter in `engine/v1/...`, getrennt von den Topics von process-sync. Der Connector stellt höchstens einmal zu (Clean Session, QoS 0 nach oben, Puffer im Speicher); Zuverlässigkeit entsteht deshalb im Protokoll: Sequenzen, Bestätigungen und erneutes Senden nach Frist (SYNC-02, SYNC-08).
+
+**Cloud-Seite bei mehreren Replicas (entschieden: geteilte Subscriptions, SYNC-10).** Alle Replicas abonnieren `$share/<gruppe>/processes/+/state/engine/v1/#`. Eine Nachricht eines Gateways wird in einer Transaktion übernommen, die das Netz sperrt, und nur lückenlos ab der zuletzt bestätigten Sequenz; ältere werden erneut bestätigt, Lücken verworfen, das Gateway sendet ab der Bestätigung neu. Bestätigt wird erst nach dem Commit. Reihenfolge und Doppelzustellung über mehrere Replicas sind damit im Protokoll gelöst, nicht im Broker. Verworfen: eine eigene Rolle mit Leader-Wahl, weil sie nur eine aktive Replica erlaubt.
+
+**API auf dem Gateway (entschieden: lesen lokal, schreiben per Sync).** Lokal gibt es nur lesende Routen, Health und Metriken, ohne Tokenprüfung wie bei den übrigen Gateway-Diensten. Deployments, Starts, Stopps und Löschungen kommen nur über die Synchronisation aus der Cloud. Ein Gerät im LAN kann so keine Prozesse mit HTTP-Aufrufen ins lokale Netz deployen. Verworfen: volle API ohne Prüfung; keine lokale API.
+
+**Fog-Laufzeit (FOG-01).** Dasselbe Binary mit `MODE=fog`:
+- Gerätekommandos auf `command/{lokale Geräte-ID}/{lokale Service-ID}` des Gateway-Brokers mit `{"command_id","data"}`; Antworten auf `response/#`, Fehler auf `error/command/#`, zugeordnet über ein eigenes Präfix der `command_id`. Die Teilaufgabe steht in der Datenbank, die Protokollnachricht wird für die Antwort neu gebildet; ein Neustart verliert also keine Zuordnung (mgw-external-task-worker hielt sie nur im Speicher und hörte `error/command` nicht ab).
+- Geräteevents von `event/#` mit lokalen IDs. Eventbeschreibungen tragen die lokalen IDs von Gerät und Service, die der Describer aus device-repository liest; das Gateway braucht dafür keine eigenen Zuordnungstabellen (process-sync schickte sie getrennt mit, mit einem Fehler beim Service-Mapping).
+- device-repository-Mirror statt device-repository, Marshaller im Prozess (Bibliothek marshaller v2 und v1 mit Konzept-Repository aus dem Mirror, wie mgw-external-task-worker), mgw-last-value statt timescale-wrapper (lokale IDs, fehlender Wert ist ein Fehler).
+- Benachrichtigungen über mgw-cloud-proxy, dasselbe Format.
+- Process-IO übernimmt die Engine selbst; process-io-worker und seine Postgres entfallen.
+
+**Speicherbudget (LONG-07).** `STORAGE_BUDGET` begrenzt die Datenbank. Ab 80 % kürzt die Engine Verlauf über die Aufbewahrung hinaus, älteste Einträge zuerst, bis 70 %, und meldet das einmal je Tag an den Nutzer des Netzes; Laufzeitzustand wird nie gekürzt. Schlägt ein Schreiben wegen eines vollen Datenträgers fehl, rollt SQLite die Transaktion zurück; die Engine hält die Ausführung an, meldet sich als nicht gesund und läuft weiter, sobald Schreiben wieder gelingt.
+
+**Stufen.** a) Fog-Laufzeit; b) Sync-Protokoll und Gateway-Seite; c) Cloud-Seite mit Netzen, Reconciler, Netzübersicht, Gateway-Zielen für `process_deployment`; d) Debugging von Fog-Instanzen; e) Images für arm64, Dauertest-Harness, Modfile als offener Punkt. Jede Stufe wird nach grünen Tests committet und gepusht (entschieden).
+
+## M6: Stand
+
+- **a) Fog-Laufzeit** (2026-10-12): `MODE=fog` mit Gateway-Broker über `pkg/mqtt` (paho.mqtt.golang unter EDL-1.0, entschieden), Gerätekommandos über MQTT mit Zuordnung aus der Datenbank (`pkg/tasks/devicecommand/local.go`), Marshaller im Prozess mit Konzept-Repository aus dem Mirror (`localmarshaller.go`), mgw-last-value, Geräteevents mit lokalen Topics im selben Prozess (`pkg/events/local.go`, Dekodierung wie platform-connector), lesende API ohne Token, Speicherbudget mit Kürzen des Verlaufs und Pause bei vollem Datenträger. Nebenbei behoben: `debug.Apply` ordnete neue Elementstatistiken anders als die Datenbank, der Test schlug deshalb sporadisch fehl.

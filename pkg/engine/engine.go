@@ -72,6 +72,9 @@ type Config struct {
 	SnapshotsKept   int
 	// how long the change stream keeps entries (SYNC-03)
 	ChangeRetention time.Duration
+	// upper bound of the database in bytes, 0 is unlimited; history is trimmed beyond the
+	// retention when it is near (LONG-07)
+	StorageBudget int64
 }
 
 func DefaultConfig() Config {
@@ -130,6 +133,8 @@ type Engine struct {
 
 	housekeepingMux  sync.Mutex
 	lastHousekeeping time.Time
+	// the last warning about the storage budget (LONG-07)
+	lastBudgetWarning time.Time
 	// cursors of the retention passes, which proceed in small steps
 	retentionCursor string
 	modelCursor     string
@@ -318,7 +323,13 @@ func (this *Engine) Run(ctx context.Context) {
 	ticker := time.NewTicker(this.config.PollInterval)
 	defer ticker.Stop()
 	for {
-		if err := this.ProcessDue(ctx); err != nil && ctx.Err() == nil {
+		if this.store.Full() {
+			// a full storage pauses the execution; trimming the history may free space (LONG-07)
+			this.logger.Error("storage full, execution paused")
+			if err := this.housekeeping(ctx, this.now()); err != nil && ctx.Err() == nil {
+				this.logger.Warn("housekeeping failed", "error", err)
+			}
+		} else if err := this.ProcessDue(ctx); err != nil && ctx.Err() == nil {
 			this.logger.Warn("processing due timers and jobs failed", "error", err)
 		}
 		select {

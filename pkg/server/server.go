@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
 	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 
@@ -77,8 +78,11 @@ type Server struct {
 	Modules *modules.Runtime
 	// nil if device commands are not configured
 	DeviceCommands *devicecommand.Type
-	config         configuration.Config
-	logger         *slog.Logger
+	// fog: the broker of the gateway and the event worker in the process (FOG-01, FOG-06)
+	Broker mqtt.Broker
+	Events *events.Worker
+	config configuration.Config
+	logger *slog.Logger
 }
 
 // Dependencies replace connections to other services, e.g. in tests.
@@ -97,6 +101,8 @@ type Dependencies struct {
 	// event debugging: stored device messages and their unmarshalling (EVT-10, DBG-18)
 	EventSeries       events.Series
 	EventUnmarshaller events.Unmarshaller
+	// fog: the broker of the gateway, e.g. mqtt.NewMemory() in tests
+	Broker mqtt.Broker
 }
 
 func openStore(ctx context.Context, config configuration.Config) (*store.Store, error) {
@@ -124,6 +130,7 @@ func engineConfig(config configuration.Config) (engine.Config, error) {
 	result.RetentionDefaultDays = config.RetentionDefaultDays
 	result.RetentionMaxDays = config.RetentionMaxDays
 	result.ModelVersionsKept = config.ModelVersionsKept
+	result.StorageBudget = config.StorageBudget
 	return result, nil
 }
 
@@ -177,6 +184,20 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	if userToken == nil && config.AuthEndpoint != "" {
 		userToken = auth.NewTokenExchange(config.AuthEndpoint, config.AuthClientId, config.AuthClientSecret.Value()).Token
 	}
+	fog := config.Mode == "fog"
+	// the services of a gateway check no tokens; the mirror sets its own user (FOG-01)
+	if userToken == nil && fog {
+		userToken = auth.UnsignedTokens
+	}
+	broker := deps.Broker
+	if broker == nil && fog {
+		client, err := mqtt.Connect(ctx, mqtt.Config{Broker: config.MqttBroker, ClientId: config.MqttClientId, User: config.MqttUser, Password: config.MqttPassword.Value()}, logger)
+		if err != nil {
+			s.Close()
+			return nil, err
+		}
+		broker = client
+	}
 	var authorizer permissions.Authorizer = permissions.OwnerOnly{}
 	var service *permissions.Service
 	var topics namespaces.Topics
@@ -216,7 +237,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		s.Close()
 		return nil, err
 	}
-	commands, err := deviceCommands(ctx, config, deps, repo, aspects, s, m, logger)
+	commands, err := deviceCommands(ctx, config, deps, broker, repo, aspects, s, m, logger)
 	if err != nil {
 		s.Close()
 		return nil, err
@@ -254,7 +275,11 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		if config.ImportDeployUrl != "" && config.ImportRepositoryUrl != "" {
 			imports = events.NewImports(config.ImportDeployUrl, config.ImportRepositoryUrl)
 		}
-		c.SetDescriber(events.NewDescriber(repo, aspects, imports))
+		describer := events.NewDescriber(repo, aspects, imports)
+		if fog {
+			describer = describer.Local()
+		}
+		c.SetDescriber(describer)
 	}
 	if service != nil && config.PermissionsKafkaTopic != "" && config.KafkaUrl != "" {
 		service.PublishTo(config.PermissionsKafkaTopic)
@@ -276,19 +301,50 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	if series != nil && unmarshaller != nil {
 		c.SetEventDebugging(series, events.NewEvaluator(unmarshaller), userToken)
 	}
+	var worker *events.Worker
+	if fog && repo != nil {
+		eventUnmarshaller := deps.EventUnmarshaller
+		if eventUnmarshaller == nil {
+			if eventUnmarshaller, err = newUnmarshaller(config); err != nil {
+				s.Close()
+				return nil, err
+			}
+		}
+		workerConfig := events.DefaultWorkerConfig()
+		workerConfig.Local = true
+		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller), e, events.LocalConsumer(broker, 1, logger), logger)
+	}
 	hub := live.New(s, dsn, logger)
 	liveSettings := controller.DefaultLiveSettings()
 	liveSettings.MaxPerUser = config.MaxLiveConnectionsPerUser
 	c.SetLive(hub, liveSettings)
 	return &Server{
-		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, api.Settings{VerifiesTokens: certs != nil}), Namespaces: registry, Permissions: service, Metrics: m,
-		Live: hub, ModuleRemover: modules.NewRemover(s, userToken, logger), Modules: runtime, DeviceCommands: commands, config: config, logger: logger,
+		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, api.Settings{VerifiesTokens: certs != nil, Gateway: fog}), Namespaces: registry, Permissions: service, Metrics: m,
+		Live: hub, ModuleRemover: modules.NewRemover(s, userToken, logger), Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, config: config, logger: logger,
 	}, nil
 }
 
 // deviceCommands creates the task type device_command if its services are configured (TASK-01)
-func deviceCommands(ctx context.Context, config configuration.Config, deps Dependencies, repo devices.Repository, aspects *devices.AspectNodes, s *store.Store, m *metrics.Metrics, logger *slog.Logger) (*devicecommand.Type, error) {
+func deviceCommands(ctx context.Context, config configuration.Config, deps Dependencies, broker mqtt.Broker, repo devices.Repository, aspects *devices.AspectNodes, s *store.Store, m *metrics.Metrics, logger *slog.Logger) (*devicecommand.Type, error) {
 	mar, ts, producer := deps.Marshaller, deps.Timescale, deps.Producer
+	prefix := ""
+	if config.Mode == "fog" && repo != nil {
+		// marshaller in the process, mgw-last-value and the broker of the gateway (FOG-01)
+		prefix = config.LocalCommandPrefix
+		if mar == nil {
+			var err error
+			mar, err = devicecommand.NewLocalMarshaller(ctx, config.DeviceRepositoryUrl, configuration.Duration(config.DeviceCacheTimeout), configuration.Duration(config.ConceptRefreshInterval), logger)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if ts == nil && config.LastValueUrl != "" {
+			ts = devicecommand.NewLastValues(config.LastValueUrl)
+		}
+		if producer == nil {
+			producer = devicecommand.NewLocalTransport(broker, prefix)
+		}
+	}
 	if repo == nil || (mar == nil && config.MarshallerUrl == "") {
 		return nil, nil
 	}
@@ -302,7 +358,7 @@ func deviceCommands(ctx context.Context, config configuration.Config, deps Depen
 		producer = messaging.New(ctx, config.KafkaUrl)
 	}
 	return devicecommand.New(devicecommand.Config{
-		GroupScheduler: config.GroupScheduler, ResponseTo: config.MetadataResponseTo, ErrorTo: config.MetadataErrorTo,
+		GroupScheduler: config.GroupScheduler, ResponseTo: config.MetadataResponseTo, ErrorTo: config.MetadataErrorTo, LocalCommandPrefix: prefix,
 	}, s, repo, aspects, mar, ts, producer, m, logger), nil
 }
 
@@ -390,6 +446,27 @@ func (this *Server) startKafka(ctx context.Context) error {
 	return invalidator.StartKnownCacheInvalidators(ctx, all, invalidator.KnownTopics{DeviceTopic: this.config.DeviceTopic, DeviceGroupTopic: this.config.DeviceGroupTopic}, nil)
 }
 
+// startLocal reads answers of device connectors and device events from the broker of a gateway
+func (this *Server) startLocal(ctx context.Context) error {
+	if this.Broker == nil {
+		return nil
+	}
+	if this.Events != nil {
+		go this.Events.Run(ctx)
+	}
+	if this.DeviceCommands == nil {
+		return nil
+	}
+	if err := this.Broker.Subscribe(devicecommand.LocalResponseTopic, 2, func(topic string, payload []byte) error {
+		return this.DeviceCommands.HandleLocalResponse(ctx, topic, payload)
+	}); err != nil {
+		return err
+	}
+	return this.Broker.Subscribe(devicecommand.LocalErrorTopic, 2, func(topic string, payload []byte) error {
+		return this.DeviceCommands.HandleLocalError(ctx, topic, payload)
+	})
+}
+
 // internalHandler serves metrics and the HTTP answers of protocol handlers, which today post to
 // the port of the external-task-worker (TASK-05)
 func (this *Server) internalHandler() http.Handler {
@@ -432,6 +509,9 @@ func (this *Server) Start(ctx context.Context) {
 	go this.Modules.RunWatches(ctx, 5*time.Second)
 	if err := this.startKafka(ctx); err != nil {
 		this.logger.Error("unable to start kafka consumers", "error", err)
+	}
+	if err := this.startLocal(ctx); err != nil {
+		this.logger.Error("unable to subscribe at the broker of the gateway", "error", err)
 	}
 }
 

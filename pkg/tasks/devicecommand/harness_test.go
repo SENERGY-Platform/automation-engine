@@ -82,7 +82,7 @@ func (this *fakeRepo) GetDeviceGroup(_ devices.Token, id string) (models.DeviceG
 
 func service(id string, interaction models.Interaction, functionId string) models.Service {
 	variable := models.Content{ProtocolSegmentId: "seg", Serialization: "json", ContentVariable: models.ContentVariable{Name: "value", Type: models.Float, FunctionId: functionId}}
-	s := models.Service{Id: id, ProtocolId: "p", Interaction: interaction}
+	s := models.Service{Id: id, LocalId: "local-" + id, ProtocolId: "p", Interaction: interaction}
 	if functionId == measuring {
 		s.Outputs = []models.Content{variable}
 	} else {
@@ -94,7 +94,7 @@ func service(id string, interaction models.Interaction, functionId string) model
 func newRepo() *fakeRepo {
 	return &fakeRepo{
 		devices: map[string]models.Device{
-			"d1": {Id: "d1", DeviceTypeId: "dt"}, "d2": {Id: "d2", DeviceTypeId: "dt"}, "e1": {Id: "e1", DeviceTypeId: "et"},
+			"d1": {Id: "d1", LocalId: "local-d1", DeviceTypeId: "dt"}, "d2": {Id: "d2", LocalId: "local-d2", DeviceTypeId: "dt"}, "e1": {Id: "e1", LocalId: "local-e1", DeviceTypeId: "et"},
 		},
 		deviceTypes: map[string]models.DeviceType{
 			"dt": {Id: "dt", Services: []models.Service{service("s-get", models.REQUEST, measuring), service("s-set", models.REQUEST, controlling)}},
@@ -194,6 +194,8 @@ type env struct {
 	metrics  *fakeMetrics
 	clock    time.Time
 	mux      sync.Mutex
+	logger   *slog.Logger
+	aspects  *devices.AspectNodes
 }
 
 func newEnv(t *testing.T, scheduler string) *env {
@@ -208,6 +210,7 @@ func newEnv(t *testing.T, scheduler string) *env {
 		return models.AspectNode{Id: id, RootId: id}, nil
 	})
 	this.dc = New(Config{GroupScheduler: scheduler, ResponseTo: "response", ErrorTo: "errors"}, s, newRepo(), aspects, fakeMarshaller{}, fakeTimescale{}, this.producer, this.metrics, logger)
+	this.logger, this.aspects = logger, aspects
 	this.dc.SetCompleter(this.e)
 	this.e.RegisterTaskType(TaskType, this.dc)
 	return this

@@ -20,3 +20,9 @@ package store
 func CountForTest(tx *Tx, table string) (int, error) {
 	return tx.count("SELECT COUNT(*) FROM " + table)
 }
+
+// ExecForTest runs a statement; for tests only.
+func ExecForTest(tx *Tx, statement string) error {
+	_, err := tx.exec(statement)
+	return err
+}

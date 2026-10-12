@@ -63,7 +63,11 @@ func newUnmarshaller(config configuration.Config) (events.Unmarshaller, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid device_cache_timeout: %w", err)
 	}
-	token := auth.ClientCredentials(config.AuthEndpoint, config.AuthClientId, config.AuthClientSecret.Value())
+	var token auth.TokenSource
+	// the device-repository mirror of a gateway needs no token
+	if config.Mode != "fog" {
+		token = auth.ClientCredentials(config.AuthEndpoint, config.AuthClientId, config.AuthClientSecret.Value())
+	}
 	repo, err := events.NewCachedDeviceRepo(config.DeviceRepositoryUrl, token, duration)
 	if err != nil {
 		return nil, err

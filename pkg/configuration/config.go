@@ -141,8 +141,22 @@ type Config struct {
 	// the owner's administrate right (SEC-10); empty disables
 	PermissionsKafkaTopic string `json:"permissions_kafka_topic" env_var:"PERMISSIONS_KAFKA_TOPIC"`
 
-	// cloud or fog; selects the http policy of the namespaces (NS-04)
+	// cloud or fog; selects the http policy of the namespaces (NS-04) and, in fog, the services
+	// of the gateway (FOG-01)
 	Mode string `json:"mode" env_var:"MODE"`
+	// fog: the broker of the gateway for commands and device events, e.g. tcp://broker:1881
+	MqttBroker   string       `json:"mqtt_broker" env_var:"MQTT_BROKER"`
+	MqttClientId string       `json:"mqtt_client_id" env_var:"MQTT_CLIENT_ID"`
+	MqttUser     string       `json:"mqtt_user" env_var:"MQTT_USER"`
+	MqttPassword types.Secret `json:"mqtt_password" env_var:"MQTT_PASSWORD"`
+	// fog: mgw-last-value, the last values of event services
+	LastValueUrl string `json:"last_value_url" env_var:"LAST_VALUE_URL"`
+	// fog: the prefix of the command ids of this engine on the broker of the gateway
+	LocalCommandPrefix string `json:"local_command_prefix" env_var:"LOCAL_COMMAND_PREFIX"`
+	// fog: concepts for commands before payload version 3 are refreshed at this interval
+	ConceptRefreshInterval string `json:"concept_refresh_interval" env_var:"CONCEPT_REFRESH_INTERVAL"`
+	// upper bound of the database in bytes; 0 is unlimited, in fog 1 GiB, negative unlimited (LONG-07)
+	StorageBudget int64 `json:"storage_budget" env_var:"STORAGE_BUDGET"`
 	// limits of the process-io store per user (LONG-11)
 	MaxIoValuesPerUser int `json:"max_io_values_per_user" env_var:"MAX_IO_VALUES_PER_USER"`
 	MaxIoValueBytes    int `json:"max_io_value_bytes" env_var:"MAX_IO_VALUE_BYTES"`
@@ -181,6 +195,9 @@ func Default() Config {
 		StalledAfter:               "24h",
 		ModifiedDevices:            true,
 		Mode:                       "cloud",
+		MqttClientId:               "automation-engine",
+		LocalCommandPrefix:         "automation-engine-",
+		ConceptRefreshInterval:     "1h",
 		Role:                       "engine",
 		EventConsumerGroup:         "automation-engine-events",
 		UserTopic:                  "user",
@@ -249,11 +266,18 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return config, err
 	}
+	if config.Mode == "fog" && config.StorageBudget == 0 {
+		config.StorageBudget = DefaultGatewayStorageBudget
+	}
 	return config, config.validate()
 }
 
+// DefaultGatewayStorageBudget bounds the database on a gateway unless storage_budget is set;
+// a negative budget is unlimited (LONG-07).
+const DefaultGatewayStorageBudget = 1 << 30
+
 func (this Config) validate() error {
-	for _, d := range []string{this.ScriptTimeout, this.TaskTimeout, this.PollInterval, this.StalledAfter} {
+	for _, d := range []string{this.ScriptTimeout, this.TaskTimeout, this.PollInterval, this.StalledAfter, this.ConceptRefreshInterval} {
 		if _, err := time.ParseDuration(d); err != nil {
 			return fmt.Errorf("invalid duration %q: %w", d, err)
 		}
@@ -272,7 +296,14 @@ func (this Config) validate() error {
 	default:
 		return fmt.Errorf("group_scheduler must be parallel, sequential or round_robin")
 	}
-	if this.DeviceRepositoryUrl != "" && this.AuthEndpoint == "" {
+	if this.Mode == "fog" && this.MqttBroker == "" {
+		return fmt.Errorf("mode fog needs mqtt_broker, the broker of the gateway")
+	}
+	if this.Mode == "fog" && this.LocalCommandPrefix == "" {
+		return fmt.Errorf("mode fog needs local_command_prefix")
+	}
+	// the device-repository mirror of a gateway needs no token
+	if this.DeviceRepositoryUrl != "" && this.AuthEndpoint == "" && this.Mode != "fog" {
 		return fmt.Errorf("device commands need auth_endpoint for token exchange")
 	}
 	if this.PermissionsV2Url != "" && (this.AuthEndpoint == "" || this.AuthClientId == "") {

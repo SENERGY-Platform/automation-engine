@@ -65,6 +65,17 @@ Dasselbe Binary läuft in zwei Rollen, getrennt skalierbar und an dieselbe Daten
 - `ROLE=engine` (Vorgabe): API, Ausführung, Aufgaben, Zeitpläne.
 - `ROLE=event`: Event-Worker. Liest die Eventbeschreibungen aus der Datenbank, abonniert die zugehörigen Gerätedaten-Topics in der Consumer-Gruppe `EVENT_CONSUMER_GROUP` und korreliert Treffer direkt. Braucht `KAFKA_URL` und für die Auswertung `DEVICE_REPOSITORY_URL` mit den `AUTH_*`-Werten; das Unmarshalling läuft im Prozess. Ist device-repository nicht erreichbar, wird eine QoS-1-Nachricht erneut gelesen statt dem Owner gemeldet.
 
+## Gateway (Fog)
+
+Mit `MODE=fog` läuft dasselbe Binary auf einem Gateway, als einziger Container des Prozessmoduls und mit SQLite:
+- Gerätekommandos gehen an `command/{lokale Geräte-ID}/{lokale Service-ID}` des Gateway-Brokers (`MQTT_BROKER`, z. B. `tcp://broker:1881`); Antworten kommen über `response/#`, Fehler über `error/command/#`, erkannt am Präfix `LOCAL_COMMAND_PREFIX` (Vorgabe `automation-engine-`).
+- Geräteevents kommen von `event/#`; die Event-Rolle läuft im selben Prozess.
+- `DEVICE_REPOSITORY_URL` ist der device-repository-Mirror des Gateways, ohne Token; marshallt wird im Prozess.
+- `LAST_VALUE_URL` ist mgw-last-value, für Services, die nur Events senden.
+- `NOTIFIER_URL` zeigt auf den cloud-proxy (`http://{gateway}/notifications-v2/notifications`).
+- `STORAGE_BUDGET` begrenzt die Datenbank in Bytes (Vorgabe im Fog 1 GiB, negativ heißt unbegrenzt). Ab 80 % wird der Verlauf über die Aufbewahrung hinaus gekürzt, älteste Einträge zuerst, bis 70 %, mit einer Warnung je Tag. Ist der Datenträger voll, hält die Ausführung an und `/health` meldet einen Fehler, bis Schreiben wieder gelingt.
+- Die API ist lokal nur lesend und braucht kein Token; Deployments, Starts und Stopps kommen über die Synchronisation aus der Cloud.
+
 Namespaces aus `NAMESPACES` werden nur angelegt, wenn es sie noch nicht gibt; danach verwaltet `PUT /namespaces/{ns}` sie (Admins).
 
 ## API

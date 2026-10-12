@@ -27,12 +27,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 type Dialect string
@@ -50,6 +52,8 @@ var migrations embed.FS
 type Store struct {
 	db      *sql.DB
 	dialect Dialect
+	// the last write failed because the disk or the page limit was full (LONG-07)
+	full atomic.Bool
 }
 
 // Open connects and applies pending migrations (OPS-03).
@@ -202,12 +206,41 @@ func (this *Store) Tx(ctx context.Context, fn func(tx *Tx) error) (err error) {
 	}()
 	if err = fn(tx); err != nil {
 		_ = sqlTx.Rollback()
+		this.noteFull(err)
 		return err
 	}
 	if err = sqlTx.Commit(); err != nil {
+		this.noteFull(err)
 		return fmt.Errorf("commit: %w", err)
 	}
+	this.full.Store(false)
 	return nil
+}
+
+// noteFull remembers a write that failed for lack of space; SQLite has rolled it back, so the
+// state stays consistent (LONG-07)
+func (this *Store) noteFull(err error) {
+	if IsDiskFull(err) {
+		this.full.Store(true)
+	}
+}
+
+// Full reports whether the last write failed for lack of space; a successful write clears it.
+func (this *Store) Full() bool {
+	return this.full.Load()
+}
+
+// IsDiskFull reports a write that failed for lack of space (SQLITE_FULL, Postgres disk_full).
+func IsDiskFull(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "53100"
+	}
+	var sqliteErr *sqlite.Error
+	if errors.As(err, &sqliteErr) {
+		return sqliteErr.Code()&0xff == sqlite3.SQLITE_FULL
+	}
+	return false
 }
 
 // IsUniqueViolation reports whether err is a violated unique or primary key constraint.
@@ -424,5 +457,8 @@ func limitOffset(page model.PageOptions) (string, []any) {
 
 // Ping checks that the database is reachable (readiness, OPS-04).
 func (this *Store) Ping(ctx context.Context) error {
+	if this.Full() {
+		return model.Unavailable("the storage is full, execution is paused until space is free")
+	}
 	return this.db.PingContext(ctx)
 }

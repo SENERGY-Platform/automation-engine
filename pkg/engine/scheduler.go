@@ -479,5 +479,55 @@ func (this *Engine) housekeeping(ctx context.Context, now time.Time) error {
 		_, err := tx.PurgeReceipts(now.Add(-this.config.ReceiptRetention))
 		return err
 	})
-	return errors.Join(err, this.enforceRetention(ctx, now), this.trimModelVersions(ctx), this.store.Vacuum(ctx, 256))
+	return errors.Join(err, this.enforceRetention(ctx, now), this.enforceBudget(ctx, now), this.trimModelVersions(ctx), this.store.Vacuum(ctx, 256))
+}
+
+// BudgetWarning is the title of the warning about a nearly full storage budget.
+const BudgetWarning = "Storage nearly full"
+
+// enforceBudget trims the history beyond the retention, oldest first, when the database uses
+// 80 % of the storage budget, until it uses 70 %; it warns at most once a day. On a gateway the
+// budget takes precedence over the retention, and runtime state over history (LONG-07).
+func (this *Engine) enforceBudget(ctx context.Context, now time.Time) error {
+	budget := this.config.StorageBudget
+	if budget <= 0 {
+		return nil
+	}
+	used, err := this.usedBytes(ctx)
+	if err != nil || used < budget*8/10 {
+		return err
+	}
+	if now.Sub(this.lastBudgetWarning) >= 24*time.Hour {
+		this.lastBudgetWarning = now
+		message := fmt.Sprintf("The process engine uses %d of %d MiB; the oldest history of processes is removed beyond its retention.", used>>20, budget>>20)
+		// on a gateway the cloud addresses the warning to the owner of the network
+		if err = this.QueueNotification(ctx, "", BudgetWarning, message); err != nil {
+			this.logger.Warn("unable to queue the storage warning", "error", err)
+		}
+	}
+	for round := 0; round < 100 && used > budget*7/10; round++ {
+		var removed int64
+		err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+			removed, err = tx.TrimOldestHistory(this.config.BatchSize * 10)
+			return err
+		})
+		if err != nil || removed == 0 {
+			if removed == 0 && err == nil {
+				this.logger.Warn("storage budget exceeded by runtime state, no history left to remove", "used", used, "budget", budget)
+			}
+			return err
+		}
+		if used, err = this.usedBytes(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (this *Engine) usedBytes(ctx context.Context) (used int64, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+		used, err = tx.UsedBytes()
+		return err
+	})
+	return used, err
 }
