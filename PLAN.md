@@ -238,6 +238,8 @@ Grundlage sind die Analysen der acht Worker, von `smart-service-module-worker-li
 - `pkg/devices/repository.go`, `modifier.go`: Zugriff auf Geräte, Gerätetypen, Protokolle und Gerätegruppen mit dem Token des Owners und Cache (bisher `lib/devicerepository`), `SplitModifier` (bisher `lib/devicegroups`). Die Modelltypen kommen direkt aus `models/go`, `lib/devicerepository/model` waren nur Aliase darauf.
 - `pkg/tasks/devicecommand/{messages,marshaller,timescale}.go`: Kommando-Payload und Protokollnachricht (bisher `lib/messages`, Felder und JSON-Namen maschinell gegen das Original abgeglichen), Client des marshaller-Dienstes, letzte Werte über timescale-wrapper.
 
+**device-repository `/v3`.** Die Engine nutzt `device-repository/v3` v3.4.0 statt `/v2`; die Clients und Modelle sind für die genutzten Aufrufe gleich, die Golden-Tests laufen unverändert. `/v2` bleibt indirekt über `device-selection/v2/pkg/model`.
+
 **Nachweis.** Die Testfälle der Worker liegen unter `pkg/modules/testdata` (analytics 13, device_repository 14, info 9) und laufen als Golden-Tests durch die Engine: dieselben Anfragen an flow-engine, device-manager und device-selection, dieselben Module und Variablen. Die Tests von Marshaller und Device-Repo des event-worker sind nach `pkg/events/unmarshal_test.go` übertragen. Für `export` gab es keine Tests; `export_test.go` prüft das Verhalten aus dem Quelltext. Aus external-task-worker sind die Aspekt-Tests von `lib/messages` übertragen; Repo-Zugriff, `SplitModifier` und die timescale-Abfrage haben eigene Tests. Die Kommandoausführung selbst war schon seit M3 portiert und getestet.
 
 **Abweichungen vom Verhalten der Worker.**

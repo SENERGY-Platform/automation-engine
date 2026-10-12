@@ -20,6 +20,8 @@ github.com/SENERGY-Platform/developer-notifications v0.0.6 h1:sUr3n5YTs3zTYKSEi4
 github.com/SENERGY-Platform/developer-notifications v0.0.6/go.mod h1:DwfWoj00UUN4v9fCi60frXbFycFUIIvXeKzmABcgHK8=
 github.com/SENERGY-Platform/device-repository/v2 v2.2.2 h1:Amuki9bjVOGH5aYvNd4srCI9BcQN+nNB8f/MMP5dP9Q=
 github.com/SENERGY-Platform/device-repository/v2 v2.2.2/go.mod h1:ZQ5L+wjWtof8XsZxbMX/3hk0yVqpjXg+i+w46jr/zWk=
+github.com/SENERGY-Platform/device-repository/v3 v3.4.0 h1:K9jITusF3QV9SR/UiuA5J9B4/fM+4d5YgsV3q81sBOg=
+github.com/SENERGY-Platform/device-repository/v3 v3.4.0/go.mod h1:JgECL7Z8+DalUZCMHO7+yJpJ8xtGM7u+huT9Xac7oZA=
 github.com/SENERGY-Platform/device-selection/v2 v2.0.3 h1:Oy87B0aV1bJAfjtk2WFcuQI86gmw50WN6Ux6RroR5Zw=
 github.com/SENERGY-Platform/device-selection/v2 v2.0.3/go.mod h1:EOV/ILAfaD+b1EsN2RIxcb/lRD9AZfya+xp320rqMw4=
 github.com/SENERGY-Platform/gin-middleware v0.14.1 h1:o2le7do9++e377ixtnFXbobAJP5CSMQXW7d1dUSAwFU=

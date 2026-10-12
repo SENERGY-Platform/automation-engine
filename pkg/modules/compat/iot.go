@@ -19,8 +19,8 @@ package compat
 import (
 	"errors"
 
-	"github.com/SENERGY-Platform/device-repository/v2/lib/client"
-	devicemodel "github.com/SENERGY-Platform/device-repository/v2/lib/model"
+	"github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicemodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 )
 
 var ErrNoDeviceOrGroupSelection = errors.New("expect device or group selection")

@@ -28,7 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/SENERGY-Platform/device-repository/v2/lib/client"
+	"github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	"github.com/dop251/goja"
 )
 

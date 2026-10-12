@@ -31,7 +31,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules/compat"
-	devicerepository "github.com/SENERGY-Platform/device-repository/v2/lib/client"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	"github.com/google/uuid"
 )
 

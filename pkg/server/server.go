@@ -31,7 +31,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
-	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v2/lib/client"
+	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/api"
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"

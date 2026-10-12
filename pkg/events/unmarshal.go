@@ -25,8 +25,8 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/converter/lib/converter"
-	devicerepository "github.com/SENERGY-Platform/device-repository/v2/lib/client"
-	devicerepomodel "github.com/SENERGY-Platform/device-repository/v2/lib/model"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	marshallerconfig "github.com/SENERGY-Platform/marshaller/lib/config"
 	marshallermodel "github.com/SENERGY-Platform/marshaller/lib/marshaller/model"
 	v2 "github.com/SENERGY-Platform/marshaller/lib/marshaller/v2"

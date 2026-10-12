@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	devicemodel "github.com/SENERGY-Platform/device-repository/v2/lib/model"
+	devicemodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 )
 
 type ScriptEnvUtil struct {

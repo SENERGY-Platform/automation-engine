@@ -35,7 +35,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules/compat"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
-	devicerepository "github.com/SENERGY-Platform/device-repository/v2/lib/client"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 )
 
 // Settings are the configuration values of the former module workers (TASK-29). The parameter

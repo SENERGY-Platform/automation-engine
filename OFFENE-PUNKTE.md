@@ -66,7 +66,8 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 
 ### device-repository
 
-- [ ] **Aufgabe:** device-repository hat den Modulpfad `/v3` (bis v3.4.0), die Engine nutzt den Client von `/v2` (v2.2.2) in Modulen, Event-Unmarshalling und Parametern. Seit external-task-worker keine Abhängigkeit mehr ist, kann die Engine eigenständig wechseln.
+- [x] Die Engine nutzt seit 2026-10-12 `device-repository/v3` (v3.4.0).
+- [ ] **Aufgabe (device-selection):** `device-selection/v2` (bis v2.0.3) zieht über `pkg/model` noch `device-repository/v2` herein; in `go.mod` der Engine steht es deshalb als indirekte Abhängigkeit. Mit einer device-selection auf `/v3` entfällt es.
 
 ### models (`models/go`)
 
