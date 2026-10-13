@@ -185,6 +185,8 @@ type migration struct {
 	releaseRefs map[string]releaseRef
 	// migrated smart-service instances and their owners
 	smartInstances map[string]string
+	// modules written together with their instance
+	insertedModules map[string]bool
 	// ids of fog deployments, platform and Camunda id -> deployment id
 	fogIds map[string]string
 	// owners of networks

@@ -185,7 +185,16 @@ func (this *migration) smartServiceInstances(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	modules, err := this.sources.Modules(ctx)
+	if err != nil {
+		return err
+	}
+	modulesOf := map[string][]Module{}
+	for _, m := range modules {
+		modulesOf[m.InstanceId] = append(modulesOf[m.InstanceId], m)
+	}
 	this.smartInstances = map[string]string{}
+	this.insertedModules = map[string]bool{}
 	for _, si := range instances {
 		owner := this.options.owner(si.UserId)
 		ref, ok := this.releaseRefs[si.ReleaseId]
@@ -214,7 +223,7 @@ func (this *migration) smartServiceInstances(ctx context.Context) error {
 		finished := si.Ready || si.Error != ""
 		if this.options.Apply {
 			if finished {
-				err = this.insertFinished(ctx, si, ref, owner, variables)
+				err = this.insertFinished(ctx, si, ref, owner, variables, modulesOf[si.Id])
 			} else {
 				_, err = this.target.Controller.PutInstance(ctx, this.target.token(), smartServices, si.Id, model.StartInstanceInput{DeploymentId: ref.deploymentId,
 					DeploymentVersion: ref.version, Variables: variables, Owner: owner, Name: si.Name, Description: si.Description})
@@ -237,14 +246,16 @@ func (this *migration) smartServiceInstances(ctx context.Context) error {
 }
 
 // insertFinished writes an instance whose run ended, with the error of the old service as the
-// reason, so that its status shows it (SMS-11)
-func (this *migration) insertFinished(ctx context.Context, si SmartServiceInstance, ref releaseRef, owner string, variables map[string]any) error {
+// reason, so that its status shows it (SMS-11), together with its modules: an instance with
+// modules is kept by the retention, one without would go at once. It ended at the migration,
+// since the old service knew no end time.
+func (this *migration) insertFinished(ctx context.Context, si SmartServiceInstance, ref releaseRef, owner string, variables map[string]any, modules []Module) error {
 	return this.target.Store.Tx(ctx, func(tx *store.Tx) error {
 		d, err := tx.GetDeployment(ref.deploymentId, false)
 		if err != nil {
 			return err
 		}
-		started, ended := unix(si.CreatedAt), unix(si.UpdatedAt)
+		started, ended := unix(si.CreatedAt), time.Now().UTC()
 		state := model.StateCompleted
 		if si.Error != "" {
 			state = model.StateTerminated
@@ -255,9 +266,31 @@ func (this *migration) insertFinished(ctx context.Context, si SmartServiceInstan
 		if err = tx.InsertInstance(inst); err != nil {
 			return err
 		}
-		return tx.InsertRun(model.Run{InstanceId: si.Id, Run: 1, DeploymentVersion: ref.version, Cause: model.CauseStart, State: state, EndReason: si.Error,
-			StartedAt: started, EndedAt: &ended})
+		if err = tx.InsertRun(model.Run{InstanceId: si.Id, Run: 1, DeploymentVersion: ref.version, Cause: model.CauseStart, State: state, EndReason: si.Error,
+			StartedAt: started, EndedAt: &ended}); err != nil {
+			return err
+		}
+		for _, m := range modules {
+			if err = insertModule(tx, m, owner); err != nil {
+				return err
+			}
+			this.insertedModules[m.Id] = true
+		}
+		return nil
 	})
+}
+
+func insertModule(tx *store.Tx, m Module, owner string) error {
+	updated := unix(m.LastUpdate)
+	module := model.Module{Id: m.Id, Namespace: smartServices, InstanceId: m.InstanceId, CreatedBy: m.InstanceId, Owner: owner, ModuleType: m.Type,
+		Data: m.Data, Keys: m.Keys, DeleteInfo: deleteInfo(m), CreatedAt: updated, UpdatedAt: updated}
+	if err := tx.UpsertModule(module); err != nil {
+		return err
+	}
+	if m.Error == "" {
+		return nil
+	}
+	return tx.SetModuleCheck(m.Id, m.Error, updated)
 }
 
 // delete info of the old workers that points at services the engine replaces
@@ -299,23 +332,12 @@ func (this *migration) modules(ctx context.Context) error {
 		case err != nil:
 			this.result(step, "module", m.Id, owner, Failed, "%v", err)
 			continue
-		case exists:
+		case exists && !this.insertedModules[m.Id]:
 			this.result(step, "module", m.Id, owner, Existing, "")
 			continue
 		}
-		if this.options.Apply {
-			updated := unix(m.LastUpdate)
-			module := model.Module{Id: m.Id, Namespace: smartServices, InstanceId: m.InstanceId, CreatedBy: m.InstanceId, Owner: owner, ModuleType: m.Type,
-				Data: m.Data, Keys: m.Keys, DeleteInfo: deleteInfo(m), CreatedAt: updated, UpdatedAt: updated}
-			err = this.target.Store.Tx(ctx, func(tx *store.Tx) error {
-				if err := tx.UpsertModule(module); err != nil {
-					return err
-				}
-				if m.Error == "" {
-					return nil
-				}
-				return tx.SetModuleCheck(m.Id, m.Error, updated)
-			})
+		if this.options.Apply && !this.insertedModules[m.Id] {
+			err = this.target.Store.Tx(ctx, func(tx *store.Tx) error { return insertModule(tx, m, owner) })
 			if err != nil {
 				this.result(step, "module", m.Id, owner, Failed, "%v", err)
 				continue

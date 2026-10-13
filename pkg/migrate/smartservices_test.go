@@ -120,6 +120,9 @@ func TestSmartServicesMigrate(t *testing.T) {
 	if si1.State != model.StateCompleted || si1.DeploymentVersion != 1 || si1.Name != "Kitchen" || si1.StartVariables["room"] != "kitchen" {
 		t.Errorf("an instance whose setup ended keeps its release and does not run again: %+v", si1)
 	}
+	if si1.EndedAt == nil || si1.EndedAt.Before(time.Now().Add(-time.Minute)) {
+		t.Errorf("it ended at the migration, not when it was last changed, so that the retention keeps it: %v", si1.EndedAt)
+	}
 	if si1.Status != model.StatusError || !strings.Contains(si1.StatusMessage, "export missing") {
 		t.Errorf("the error of a module shows in the status, as before: %+v", si1)
 	}
