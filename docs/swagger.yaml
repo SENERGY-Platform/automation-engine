@@ -5,6 +5,11 @@ definitions:
       xml:
         type: string
     type: object
+  deprecated.BpmnResource:
+    properties:
+      id:
+        type: string
+    type: object
   deprecated.CamundaDeployment:
     properties:
       deploymentTime:
@@ -22,6 +27,41 @@ definitions:
     properties:
       count:
         type: integer
+    type: object
+  deprecated.Dependencies:
+    properties:
+      deployment_id:
+        type: string
+      devices:
+        items:
+          $ref: '#/definitions/deprecated.DeviceDependency'
+        type: array
+      events:
+        items:
+          $ref: '#/definitions/deprecated.EventDependency'
+        type: array
+      owner:
+        type: string
+    type: object
+  deprecated.DeviceDependency:
+    properties:
+      bpmn_resources:
+        items:
+          $ref: '#/definitions/deprecated.BpmnResource'
+        type: array
+      device_id:
+        type: string
+      name:
+        type: string
+    type: object
+  deprecated.EventDependency:
+    properties:
+      bpmn_resources:
+        items:
+          $ref: '#/definitions/deprecated.BpmnResource'
+        type: array
+      event_id:
+        type: string
     type: object
   deprecated.ExtendedDeployment:
     properties:
@@ -136,6 +176,13 @@ definitions:
       unix_timestamp_in_s:
         type: integer
       value: {}
+    type: object
+  deprecated.PrepareRequest:
+    properties:
+      svg:
+        type: string
+      xml:
+        type: string
     type: object
   deprecated.Process:
     properties:
@@ -1993,6 +2040,385 @@ definitions:
       to:
         type: string
     type: object
+  models.AspectNode:
+    properties:
+      ancestor_ids:
+        items:
+          type: string
+        type: array
+      aspect_class_id:
+        type: string
+      child_ids:
+        items:
+          type: string
+        type: array
+      descendent_ids:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: string
+      root_id:
+        type: string
+    type: object
+  models.ConditionalEvent:
+    properties:
+      event_id:
+        type: string
+      qos:
+        type: integer
+      script:
+        type: string
+      selection:
+        $ref: '#/definitions/models.Selection'
+      value_variable:
+        type: string
+      variables:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  models.Configurable:
+    properties:
+      aspect_node:
+        allOf:
+        - $ref: '#/definitions/models.AspectNode'
+        description: 'deprecated: alias for a single element AspectNodes; holds the
+          node with the alphabetically first id'
+      aspect_nodes:
+        items:
+          $ref: '#/definitions/models.AspectNode'
+        type: array
+      characteristic_id:
+        type: string
+      function_id:
+        type: string
+      path:
+        type: string
+      type:
+        type: string
+      value: {}
+    type: object
+  models.Deployment:
+    properties:
+      description:
+        type: string
+      diagram:
+        $ref: '#/definitions/models.Diagram'
+      elements:
+        items:
+          $ref: '#/definitions/models.Element'
+        type: array
+      executable:
+        type: boolean
+      id:
+        type: string
+      incident_handling:
+        $ref: '#/definitions/models.IncidentHandling'
+      name:
+        type: string
+      start_parameter:
+        items:
+          $ref: '#/definitions/models.ProcessStartParameter'
+        type: array
+      version:
+        type: integer
+    type: object
+  models.Diagram:
+    properties:
+      svg:
+        type: string
+      xml_deployed:
+        type: string
+      xml_raw:
+        type: string
+    type: object
+  models.Element:
+    properties:
+      bpmn_id:
+        type: string
+      conditional_event:
+        $ref: '#/definitions/models.ConditionalEvent'
+      group:
+        type: string
+      message_event:
+        $ref: '#/definitions/models.MessageEvent'
+      name:
+        type: string
+      notification:
+        $ref: '#/definitions/models.Notification'
+      order:
+        type: integer
+      task:
+        $ref: '#/definitions/models.Task'
+      time_event:
+        $ref: '#/definitions/models.TimeEvent'
+    type: object
+  models.GenericEventSource:
+    properties:
+      filter_ids:
+        type: string
+      filter_type:
+        type: string
+      topic:
+        type: string
+    type: object
+  models.Import:
+    properties:
+      configs:
+        items:
+          $ref: '#/definitions/models.ImportConfig'
+        type: array
+      id:
+        type: string
+      image:
+        type: string
+      import_type_id:
+        type: string
+      kafka_topic:
+        type: string
+      name:
+        type: string
+      restart:
+        type: boolean
+    type: object
+  models.ImportConfig:
+    properties:
+      name:
+        type: string
+      value: {}
+    type: object
+  models.ImportContentVariable:
+    properties:
+      aspect_id:
+        description: 'deprecated: please use AspectIds'
+        type: string
+      aspect_ids:
+        items:
+          type: string
+        type: array
+      characteristic_id:
+        type: string
+      function_id:
+        type: string
+      name:
+        type: string
+      sub_content_variables:
+        items:
+          $ref: '#/definitions/models.ImportContentVariable'
+        type: array
+      type:
+        type: string
+      use_as_tag:
+        type: boolean
+    type: object
+  models.ImportType:
+    properties:
+      configs:
+        items:
+          $ref: '#/definitions/models.ImportTypeConfig'
+        type: array
+      cost:
+        type: integer
+      default_restart:
+        type: boolean
+      description:
+        type: string
+      id:
+        type: string
+      image:
+        type: string
+      name:
+        type: string
+      output:
+        $ref: '#/definitions/models.ImportContentVariable'
+      owner:
+        type: string
+    type: object
+  models.ImportTypeConfig:
+    properties:
+      default_value: {}
+      description:
+        type: string
+      name:
+        type: string
+      type:
+        type: string
+    type: object
+  models.IncidentHandling:
+    properties:
+      notify:
+        type: boolean
+      restart:
+        type: boolean
+    type: object
+  models.MessageEvent:
+    properties:
+      event_id:
+        type: string
+      flow_id:
+        type: string
+      selection:
+        $ref: '#/definitions/models.Selection'
+      use_marshaller:
+        type: boolean
+      value:
+        type: string
+    type: object
+  models.Notification:
+    properties:
+      message:
+        type: string
+      title:
+        type: string
+    type: object
+  models.PathOption:
+    properties:
+      aspectNode:
+        allOf:
+        - $ref: '#/definitions/models.AspectNode'
+        description: 'deprecated: alias for a single element AspectNodes; holds the
+          node with the alphabetically first id'
+      aspectNodes:
+        items:
+          $ref: '#/definitions/models.AspectNode'
+        type: array
+      characteristicId:
+        type: string
+      configurables:
+        items:
+          $ref: '#/definitions/models.Configurable'
+        type: array
+      functionId:
+        type: string
+      interaction:
+        type: string
+      isVoid:
+        type: boolean
+      path:
+        type: string
+      type:
+        type: string
+      value: {}
+    type: object
+  models.ProcessFilterCriteria:
+    properties:
+      aspect_id:
+        description: 'deprecated: please use AspectIds'
+        type: string
+      aspect_ids:
+        items:
+          type: string
+        type: array
+      characteristic_id:
+        type: string
+      device_class_id:
+        type: string
+      function_id:
+        type: string
+    type: object
+  models.ProcessStartParameter:
+    properties:
+      default:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      properties:
+        additionalProperties:
+          type: string
+        type: object
+      type:
+        type: string
+    type: object
+  models.Selection:
+    properties:
+      filter_criteria:
+        $ref: '#/definitions/models.ProcessFilterCriteria'
+      selected_device_group_id:
+        type: string
+      selected_device_id:
+        type: string
+      selected_generic_event_source:
+        $ref: '#/definitions/models.GenericEventSource'
+      selected_import_id:
+        type: string
+      selected_path:
+        $ref: '#/definitions/models.PathOption'
+      selected_service_id:
+        type: string
+      selection_options:
+        items:
+          $ref: '#/definitions/models.SelectionOption'
+        type: array
+    type: object
+  models.SelectionDevice:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  models.SelectionDeviceGroup:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  models.SelectionOption:
+    properties:
+      device:
+        $ref: '#/definitions/models.SelectionDevice'
+      device_group:
+        $ref: '#/definitions/models.SelectionDeviceGroup'
+      import:
+        $ref: '#/definitions/models.Import'
+      importType:
+        $ref: '#/definitions/models.ImportType'
+      path_options:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/models.PathOption'
+          type: array
+        type: object
+      services:
+        items:
+          $ref: '#/definitions/models.SelectionService'
+        type: array
+    type: object
+  models.SelectionService:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  models.Task:
+    properties:
+      parameter:
+        additionalProperties:
+          type: string
+        type: object
+      prefer_event:
+        type: boolean
+      retries:
+        type: integer
+      selection:
+        $ref: '#/definitions/models.Selection'
+    type: object
+  models.TimeEvent:
+    properties:
+      time:
+        type: string
+      type:
+        type: string
+    type: object
 info:
   contact: {}
   description: Models, deployments and instances of processes and smart services.
@@ -2002,6 +2428,377 @@ info:
   title: Automation-Engine API
   version: "0.1"
 paths:
+  /deprecated/deployment/dependencies:
+    get:
+      deprecated: true
+      parameters:
+      - description: comma separated deployment ids
+        in: query
+        name: ids
+        type: string
+      - description: page size, default 100
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.Dependencies'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: devices and events deployments use
+      tags:
+      - deprecated-deployment
+  /deprecated/deployment/dependencies/{id}:
+    get:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.Dependencies'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: devices and events a deployment uses
+      tags:
+      - deprecated-deployment
+  /deprecated/deployment/v3/deployments:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size, 0 is all
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: name with .asc or .desc
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Deployment'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: deployments in the format version 3
+      tags:
+      - deprecated-deployment
+    post:
+      deprecated: true
+      parameters:
+      - description: source, e.g. sepl
+        in: query
+        name: source
+        type: string
+      - description: deployment
+        in: body
+        name: deployment
+        required: true
+        schema:
+          $ref: '#/definitions/models.Deployment'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Deployment'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: deploy in the format version 3
+      tags:
+      - deprecated-deployment
+  /deprecated/deployment/v3/deployments/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: boolean
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete a deployment
+      tags:
+      - deprecated-deployment
+    get:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: device options, default true
+        in: query
+        name: with_options
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Deployment'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: deployment in the format version 3
+      tags:
+      - deprecated-deployment
+    put:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: deployment
+        in: body
+        name: deployment
+        required: true
+        schema:
+          $ref: '#/definitions/models.Deployment'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Deployment'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: replace a deployment; running instances are stopped
+      tags:
+      - deprecated-deployment
+  /deprecated/deployment/v3/prepared-deployments:
+    post:
+      deprecated: true
+      parameters:
+      - description: device options, default true
+        in: query
+        name: with_options
+        type: boolean
+      - description: BPMN and SVG
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.PrepareRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Deployment'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: prepare a deployment of BPMN of the old designer
+      tags:
+      - deprecated-deployment
+  /deprecated/deployment/v3/prepared-deployments/{modelId}:
+    get:
+      deprecated: true
+      parameters:
+      - description: model id
+        in: path
+        name: modelId
+        required: true
+        type: string
+      - description: device options, default true
+        in: query
+        name: with_options
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Deployment'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: prepare a deployment of a model
+      tags:
+      - deprecated-deployment
+  /deprecated/deployment/v3/start-parameters/{modelId}:
+    get:
+      deprecated: true
+      parameters:
+      - description: model id
+        in: path
+        name: modelId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.ProcessStartParameter'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: start parameters of a model
+      tags:
+      - deprecated-deployment
   /deprecated/engine/deployment:
     get:
       deprecated: true

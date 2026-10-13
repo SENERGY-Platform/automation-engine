@@ -29,8 +29,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +60,7 @@ type Handler struct {
 func New(c api.Controller, counter Counter) *Handler {
 	this := &Handler{c: c, counter: counter, mux: http.NewServeMux()}
 	this.engine()
+	this.deployments()
 	this.repository()
 	this.io()
 	this.incidents()
@@ -256,4 +259,8 @@ func splitList(value string) []string {
 		}
 	}
 	return result
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	return slices.Sorted(maps.Keys(m))
 }

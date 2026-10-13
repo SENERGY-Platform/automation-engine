@@ -19,6 +19,588 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/deprecated/deployment/dependencies": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-deployment"
+                ],
+                "summary": "devices and events deployments use",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "comma separated deployment ids",
+                        "name": "ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size, default 100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/deprecated.Dependencies"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/deployment/dependencies/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-deployment"
+                ],
+                "summary": "devices and events a deployment uses",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/deprecated.Dependencies"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/deployment/v3/deployments": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-deployment"
+                ],
+                "summary": "deployments in the format version 3",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "page size, 0 is all",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "name with .asc or .desc",
+                        "name": "sort",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Deployment"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-deployment"
+                ],
+                "summary": "deploy in the format version 3",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "source, e.g. sepl",
+                        "name": "source",
+                        "in": "query"
+                    },
+                    {
+                        "description": "deployment",
+                        "name": "deployment",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/deployment/v3/deployments/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-deployment"
+                ],
+                "summary": "deployment in the format version 3",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "device options, default true",
+                        "name": "with_options",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-deployment"
+                ],
+                "summary": "replace a deployment; running instances are stopped",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "deployment",
+                        "name": "deployment",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-deployment"
+                ],
+                "summary": "delete a deployment",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/deployment/v3/prepared-deployments": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-deployment"
+                ],
+                "summary": "prepare a deployment of BPMN of the old designer",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "device options, default true",
+                        "name": "with_options",
+                        "in": "query"
+                    },
+                    {
+                        "description": "BPMN and SVG",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/deprecated.PrepareRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/deployment/v3/prepared-deployments/{modelId}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-deployment"
+                ],
+                "summary": "prepare a deployment of a model",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "model id",
+                        "name": "modelId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "device options, default true",
+                        "name": "with_options",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/deployment/v3/start-parameters/{modelId}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-deployment"
+                ],
+                "summary": "start parameters of a model",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "model id",
+                        "name": "modelId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.ProcessStartParameter"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/deprecated/engine/deployment": {
             "get": {
                 "security": [
@@ -6600,6 +7182,14 @@ const docTemplate = `{
                 }
             }
         },
+        "deprecated.BpmnResource": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
         "deprecated.CamundaDeployment": {
             "type": "object",
             "properties": {
@@ -6625,6 +7215,60 @@ const docTemplate = `{
             "properties": {
                 "count": {
                     "type": "integer"
+                }
+            }
+        },
+        "deprecated.Dependencies": {
+            "type": "object",
+            "properties": {
+                "deployment_id": {
+                    "type": "string"
+                },
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/deprecated.DeviceDependency"
+                    }
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/deprecated.EventDependency"
+                    }
+                },
+                "owner": {
+                    "type": "string"
+                }
+            }
+        },
+        "deprecated.DeviceDependency": {
+            "type": "object",
+            "properties": {
+                "bpmn_resources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/deprecated.BpmnResource"
+                    }
+                },
+                "device_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "deprecated.EventDependency": {
+            "type": "object",
+            "properties": {
+                "bpmn_resources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/deprecated.BpmnResource"
+                    }
+                },
+                "event_id": {
+                    "type": "string"
                 }
             }
         },
@@ -6799,6 +7443,17 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "value": {}
+            }
+        },
+        "deprecated.PrepareRequest": {
+            "type": "object",
+            "properties": {
+                "svg": {
+                    "type": "string"
+                },
+                "xml": {
+                    "type": "string"
+                }
             }
         },
         "deprecated.Process": {
@@ -9481,6 +10136,585 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.AspectNode": {
+            "type": "object",
+            "properties": {
+                "ancestor_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "aspect_class_id": {
+                    "type": "string"
+                },
+                "child_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "descendent_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "root_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ConditionalEvent": {
+            "type": "object",
+            "properties": {
+                "event_id": {
+                    "type": "string"
+                },
+                "qos": {
+                    "type": "integer"
+                },
+                "script": {
+                    "type": "string"
+                },
+                "selection": {
+                    "$ref": "#/definitions/models.Selection"
+                },
+                "value_variable": {
+                    "type": "string"
+                },
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "models.Configurable": {
+            "type": "object",
+            "properties": {
+                "aspect_node": {
+                    "description": "deprecated: alias for a single element AspectNodes; holds the node with the alphabetically first id",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.AspectNode"
+                        }
+                    ]
+                },
+                "aspect_nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.AspectNode"
+                    }
+                },
+                "characteristic_id": {
+                    "type": "string"
+                },
+                "function_id": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "value": {}
+            }
+        },
+        "models.Deployment": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "diagram": {
+                    "$ref": "#/definitions/models.Diagram"
+                },
+                "elements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Element"
+                    }
+                },
+                "executable": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "incident_handling": {
+                    "$ref": "#/definitions/models.IncidentHandling"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "start_parameter": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ProcessStartParameter"
+                    }
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.Diagram": {
+            "type": "object",
+            "properties": {
+                "svg": {
+                    "type": "string"
+                },
+                "xml_deployed": {
+                    "type": "string"
+                },
+                "xml_raw": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.Element": {
+            "type": "object",
+            "properties": {
+                "bpmn_id": {
+                    "type": "string"
+                },
+                "conditional_event": {
+                    "$ref": "#/definitions/models.ConditionalEvent"
+                },
+                "group": {
+                    "type": "string"
+                },
+                "message_event": {
+                    "$ref": "#/definitions/models.MessageEvent"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notification": {
+                    "$ref": "#/definitions/models.Notification"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "task": {
+                    "$ref": "#/definitions/models.Task"
+                },
+                "time_event": {
+                    "$ref": "#/definitions/models.TimeEvent"
+                }
+            }
+        },
+        "models.GenericEventSource": {
+            "type": "object",
+            "properties": {
+                "filter_ids": {
+                    "type": "string"
+                },
+                "filter_type": {
+                    "type": "string"
+                },
+                "topic": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.Import": {
+            "type": "object",
+            "properties": {
+                "configs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ImportConfig"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "image": {
+                    "type": "string"
+                },
+                "import_type_id": {
+                    "type": "string"
+                },
+                "kafka_topic": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "restart": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "models.ImportConfig": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "value": {}
+            }
+        },
+        "models.ImportContentVariable": {
+            "type": "object",
+            "properties": {
+                "aspect_id": {
+                    "description": "deprecated: please use AspectIds",
+                    "type": "string"
+                },
+                "aspect_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "characteristic_id": {
+                    "type": "string"
+                },
+                "function_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sub_content_variables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ImportContentVariable"
+                    }
+                },
+                "type": {
+                    "type": "string"
+                },
+                "use_as_tag": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "models.ImportType": {
+            "type": "object",
+            "properties": {
+                "configs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ImportTypeConfig"
+                    }
+                },
+                "cost": {
+                    "type": "integer"
+                },
+                "default_restart": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "image": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "output": {
+                    "$ref": "#/definitions/models.ImportContentVariable"
+                },
+                "owner": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ImportTypeConfig": {
+            "type": "object",
+            "properties": {
+                "default_value": {},
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.IncidentHandling": {
+            "type": "object",
+            "properties": {
+                "notify": {
+                    "type": "boolean"
+                },
+                "restart": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "models.MessageEvent": {
+            "type": "object",
+            "properties": {
+                "event_id": {
+                    "type": "string"
+                },
+                "flow_id": {
+                    "type": "string"
+                },
+                "selection": {
+                    "$ref": "#/definitions/models.Selection"
+                },
+                "use_marshaller": {
+                    "type": "boolean"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.Notification": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.PathOption": {
+            "type": "object",
+            "properties": {
+                "aspectNode": {
+                    "description": "deprecated: alias for a single element AspectNodes; holds the node with the alphabetically first id",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.AspectNode"
+                        }
+                    ]
+                },
+                "aspectNodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.AspectNode"
+                    }
+                },
+                "characteristicId": {
+                    "type": "string"
+                },
+                "configurables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Configurable"
+                    }
+                },
+                "functionId": {
+                    "type": "string"
+                },
+                "interaction": {
+                    "type": "string"
+                },
+                "isVoid": {
+                    "type": "boolean"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "value": {}
+            }
+        },
+        "models.ProcessFilterCriteria": {
+            "type": "object",
+            "properties": {
+                "aspect_id": {
+                    "description": "deprecated: please use AspectIds",
+                    "type": "string"
+                },
+                "aspect_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "characteristic_id": {
+                    "type": "string"
+                },
+                "device_class_id": {
+                    "type": "string"
+                },
+                "function_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ProcessStartParameter": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "properties": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.Selection": {
+            "type": "object",
+            "properties": {
+                "filter_criteria": {
+                    "$ref": "#/definitions/models.ProcessFilterCriteria"
+                },
+                "selected_device_group_id": {
+                    "type": "string"
+                },
+                "selected_device_id": {
+                    "type": "string"
+                },
+                "selected_generic_event_source": {
+                    "$ref": "#/definitions/models.GenericEventSource"
+                },
+                "selected_import_id": {
+                    "type": "string"
+                },
+                "selected_path": {
+                    "$ref": "#/definitions/models.PathOption"
+                },
+                "selected_service_id": {
+                    "type": "string"
+                },
+                "selection_options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.SelectionOption"
+                    }
+                }
+            }
+        },
+        "models.SelectionDevice": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.SelectionDeviceGroup": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.SelectionOption": {
+            "type": "object",
+            "properties": {
+                "device": {
+                    "$ref": "#/definitions/models.SelectionDevice"
+                },
+                "device_group": {
+                    "$ref": "#/definitions/models.SelectionDeviceGroup"
+                },
+                "import": {
+                    "$ref": "#/definitions/models.Import"
+                },
+                "importType": {
+                    "$ref": "#/definitions/models.ImportType"
+                },
+                "path_options": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/models.PathOption"
+                        }
+                    }
+                },
+                "services": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.SelectionService"
+                    }
+                }
+            }
+        },
+        "models.SelectionService": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.Task": {
+            "type": "object",
+            "properties": {
+                "parameter": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "prefer_event": {
+                    "type": "boolean"
+                },
+                "retries": {
+                    "type": "integer"
+                },
+                "selection": {
+                    "$ref": "#/definitions/models.Selection"
+                }
+            }
+        },
+        "models.TimeEvent": {
+            "type": "object",
+            "properties": {
+                "time": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 }
             }
