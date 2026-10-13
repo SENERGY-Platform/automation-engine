@@ -400,8 +400,8 @@ func (this *Service) RemoveUser(ctx context.Context, userId string, owners Owner
 	return nil
 }
 
-// rightsMessage is what permissions-v2 publishes on a rights change
-type rightsMessage struct {
+// RightsMessage is what permissions-v2 publishes on a rights change
+type RightsMessage struct {
 	Command string `json:"command"`
 	Id      string `json:"id"`
 	Rights  struct {
@@ -412,7 +412,7 @@ type rightsMessage struct {
 // HandleRightsMessage restores the owner's administrate right when it was withdrawn directly in
 // permissions-v2 (SEC-10): the resource is registered again, which adds the owner.
 func (this *Service) HandleRightsMessage(ctx context.Context, raw []byte) error {
-	var msg rightsMessage
+	var msg RightsMessage
 	if err := json.Unmarshal(raw, &msg); err != nil || msg.Command != "RIGHTS" || msg.Id == "" {
 		return nil
 	}

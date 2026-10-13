@@ -95,6 +95,8 @@ Namespaces aus `NAMESPACES` werden nur angelegt, wenn es sie noch nicht gibt; da
 
 OpenAPI in `docs/swagger.json` und `docs/swagger.yaml`, erzeugt mit `go generate ./...` aus den Go-Typen in `pkg/model` und den Annotationen in `pkg/api`. Nach Änderungen an API oder Typen neu erzeugen und mit einchecken.
 
+AsyncAPI 3.0.0 in `docs/asyncapi.json`: die Kafka-Topics und MQTT-Topics, die die Engine liest und schreibt (Gerätekommandos, Geräte- und Importdaten, Plattformsignale, Gateway, Synchronisation). Erzeugt ebenfalls mit `go generate ./...` durch `docs/asyncapi-gen`; die Nutzdaten-Schemas stammen aus den Go-Typen der Nachrichten, die Topic-Namen aus den Vorgaben der Konfiguration. Anders als bei anderen Plattformdiensten gibt es keine Umwandlung von 2.4.0 von Hand, und CI prüft die Datei wie die OpenAPI.
+
 Go-Client in `pkg/client`: `client.New(url)` für einen laufenden Server, `client.NewTestClient(ctx)` für Tests ohne Netz und Container; beide erfüllen dasselbe Interface.
 
 ## Modelle aus Camunda

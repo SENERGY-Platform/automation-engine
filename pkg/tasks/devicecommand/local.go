@@ -44,7 +44,8 @@ const (
 	localSegment       = "data"
 )
 
-type localEnvelope struct {
+// LocalEnvelope is a command to a device connector on the broker of a gateway, and its answer.
+type LocalEnvelope struct {
 	CommandId string `json:"command_id"`
 	Data      string `json:"data"`
 }
@@ -69,7 +70,7 @@ func (this *LocalTransport) Produce(ctx context.Context, _ string, _ string, pay
 	if device == "" || service == "" {
 		return fmt.Errorf("device %v or service %v has no local id", msg.Metadata.Device.Id, msg.Metadata.Service.Id)
 	}
-	envelope, err := json.Marshal(localEnvelope{CommandId: this.prefix + msg.TaskInfo.TaskId, Data: msg.Request.Input[localSegment]})
+	envelope, err := json.Marshal(LocalEnvelope{CommandId: this.prefix + msg.TaskInfo.TaskId, Data: msg.Request.Input[localSegment]})
 	if err != nil {
 		return err
 	}
@@ -79,7 +80,7 @@ func (this *LocalTransport) Produce(ctx context.Context, _ string, _ string, pay
 // HandleLocalResponse completes the sub-task of an answer of a device connector. The protocol
 // message is formed again from the stored sub-task, so that a restart loses no correlation.
 func (this *Type) HandleLocalResponse(ctx context.Context, _ string, payload []byte) error {
-	var envelope localEnvelope
+	var envelope LocalEnvelope
 	if err := json.Unmarshal(payload, &envelope); err != nil {
 		return nil
 	}

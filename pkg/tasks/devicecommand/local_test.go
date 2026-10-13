@@ -43,10 +43,10 @@ func newLocalEnv(t *testing.T) (*env, *mqtt.Memory) {
 	return e, broker
 }
 
-func commands(t *testing.T, broker *mqtt.Memory) (result []localEnvelope, topics []string) {
+func commands(t *testing.T, broker *mqtt.Memory) (result []LocalEnvelope, topics []string) {
 	t.Helper()
 	for _, p := range broker.Published("command/#") {
-		var envelope localEnvelope
+		var envelope LocalEnvelope
 		if err := json.Unmarshal(p.Payload, &envelope); err != nil {
 			t.Fatal(err)
 		}
@@ -70,7 +70,7 @@ func TestLocalCommandGoesToTheConnectorAndCompletesWithItsResponse(t *testing.T)
 	// an answer to device-command on the same broker is not this engine's
 	_ = broker.Publish(ctx, "response/local-d1/local-s-get", 2, []byte(`{"command_id":"device-command-1","data":"99"}`))
 	e.expectState(inst.Id, model.StateRunning)
-	answer, _ := json.Marshal(localEnvelope{CommandId: sent[0].CommandId, Data: "21.5"})
+	answer, _ := json.Marshal(LocalEnvelope{CommandId: sent[0].CommandId, Data: "21.5"})
 	_ = broker.Publish(ctx, "response/local-d1/local-s-get", 2, answer)
 	e.expectState(inst.Id, model.StateCompleted)
 	if out, ok := e.variable(inst.Id, "out").([]any); !ok || len(out) != 1 || out[0] != 21.5 {

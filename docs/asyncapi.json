@@ -1,0 +1,2580 @@
+{
+    "asyncapi": "3.0.0",
+    "info": {
+        "title": "Automation-Engine",
+        "version": "0.1",
+        "description": "Kafka topics and MQTT topics of the engine. Topic names are the defaults of the configuration; the environment variable that changes one is named in its channel. {placeholders} in addresses are channel parameters."
+    },
+    "servers": {
+        "gateway-mqtt": {
+            "host": "mqtt:1883",
+            "description": "MQTT_BROKER; the broker of a gateway, in fog mode, shared with the device connectors.",
+            "protocol": "mqtt"
+        },
+        "kafka": {
+            "host": "kafka:9092",
+            "description": "KAFKA_URL; the cloud.",
+            "protocol": "kafka"
+        },
+        "sync-mqtt": {
+            "host": "mqtt:1883",
+            "description": "SYNC_MQTT_BROKER; the cloud broker that mgw-device-cloud-connector bridges to the brokers of the gateways.",
+            "protocol": "mqtt"
+        }
+    },
+    "channels": {
+        "cloudApplied": {
+            "address": "processes/{networkId}/state/engine/v1/applied",
+            "messages": {
+                "Applied": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncApplied"
+                    },
+                    "name": "Applied",
+                    "title": "Applied"
+                }
+            },
+            "parameters": {
+                "networkId": {
+                    "description": "id of the hub of the gateway"
+                }
+            },
+            "description": "Gateway to cloud; the replicas share the subscription SYNC_SHARE_GROUP.",
+            "servers": [
+                {
+                    "$ref": "#/servers/sync-mqtt"
+                }
+            ]
+        },
+        "cloudChanges": {
+            "address": "processes/{networkId}/state/engine/v1/changes",
+            "messages": {
+                "Changes": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncChanges"
+                    },
+                    "name": "Changes",
+                    "title": "Changes"
+                }
+            },
+            "parameters": {
+                "networkId": {
+                    "description": "id of the hub of the gateway"
+                }
+            },
+            "description": "Gateway to cloud; the replicas share the subscription SYNC_SHARE_GROUP.",
+            "servers": [
+                {
+                    "$ref": "#/servers/sync-mqtt"
+                }
+            ]
+        },
+        "cloudDesired": {
+            "address": "processes/{networkId}/cmd/engine/v1/desired",
+            "messages": {
+                "Desired": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncDesired"
+                    },
+                    "name": "Desired",
+                    "title": "Desired"
+                }
+            },
+            "parameters": {
+                "networkId": {
+                    "description": "id of the hub of the gateway"
+                }
+            },
+            "description": "Cloud to gateway.",
+            "servers": [
+                {
+                    "$ref": "#/servers/sync-mqtt"
+                }
+            ]
+        },
+        "cloudRequest": {
+            "address": "processes/{networkId}/cmd/engine/v1/request",
+            "messages": {
+                "Request": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncRequest"
+                    },
+                    "name": "Request",
+                    "title": "Request"
+                }
+            },
+            "parameters": {
+                "networkId": {
+                    "description": "id of the hub of the gateway"
+                }
+            },
+            "description": "Cloud to gateway.",
+            "servers": [
+                {
+                    "$ref": "#/servers/sync-mqtt"
+                }
+            ]
+        },
+        "cloudResponse": {
+            "address": "processes/{networkId}/state/engine/v1/response/{replicaId}",
+            "messages": {
+                "Response": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncResponse"
+                    },
+                    "name": "Response",
+                    "title": "Response"
+                }
+            },
+            "parameters": {
+                "networkId": {
+                    "description": "id of the hub of the gateway"
+                },
+                "replicaId": {
+                    "description": "id of the replica that asked"
+                }
+            },
+            "description": "Answer of a gateway to a request; only the replica that asked subscribes.",
+            "servers": [
+                {
+                    "$ref": "#/servers/sync-mqtt"
+                }
+            ]
+        },
+        "cloudStatus": {
+            "address": "processes/{networkId}/state/engine/v1/status",
+            "messages": {
+                "Status": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncStatus"
+                    },
+                    "name": "Status",
+                    "title": "Status"
+                }
+            },
+            "parameters": {
+                "networkId": {
+                    "description": "id of the hub of the gateway"
+                }
+            },
+            "description": "Gateway to cloud; the replicas share the subscription SYNC_SHARE_GROUP.",
+            "servers": [
+                {
+                    "$ref": "#/servers/sync-mqtt"
+                }
+            ]
+        },
+        "cloudUpAck": {
+            "address": "processes/{networkId}/cmd/engine/v1/ack",
+            "messages": {
+                "UpAck": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncUpAck"
+                    },
+                    "name": "UpAck",
+                    "title": "UpAck"
+                }
+            },
+            "parameters": {
+                "networkId": {
+                    "description": "id of the hub of the gateway"
+                }
+            },
+            "description": "Cloud to gateway.",
+            "servers": [
+                {
+                    "$ref": "#/servers/sync-mqtt"
+                }
+            ]
+        },
+        "commandError": {
+            "address": "errors",
+            "messages": {
+                "ProtocolMsg": {
+                    "payload": {
+                        "$ref": "#/components/schemas/DevicecommandProtocolMsg"
+                    },
+                    "name": "ProtocolMsg",
+                    "title": "ProtocolMsg"
+                }
+            },
+            "description": "ERROR_TOPIC; failed commands, read in the consumer group KAFKA_CONSUMER_GROUP. Protocol handlers may also POST them to /errors of the internal port.",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "commandResponse": {
+            "address": "response",
+            "messages": {
+                "ProtocolMsg": {
+                    "payload": {
+                        "$ref": "#/components/schemas/DevicecommandProtocolMsg"
+                    },
+                    "name": "ProtocolMsg",
+                    "title": "ProtocolMsg"
+                }
+            },
+            "description": "RESPONSE_TOPIC; answers of protocol handlers, read in the consumer group KAFKA_CONSUMER_GROUP. Protocol handlers may also POST them to /responses of the internal port.",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "deviceData": {
+            "address": "{serviceTopic}",
+            "messages": {
+                "DeviceMessage": {
+                    "payload": {
+                        "$ref": "#/components/schemas/EventsDeviceMessage"
+                    },
+                    "name": "DeviceMessage",
+                    "title": "DeviceMessage"
+                }
+            },
+            "parameters": {
+                "serviceTopic": {
+                    "description": "service id with ':' and '#' replaced by '_'"
+                }
+            },
+            "description": "Device data of the services that event descriptions of deployments name, read in the consumer group EVENT_CONSUMER_GROUP. The topic is the service id with ':' and '#' replaced by '_'.",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "deviceGroups": {
+            "address": "device-groups",
+            "messages": {
+                "DeviceGroupCommand": {
+                    "payload": {
+                        "$ref": "#/components/schemas/InvalidatorCommand"
+                    },
+                    "name": "DeviceGroupCommand",
+                    "title": "DeviceGroupCommand"
+                }
+            },
+            "description": "DEVICE_GROUP_TOPIC; a changed device group changes the event descriptions of deployments that select it (DEP-08) and clears its cache entry in every replica.",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "deviceTypes": {
+            "address": "device-types",
+            "messages": {
+                "CacheInvalidation": {
+                    "payload": {
+                        "$ref": "#/components/schemas/InvalidatorCommand"
+                    },
+                    "name": "CacheInvalidation",
+                    "title": "CacheInvalidation"
+                }
+            },
+            "description": "CACHE_INVALIDATION_ALL_TOPICS; any message clears the device cache of every replica.",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "devices": {
+            "address": "devices",
+            "messages": {
+                "DeviceCommand": {
+                    "payload": {
+                        "$ref": "#/components/schemas/InvalidatorCommand"
+                    },
+                    "name": "DeviceCommand",
+                    "title": "DeviceCommand"
+                }
+            },
+            "description": "DEVICE_TOPIC; clears the cache entry of the device in every replica.",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "gatewayApplied": {
+            "address": "processes/state/engine/v1/applied",
+            "messages": {
+                "Applied": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncApplied"
+                    },
+                    "name": "Applied",
+                    "title": "Applied"
+                }
+            },
+            "description": "Gateway to cloud, on the broker of the gateway.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "gatewayChanges": {
+            "address": "processes/state/engine/v1/changes",
+            "messages": {
+                "Changes": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncChanges"
+                    },
+                    "name": "Changes",
+                    "title": "Changes"
+                }
+            },
+            "description": "Gateway to cloud, on the broker of the gateway.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "gatewayDesired": {
+            "address": "processes/cmd/engine/v1/desired",
+            "messages": {
+                "Desired": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncDesired"
+                    },
+                    "name": "Desired",
+                    "title": "Desired"
+                }
+            },
+            "description": "Cloud to gateway, on the broker of the gateway.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "gatewayRequest": {
+            "address": "processes/cmd/engine/v1/request",
+            "messages": {
+                "Request": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncRequest"
+                    },
+                    "name": "Request",
+                    "title": "Request"
+                }
+            },
+            "description": "Cloud to gateway, on the broker of the gateway.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "gatewayResponse": {
+            "address": "processes/state/engine/v1/response/{replicaId}",
+            "messages": {
+                "Response": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncResponse"
+                    },
+                    "name": "Response",
+                    "title": "Response"
+                }
+            },
+            "parameters": {
+                "replicaId": {
+                    "description": "reply_to of the request"
+                }
+            },
+            "description": "Answer of a gateway to a request, on the broker of the gateway.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "gatewayStatus": {
+            "address": "processes/state/engine/v1/status",
+            "messages": {
+                "Status": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncStatus"
+                    },
+                    "name": "Status",
+                    "title": "Status"
+                }
+            },
+            "description": "Gateway to cloud, on the broker of the gateway.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "gatewayUpAck": {
+            "address": "processes/cmd/engine/v1/ack",
+            "messages": {
+                "UpAck": {
+                    "payload": {
+                        "$ref": "#/components/schemas/FogsyncUpAck"
+                    },
+                    "name": "UpAck",
+                    "title": "UpAck"
+                }
+            },
+            "description": "Cloud to gateway, on the broker of the gateway.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "importData": {
+            "address": "{importTopic}",
+            "messages": {
+                "ImportMessage": {
+                    "payload": {
+                        "$ref": "#/components/schemas/ImportMessage"
+                    },
+                    "name": "ImportMessage",
+                    "title": "ImportMessage"
+                }
+            },
+            "parameters": {
+                "importTopic": {
+                    "description": "kafka_topic of the import instance in import-deploy"
+                }
+            },
+            "description": "Data of the imports that event descriptions of deployments name, read in the consumer group EVENT_CONSUMER_GROUP.",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "localCommand": {
+            "address": "command/{localDeviceId}/{localServiceId}",
+            "messages": {
+                "LocalEnvelope": {
+                    "payload": {
+                        "$ref": "#/components/schemas/DevicecommandLocalEnvelope"
+                    },
+                    "name": "LocalEnvelope",
+                    "title": "LocalEnvelope"
+                }
+            },
+            "parameters": {
+                "localDeviceId": {
+                    "description": "local id of the device"
+                },
+                "localServiceId": {
+                    "description": "local id of the service"
+                }
+            },
+            "description": "Device commands to the device connectors of a gateway; command_id starts with LOCAL_COMMAND_PREFIX.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "localError": {
+            "address": "error/command/{commandId}",
+            "messages": {
+                "LocalError": {
+                    "payload": {
+                        "type": [
+                            "null",
+                            "string"
+                        ]
+                    },
+                    "name": "LocalError",
+                    "title": "LocalError"
+                }
+            },
+            "parameters": {
+                "commandId": {
+                    "description": "command_id of the command"
+                }
+            },
+            "description": "A command a device connector could not deliver; the payload is the error text.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "localEvent": {
+            "address": "event/{localDeviceId}/{localServiceId}",
+            "messages": {
+                "LocalEvent": {
+                    "payload": {
+                        "type": [
+                            "null",
+                            "string"
+                        ]
+                    },
+                    "name": "LocalEvent",
+                    "title": "LocalEvent"
+                }
+            },
+            "parameters": {
+                "localDeviceId": {
+                    "description": "local id of the device"
+                },
+                "localServiceId": {
+                    "description": "local id of the service"
+                }
+            },
+            "description": "Device data on a gateway; the payload is the data segment as the service describes it.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "localResponse": {
+            "address": "response/{localDeviceId}/{localServiceId}",
+            "messages": {
+                "LocalEnvelope": {
+                    "payload": {
+                        "$ref": "#/components/schemas/DevicecommandLocalEnvelope"
+                    },
+                    "name": "LocalEnvelope",
+                    "title": "LocalEnvelope"
+                }
+            },
+            "parameters": {
+                "localDeviceId": {
+                    "description": "local id of the device"
+                },
+                "localServiceId": {
+                    "description": "local id of the service"
+                }
+            },
+            "description": "Answers of device connectors; those whose command_id lacks LOCAL_COMMAND_PREFIX belong to another service and are ignored.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "permissions": {
+            "address": "{permissionsTopic}",
+            "messages": {
+                "RightsMessage": {
+                    "payload": {
+                        "$ref": "#/components/schemas/PermissionsRightsMessage"
+                    },
+                    "name": "RightsMessage",
+                    "title": "RightsMessage"
+                }
+            },
+            "parameters": {
+                "permissionsTopic": {
+                    "description": "PERMISSIONS_KAFKA_TOPIC"
+                }
+            },
+            "description": "PERMISSIONS_KAFKA_TOPIC, not set by default; a RIGHTS message without the administrate right of the owner restores it (SEC-10).",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "protocolCommand": {
+            "address": "{protocolHandler}",
+            "messages": {
+                "ProtocolMsg": {
+                    "payload": {
+                        "$ref": "#/components/schemas/DevicecommandProtocolMsg"
+                    },
+                    "name": "ProtocolMsg",
+                    "title": "ProtocolMsg"
+                }
+            },
+            "parameters": {
+                "protocolHandler": {
+                    "description": "handler of the protocol of the device, e.g. connector"
+                }
+            },
+            "description": "Device commands to platform-connector. The topic is the handler of the protocol of the device; a handler that is an http(s) URL gets the message as POST instead. The key is the device id.",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "protocols": {
+            "address": "protocols",
+            "messages": {
+                "CacheInvalidation": {
+                    "payload": {
+                        "$ref": "#/components/schemas/InvalidatorCommand"
+                    },
+                    "name": "CacheInvalidation",
+                    "title": "CacheInvalidation"
+                }
+            },
+            "description": "CACHE_INVALIDATION_ALL_TOPICS; any message clears the device cache of every replica.",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "users": {
+            "address": "user",
+            "messages": {
+                "UserCommand": {
+                    "payload": {
+                        "$ref": "#/components/schemas/InvalidatorCommand"
+                    },
+                    "name": "UserCommand",
+                    "title": "UserCommand"
+                }
+            },
+            "description": "USER_TOPIC; a DELETE removes the data of a user deleted outside of user-management (SEC-14).",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        }
+    },
+    "operations": {
+        "receiveCloudApplied": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/cloudApplied"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/cloudApplied/messages/Applied"
+                }
+            ],
+            "summary": "results of applied resources"
+        },
+        "receiveCloudChanges": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/cloudChanges"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/cloudChanges/messages/Changes"
+                }
+            ],
+            "summary": "batch of the change stream"
+        },
+        "receiveCloudResponse": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/cloudResponse"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/cloudResponse/messages/Response"
+                }
+            ],
+            "summary": "answer to a request"
+        },
+        "receiveCloudStatus": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/cloudStatus"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/cloudStatus/messages/Status"
+                }
+            ],
+            "summary": "status of the gateway"
+        },
+        "receiveCommandError": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/commandError"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/commandError/messages/ProtocolMsg"
+                }
+            ],
+            "summary": "fail a device command"
+        },
+        "receiveCommandResponse": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/commandResponse"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/commandResponse/messages/ProtocolMsg"
+                }
+            ],
+            "summary": "complete a device command"
+        },
+        "receiveDeviceData": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/deviceData"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/deviceData/messages/DeviceMessage"
+                }
+            ],
+            "summary": "evaluate device events"
+        },
+        "receiveDeviceGroups": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/deviceGroups"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/deviceGroups/messages/DeviceGroupCommand"
+                }
+            ],
+            "summary": "recompute event descriptions"
+        },
+        "receiveDeviceTypes": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/deviceTypes"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/deviceTypes/messages/CacheInvalidation"
+                }
+            ],
+            "summary": "clear the device cache"
+        },
+        "receiveDevices": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/devices"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/devices/messages/DeviceCommand"
+                }
+            ],
+            "summary": "clear the device cache"
+        },
+        "receiveGatewayDesired": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/gatewayDesired"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/gatewayDesired/messages/Desired"
+                }
+            ],
+            "summary": "desired state of resources"
+        },
+        "receiveGatewayRequest": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/gatewayRequest"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/gatewayRequest/messages/Request"
+                }
+            ],
+            "summary": "ask the gateway, e.g. for the debug state of an instance"
+        },
+        "receiveGatewayUpAck": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/gatewayUpAck"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/gatewayUpAck/messages/UpAck"
+                }
+            ],
+            "summary": "acknowledge a batch of the change stream"
+        },
+        "receiveImportData": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/importData"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/importData/messages/ImportMessage"
+                }
+            ],
+            "summary": "evaluate import events"
+        },
+        "receiveLocalError": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/localError"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/localError/messages/LocalError"
+                }
+            ],
+            "summary": "fail a device command"
+        },
+        "receiveLocalEvent": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/localEvent"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/localEvent/messages/LocalEvent"
+                }
+            ],
+            "summary": "evaluate device events"
+        },
+        "receiveLocalResponse": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/localResponse"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/localResponse/messages/LocalEnvelope"
+                }
+            ],
+            "summary": "complete a device command"
+        },
+        "receivePermissions": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/permissions"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/permissions/messages/RightsMessage"
+                }
+            ],
+            "summary": "restore owner rights"
+        },
+        "receiveProtocols": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/protocols"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/protocols/messages/CacheInvalidation"
+                }
+            ],
+            "summary": "clear the device cache"
+        },
+        "receiveUsers": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/users"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/users/messages/UserCommand"
+                }
+            ],
+            "summary": "delete user data"
+        },
+        "sendCloudDesired": {
+            "action": "send",
+            "channel": {
+                "$ref": "#/channels/cloudDesired"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/cloudDesired/messages/Desired"
+                }
+            ],
+            "summary": "desired state of resources"
+        },
+        "sendCloudRequest": {
+            "action": "send",
+            "channel": {
+                "$ref": "#/channels/cloudRequest"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/cloudRequest/messages/Request"
+                }
+            ],
+            "summary": "ask the gateway, e.g. for the debug state of an instance"
+        },
+        "sendCloudUpAck": {
+            "action": "send",
+            "channel": {
+                "$ref": "#/channels/cloudUpAck"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/cloudUpAck/messages/UpAck"
+                }
+            ],
+            "summary": "acknowledge a batch of the change stream"
+        },
+        "sendGatewayApplied": {
+            "action": "send",
+            "channel": {
+                "$ref": "#/channels/gatewayApplied"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/gatewayApplied/messages/Applied"
+                }
+            ],
+            "summary": "results of applied resources"
+        },
+        "sendGatewayChanges": {
+            "action": "send",
+            "channel": {
+                "$ref": "#/channels/gatewayChanges"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/gatewayChanges/messages/Changes"
+                }
+            ],
+            "summary": "batch of the change stream"
+        },
+        "sendGatewayResponse": {
+            "action": "send",
+            "channel": {
+                "$ref": "#/channels/gatewayResponse"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/gatewayResponse/messages/Response"
+                }
+            ],
+            "summary": "answer to a request"
+        },
+        "sendGatewayStatus": {
+            "action": "send",
+            "channel": {
+                "$ref": "#/channels/gatewayStatus"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/gatewayStatus/messages/Status"
+                }
+            ],
+            "summary": "status of the gateway"
+        },
+        "sendLocalCommand": {
+            "action": "send",
+            "channel": {
+                "$ref": "#/channels/localCommand"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/localCommand/messages/LocalEnvelope"
+                }
+            ],
+            "summary": "send a device command"
+        },
+        "sendProtocolCommand": {
+            "action": "send",
+            "channel": {
+                "$ref": "#/channels/protocolCommand"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/protocolCommand/messages/ProtocolMsg"
+                }
+            ],
+            "summary": "send a device command"
+        }
+    },
+    "components": {
+        "schemas": {
+            "DevicecommandLocalEnvelope": {
+                "properties": {
+                    "command_id": {
+                        "type": "string"
+                    },
+                    "data": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "DevicecommandMetadata": {
+                "properties": {
+                    "content_variable_hints": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "device": {
+                        "$ref": "#/components/schemas/ModelsDevice"
+                    },
+                    "error_to": {
+                        "type": "string"
+                    },
+                    "input_characteristic": {
+                        "type": "string"
+                    },
+                    "output_aspect_node": {
+                        "$ref": "#/components/schemas/ModelsAspectNode"
+                    },
+                    "output_aspect_nodes": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelsAspectNode"
+                        },
+                        "type": "array"
+                    },
+                    "output_characteristic": {
+                        "type": "string"
+                    },
+                    "output_function_id": {
+                        "type": "string"
+                    },
+                    "output_path": {
+                        "type": "string"
+                    },
+                    "protocol": {
+                        "$ref": "#/components/schemas/ModelsProtocol"
+                    },
+                    "response_to": {
+                        "type": "string"
+                    },
+                    "service": {
+                        "$ref": "#/components/schemas/ModelsService"
+                    },
+                    "version": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "DevicecommandProtocolMsg": {
+                "properties": {
+                    "metadata": {
+                        "$ref": "#/components/schemas/DevicecommandMetadata"
+                    },
+                    "request": {
+                        "$ref": "#/components/schemas/DevicecommandProtocolRequest"
+                    },
+                    "response": {
+                        "$ref": "#/components/schemas/DevicecommandProtocolResponse"
+                    },
+                    "task_info": {
+                        "$ref": "#/components/schemas/DevicecommandTaskInfo"
+                    },
+                    "trace": {
+                        "items": {
+                            "$ref": "#/components/schemas/DevicecommandTrace"
+                        },
+                        "type": "array"
+                    }
+                },
+                "type": "object"
+            },
+            "DevicecommandProtocolRequest": {
+                "properties": {
+                    "input": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": [
+                            "object",
+                            "null"
+                        ]
+                    }
+                },
+                "type": "object"
+            },
+            "DevicecommandProtocolResponse": {
+                "properties": {
+                    "output": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": [
+                            "object",
+                            "null"
+                        ]
+                    }
+                },
+                "type": "object"
+            },
+            "DevicecommandTaskInfo": {
+                "properties": {
+                    "business_key": {
+                        "type": "string"
+                    },
+                    "completion_strategy": {
+                        "type": "string"
+                    },
+                    "process_definition_id": {
+                        "type": "string"
+                    },
+                    "process_instance_id": {
+                        "type": "string"
+                    },
+                    "task_id": {
+                        "type": "string"
+                    },
+                    "tenant_id": {
+                        "type": "string"
+                    },
+                    "time": {
+                        "type": "string"
+                    },
+                    "worker_id": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "DevicecommandTrace": {
+                "properties": {
+                    "location": {
+                        "type": "string"
+                    },
+                    "time_unit": {
+                        "type": "string"
+                    },
+                    "timestamp": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "EventsDeviceMessage": {
+                "properties": {
+                    "device_id": {
+                        "type": "string"
+                    },
+                    "service_id": {
+                        "type": "string"
+                    },
+                    "value": {
+                        "additionalProperties": {},
+                        "type": [
+                            "object",
+                            "null"
+                        ]
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncApplied": {
+                "properties": {
+                    "engine": {
+                        "type": "string"
+                    },
+                    "protocol": {
+                        "type": "integer"
+                    },
+                    "results": {
+                        "items": {
+                            "$ref": "#/components/schemas/FogsyncResult"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "sent_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncChanges": {
+                "properties": {
+                    "after": {
+                        "type": "integer"
+                    },
+                    "deleted_instances": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "engine": {
+                        "type": "string"
+                    },
+                    "instances": {
+                        "items": {
+                            "$ref": "#/components/schemas/FogsyncInstanceState"
+                        },
+                        "type": "array"
+                    },
+                    "protocol": {
+                        "type": "integer"
+                    },
+                    "sent_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "snapshot": {
+                        "type": "boolean"
+                    },
+                    "upto": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncDeploymentSpec": {
+                "properties": {
+                    "deployment": {
+                        "$ref": "#/components/schemas/ModelDeployment"
+                    },
+                    "descriptions": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelEventDescription"
+                        },
+                        "type": "array"
+                    },
+                    "groups": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "version": {
+                        "$ref": "#/components/schemas/ModelDeploymentVersion"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncDesired": {
+                "properties": {
+                    "engine": {
+                        "type": "string"
+                    },
+                    "protocol": {
+                        "type": "integer"
+                    },
+                    "resources": {
+                        "items": {
+                            "$ref": "#/components/schemas/FogsyncResource"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "sent_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncInstanceSpec": {
+                "properties": {
+                    "deployment_id": {
+                        "type": "string"
+                    },
+                    "owner": {
+                        "type": "string"
+                    },
+                    "stopped": {
+                        "type": "boolean"
+                    },
+                    "variables": {
+                        "additionalProperties": {},
+                        "type": "object"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncInstanceState": {
+                "properties": {
+                    "incidents": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelIncident"
+                        },
+                        "type": "array"
+                    },
+                    "instance": {
+                        "$ref": "#/components/schemas/ModelInstance"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncRequest": {
+                "properties": {
+                    "args": {
+                        "$ref": "#/components/schemas/FogsyncRequestArgs"
+                    },
+                    "engine": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "instance": {
+                        "type": "string"
+                    },
+                    "method": {
+                        "type": "string"
+                    },
+                    "namespace": {
+                        "type": "string"
+                    },
+                    "protocol": {
+                        "type": "integer"
+                    },
+                    "reply_to": {
+                        "type": "string"
+                    },
+                    "sent_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncRequestArgs": {
+                "properties": {
+                    "element_id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "options": {},
+                    "run": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncResource": {
+                "properties": {
+                    "deleted": {
+                        "type": "boolean"
+                    },
+                    "deployment": {
+                        "$ref": "#/components/schemas/FogsyncDeploymentSpec"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "instance": {
+                        "$ref": "#/components/schemas/FogsyncInstanceSpec"
+                    },
+                    "kind": {
+                        "type": "string"
+                    },
+                    "namespace": {
+                        "$ref": "#/components/schemas/ModelNamespace"
+                    },
+                    "version": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncResponse": {
+                "properties": {
+                    "engine": {
+                        "type": "string"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ModelError"
+                    },
+                    "final": {
+                        "type": "boolean"
+                    },
+                    "protocol": {
+                        "type": "integer"
+                    },
+                    "request_id": {
+                        "type": "string"
+                    },
+                    "result": {},
+                    "sent_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncResult": {
+                "properties": {
+                    "at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "error": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "type": "string"
+                    },
+                    "version": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncStatus": {
+                "properties": {
+                    "acked": {
+                        "type": "integer"
+                    },
+                    "applied": {
+                        "items": {
+                            "$ref": "#/components/schemas/FogsyncResult"
+                        },
+                        "type": "array"
+                    },
+                    "engine": {
+                        "type": "string"
+                    },
+                    "latest": {
+                        "type": "integer"
+                    },
+                    "protocol": {
+                        "type": "integer"
+                    },
+                    "sent_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "started_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "storage": {
+                        "$ref": "#/components/schemas/FogsyncStorage"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncStorage": {
+                "properties": {
+                    "budget_bytes": {
+                        "type": "integer"
+                    },
+                    "rows": {
+                        "additionalProperties": {
+                            "type": "integer"
+                        },
+                        "type": "object"
+                    },
+                    "used_bytes": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncUpAck": {
+                "properties": {
+                    "acked": {
+                        "type": "integer"
+                    },
+                    "engine": {
+                        "type": "string"
+                    },
+                    "protocol": {
+                        "type": "integer"
+                    },
+                    "sent_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ImportMessage": {
+                "properties": {
+                    "import_id": {
+                        "description": "id of the import instance; the further fields are the output of its import type",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "InvalidatorCommand": {
+                "properties": {
+                    "command": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelChangedResource": {
+                "properties": {
+                    "at": {
+                        "type": "integer"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "type": "string"
+                    },
+                    "reason": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelConfigurable": {
+                "properties": {
+                    "aspect_node_ids": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "characteristic_id": {
+                        "type": "string"
+                    },
+                    "function_id": {
+                        "type": "string"
+                    },
+                    "path": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "value": {}
+                },
+                "type": "object"
+            },
+            "ModelDeployment": {
+                "properties": {
+                    "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "disabled": {
+                        "type": "boolean"
+                    },
+                    "faulty_since": {
+                        "format": "date-time",
+                        "type": [
+                            "null",
+                            "string"
+                        ]
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "managed_by": {
+                        "type": "string"
+                    },
+                    "model_deleted": {
+                        "type": "boolean"
+                    },
+                    "model_id": {
+                        "type": "string"
+                    },
+                    "model_version": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "namespace": {
+                        "type": "string"
+                    },
+                    "network_id": {
+                        "type": "string"
+                    },
+                    "owner": {
+                        "type": "string"
+                    },
+                    "retention_days": {
+                        "type": "integer"
+                    },
+                    "source": {
+                        "type": "string"
+                    },
+                    "updated_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "version": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelDeploymentVersion": {
+                "properties": {
+                    "changed_resources": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelChangedResource"
+                        },
+                        "type": "array"
+                    },
+                    "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "deployment_id": {
+                        "type": "string"
+                    },
+                    "incident_handling": {
+                        "$ref": "#/components/schemas/ModelIncidentHandling"
+                    },
+                    "model_version": {
+                        "type": "integer"
+                    },
+                    "parameters": {
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/ModelElementParameters"
+                        },
+                        "type": "object"
+                    },
+                    "selections": {
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/ModelSelection"
+                        },
+                        "type": "object"
+                    },
+                    "svg": {
+                        "type": "string"
+                    },
+                    "update_strategy": {
+                        "type": "string"
+                    },
+                    "used_resources": {
+                        "$ref": "#/components/schemas/ModelUsedResources"
+                    },
+                    "version": {
+                        "type": "integer"
+                    },
+                    "xml": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelDeviceSelection": {
+                "properties": {
+                    "at_deploy": {
+                        "type": "boolean"
+                    },
+                    "at_start": {
+                        "type": "boolean"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelElementParameters": {
+                "properties": {
+                    "defaults": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": "object"
+                    },
+                    "inputs": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": "object"
+                    },
+                    "timer": {
+                        "type": "string"
+                    },
+                    "variables": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": "object"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelError": {
+                "properties": {
+                    "issues": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelIssue"
+                        },
+                        "type": "array"
+                    },
+                    "kind": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelEventDescription": {
+                "properties": {
+                    "aspect_ids": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "characteristic_id": {
+                        "type": "string"
+                    },
+                    "deployment_id": {
+                        "type": "string"
+                    },
+                    "device_group_id": {
+                        "type": "string"
+                    },
+                    "device_id": {
+                        "type": "string"
+                    },
+                    "element_id": {
+                        "type": "string"
+                    },
+                    "function_id": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "import_id": {
+                        "type": "string"
+                    },
+                    "message_name": {
+                        "type": "string"
+                    },
+                    "namespace": {
+                        "type": "string"
+                    },
+                    "owner": {
+                        "type": "string"
+                    },
+                    "path": {
+                        "type": "string"
+                    },
+                    "qos": {
+                        "type": "integer"
+                    },
+                    "revision": {
+                        "type": "integer"
+                    },
+                    "script": {
+                        "type": "string"
+                    },
+                    "service": {},
+                    "service_id": {
+                        "type": "string"
+                    },
+                    "topic": {
+                        "type": "string"
+                    },
+                    "value_variable": {
+                        "type": "string"
+                    },
+                    "variables": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": "object"
+                    },
+                    "version": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelHttpPolicy": {
+                "properties": {
+                    "allow_hosts": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "allow_networks": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "allow_ports": {
+                        "items": {
+                            "type": "integer"
+                        },
+                        "type": "array"
+                    },
+                    "deny_hosts": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "deny_networks": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "max_response_bytes": {
+                        "type": "integer"
+                    },
+                    "timeout": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelHttpSettings": {
+                "properties": {
+                    "cloud": {
+                        "$ref": "#/components/schemas/ModelHttpPolicy"
+                    },
+                    "fog": {
+                        "$ref": "#/components/schemas/ModelHttpPolicy"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelIncident": {
+                "properties": {
+                    "deployment_id": {
+                        "type": "string"
+                    },
+                    "deployment_version": {
+                        "type": "integer"
+                    },
+                    "element_id": {
+                        "type": "string"
+                    },
+                    "element_name": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "instance_id": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "namespace": {
+                        "type": "string"
+                    },
+                    "owner": {
+                        "type": "string"
+                    },
+                    "run": {
+                        "type": "integer"
+                    },
+                    "time": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "variables": {
+                        "additionalProperties": {},
+                        "type": "object"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelIncidentHandling": {
+                "properties": {
+                    "notify": {
+                        "type": "boolean"
+                    },
+                    "restart": {
+                        "type": "boolean"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelInstance": {
+                "properties": {
+                    "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "deployment_id": {
+                        "type": "string"
+                    },
+                    "deployment_name": {
+                        "type": "string"
+                    },
+                    "deployment_version": {
+                        "type": "integer"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "end_reason": {
+                        "type": "string"
+                    },
+                    "ended_at": {
+                        "format": "date-time",
+                        "type": [
+                            "null",
+                            "string"
+                        ]
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "last_activity_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "model_id": {
+                        "type": "string"
+                    },
+                    "model_version": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "namespace": {
+                        "type": "string"
+                    },
+                    "network_id": {
+                        "type": "string"
+                    },
+                    "owner": {
+                        "type": "string"
+                    },
+                    "parent_id": {
+                        "type": "string"
+                    },
+                    "restart_at": {
+                        "format": "date-time",
+                        "type": [
+                            "null",
+                            "string"
+                        ]
+                    },
+                    "run": {
+                        "type": "integer"
+                    },
+                    "start_variables": {
+                        "additionalProperties": {},
+                        "type": "object"
+                    },
+                    "started_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "state": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "status_message": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelIssue": {
+                "properties": {
+                    "element_id": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelLevelSettings": {
+                "properties": {
+                    "initial_rights": {
+                        "$ref": "#/components/schemas/ModelPrincipals"
+                    },
+                    "register": {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ]
+                    },
+                    "shareable": {
+                        "type": "boolean"
+                    },
+                    "topic_default_permissions": {
+                        "$ref": "#/components/schemas/ModelPrincipals"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelLimits": {
+                "properties": {
+                    "max_activities": {
+                        "type": "integer"
+                    },
+                    "max_instance_variables_bytes": {
+                        "type": "integer"
+                    },
+                    "max_tokens": {
+                        "type": "integer"
+                    },
+                    "max_variable_bytes": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelListRule": {
+                "properties": {
+                    "allow": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "deny": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelNamespace": {
+                "properties": {
+                    "created_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "deployments": {
+                        "$ref": "#/components/schemas/ModelLevelSettings"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "device_selection": {
+                        "$ref": "#/components/schemas/ModelDeviceSelection"
+                    },
+                    "elements": {
+                        "$ref": "#/components/schemas/ModelListRule"
+                    },
+                    "forbid_cycles": {
+                        "type": "boolean"
+                    },
+                    "http": {
+                        "$ref": "#/components/schemas/ModelHttpSettings"
+                    },
+                    "incident_handling": {
+                        "$ref": "#/components/schemas/ModelIncidentHandling"
+                    },
+                    "instances": {
+                        "$ref": "#/components/schemas/ModelLevelSettings"
+                    },
+                    "json_string_parameters": {
+                        "type": "boolean"
+                    },
+                    "limits": {
+                        "$ref": "#/components/schemas/ModelLimits"
+                    },
+                    "message_starts_are_procedures": {
+                        "type": "boolean"
+                    },
+                    "models": {
+                        "$ref": "#/components/schemas/ModelLevelSettings"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "referenced_namespaces": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "restart_policy": {
+                        "$ref": "#/components/schemas/ModelRestartPolicy"
+                    },
+                    "retention": {
+                        "$ref": "#/components/schemas/ModelRetention"
+                    },
+                    "task_types": {
+                        "$ref": "#/components/schemas/ModelListRule"
+                    },
+                    "updated_at": {
+                        "format": "date-time",
+                        "type": "string"
+                    },
+                    "user_deletion": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelPermissionsMap": {
+                "properties": {
+                    "administrate": {
+                        "type": "boolean"
+                    },
+                    "execute": {
+                        "type": "boolean"
+                    },
+                    "read": {
+                        "type": "boolean"
+                    },
+                    "write": {
+                        "type": "boolean"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelPrincipals": {
+                "properties": {
+                    "groups": {
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/ModelRights"
+                        },
+                        "type": "object"
+                    },
+                    "roles": {
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/ModelRights"
+                        },
+                        "type": "object"
+                    },
+                    "users": {
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/ModelRights"
+                        },
+                        "type": "object"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelRestartPolicy": {
+                "properties": {
+                    "initial_backoff": {
+                        "type": "string"
+                    },
+                    "max_backoff": {
+                        "type": "string"
+                    },
+                    "max_restarts": {
+                        "type": "integer"
+                    },
+                    "window": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelRetention": {
+                "properties": {
+                    "default_days": {
+                        "type": "integer"
+                    },
+                    "max_days": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelRights": {
+                "properties": {
+                    "administrate": {
+                        "type": "boolean"
+                    },
+                    "execute": {
+                        "type": "boolean"
+                    },
+                    "read": {
+                        "type": "boolean"
+                    },
+                    "write": {
+                        "type": "boolean"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelSelectedPath": {
+                "properties": {
+                    "characteristic_id": {
+                        "type": "string"
+                    },
+                    "configurables": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelConfigurable"
+                        },
+                        "type": "array"
+                    },
+                    "path": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelSelection": {
+                "properties": {
+                    "device_group_id": {
+                        "type": "string"
+                    },
+                    "device_id": {
+                        "type": "string"
+                    },
+                    "import_id": {
+                        "type": "string"
+                    },
+                    "path": {
+                        "$ref": "#/components/schemas/ModelSelectedPath"
+                    },
+                    "prefer_event": {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ]
+                    },
+                    "service_id": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelUsedResources": {
+                "properties": {
+                    "flows": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "import_types": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "process_models": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    }
+                },
+                "type": "object"
+            },
+            "ModelsAspectNode": {
+                "properties": {
+                    "ancestor_ids": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "aspect_class_id": {
+                        "type": "string"
+                    },
+                    "child_ids": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "descendent_ids": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "parent_id": {
+                        "type": "string"
+                    },
+                    "root_id": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelsAttribute": {
+                "properties": {
+                    "key": {
+                        "type": "string"
+                    },
+                    "origin": {
+                        "type": "string"
+                    },
+                    "value": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelsContent": {
+                "properties": {
+                    "content_variable": {
+                        "$ref": "#/components/schemas/ModelsContentVariable"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "protocol_segment_id": {
+                        "type": "string"
+                    },
+                    "serialization": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelsContentVariable": {
+                "properties": {
+                    "aspect_id": {
+                        "type": "string"
+                    },
+                    "aspect_ids": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "characteristic_id": {
+                        "type": "string"
+                    },
+                    "function_id": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "is_void": {
+                        "type": "boolean"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "omit_empty": {
+                        "type": "boolean"
+                    },
+                    "serialization_options": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "sub_content_variables": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelsContentVariable"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "unit_reference": {
+                        "type": "string"
+                    },
+                    "value": {}
+                },
+                "type": "object"
+            },
+            "ModelsDevice": {
+                "properties": {
+                    "attributes": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelsAttribute"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "device_type_id": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "local_id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "owner_id": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelsProtocol": {
+                "properties": {
+                    "constraints": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "handler": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "protocol_segments": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelsProtocolSegment"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    }
+                },
+                "type": "object"
+            },
+            "ModelsProtocolSegment": {
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "ModelsService": {
+                "properties": {
+                    "attributes": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelsAttribute"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "inputs": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelsContent"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "interaction": {
+                        "type": "string"
+                    },
+                    "local_id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "outputs": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelsContent"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
+                    },
+                    "protocol_id": {
+                        "type": "string"
+                    },
+                    "service_group_key": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "PermissionsRightsMessage": {
+                "properties": {
+                    "command": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "rights": {
+                        "properties": {
+                            "user_rights": {
+                                "additionalProperties": {
+                                    "$ref": "#/components/schemas/ModelPermissionsMap"
+                                },
+                                "type": [
+                                    "object",
+                                    "null"
+                                ]
+                            }
+                        },
+                        "type": "object"
+                    }
+                },
+                "type": "object"
+            }
+        }
+    }
+}

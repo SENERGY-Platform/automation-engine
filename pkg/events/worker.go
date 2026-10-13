@@ -225,7 +225,9 @@ func (this *Worker) startConsumer(ctx context.Context, topics []string) (context
 	return cancel, err
 }
 
-type envelope struct {
+// DeviceMessage is a message of platform-connector on a device data topic: the value of a
+// service, by protocol segment, as the service describes it.
+type DeviceMessage struct {
 	DeviceId  string         `json:"device_id"`
 	ServiceId string         `json:"service_id"`
 	Value     map[string]any `json:"value"`
@@ -252,7 +254,7 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 	} else if this.config.Local {
 		key = topicKey(m.Topic)
 	} else {
-		var e envelope
+		var e DeviceMessage
 		if err := json.Unmarshal(m.Value, &e); err != nil {
 			return nil
 		}
