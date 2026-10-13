@@ -194,8 +194,12 @@ func (this *ClientImpl) ListModels(ctx context.Context, token string, namespace 
 	return result, err
 }
 
-func (this *ClientImpl) DeleteModel(ctx context.Context, token string, namespace string, id string) error {
-	return this.do(ctx, token, http.MethodDelete, path("namespaces", namespace, "models", id), nil, nil, nil)
+func (this *ClientImpl) DeleteModel(ctx context.Context, token string, namespace string, id string, force bool) error {
+	q := url.Values{}
+	if force {
+		q.Set("force", "true")
+	}
+	return this.do(ctx, token, http.MethodDelete, path("namespaces", namespace, "models", id), q, nil, nil)
 }
 
 func (this *ClientImpl) PublishModel(ctx context.Context, token string, namespace string, id string, input model.PublishInput) (result model.Model, err error) {
@@ -238,6 +242,25 @@ func (this *ClientImpl) ListDeployments(ctx context.Context, token string, names
 	set(q, "source", options.Source)
 	set(q, "network_id", options.NetworkId)
 	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "deployments"), q, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) DeploymentInstanceCount(ctx context.Context, token string, namespace string, id string, version int) (result model.Count, err error) {
+	q := url.Values{}
+	if version > 0 {
+		q.Set("version", strconv.Itoa(version))
+	}
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "deployments", id, "instance-count"), q, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) ResourceUsage(ctx context.Context, token string, namespace string, kind string, id string) (result model.ResourceUsage, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "resource-usage", kind, id), nil, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) SetDeploymentDisabled(ctx context.Context, token string, namespace string, id string, input model.DisabledInput) (result model.Deployment, err error) {
+	err = this.do(ctx, token, http.MethodPut, path("namespaces", namespace, "deployments", id, "disabled"), nil, input, &result)
 	return result, err
 }
 

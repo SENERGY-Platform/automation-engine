@@ -79,8 +79,12 @@ type Config struct {
 	// gin-middleware/otelx, "off" disables tracing
 	OtelEndpoint string `json:"otel_endpoint" env_var:"OTEL_ENDPOINT"`
 	// services and options of the module task types of smart services (TASK-29)
-	DeviceManagerUrl               string `json:"device_manager_url" env_var:"DEVICE_MANAGER_URL"`
-	FlowEngineUrl                  string `json:"flow_engine_url" env_var:"FLOW_ENGINE_URL"`
+	DeviceManagerUrl string `json:"device_manager_url" env_var:"DEVICE_MANAGER_URL"`
+	FlowEngineUrl    string `json:"flow_engine_url" env_var:"FLOW_ENGINE_URL"`
+	// analytics-flow-repo; flows used by deployments are checked for changes (SMS-15)
+	FlowRepoUrl string `json:"flow_repo_url" env_var:"FLOW_REPO_URL"`
+	// how often the resources deployments use are checked for changes; "off" or "0" switches it off
+	ResourceCheckCycle             string `json:"resource_check_cycle" env_var:"RESOURCE_CHECK_CYCLE"`
 	FlowParserUrl                  string `json:"flow_parser_url" env_var:"FLOW_PARSER_URL"`
 	ServingServiceUrl              string `json:"serving_service_url" env_var:"SERVING_SERVICE_URL"`
 	AnalyticsEnableMultiplePaths   bool   `json:"analytics_enable_multiple_paths" env_var:"ANALYTICS_ENABLE_MULTIPLE_PATHS"`
@@ -239,6 +243,7 @@ func Default() Config {
 		DeviceGroupAttributeOrigin:     "smart-service",
 		InfoAdditionalModuleDataFields: true,
 		ModuleHealthCheckInterval:      "1h",
+		ResourceCheckCycle:             "1h",
 		WatcherMinInterval:             "1m",
 		WatcherDefaultInterval:         "1h",
 		Namespaces:                     DefaultNamespaces(),

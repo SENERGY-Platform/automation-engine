@@ -275,6 +275,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	runtime.AddWatcher(c, httpCalls, modules.WatcherSettings{AllowGenericRequests: config.AllowGenericWatchRequests,
 		MinInterval: configuration.Duration(config.WatcherMinInterval), DefaultInterval: configuration.Duration(config.WatcherDefaultInterval)})
 	runtime.Register(e, moduleSettings)
+	runtime.SetAdminToken(adminToken)
 	c.SetIo(io)
 	var selection dsclient.Client
 	if config.DeviceSelectionUrl != "" {
@@ -596,6 +597,7 @@ func (this *Server) Start(ctx context.Context) {
 	go this.ModuleRemover.Run(ctx, 10*time.Second)
 	go this.Modules.RunHealthChecks(ctx, configuration.Duration(this.config.ModuleHealthCheckInterval))
 	go this.Modules.RunWatches(ctx, 5*time.Second)
+	go this.Modules.RunResourceChecks(ctx, configuration.Duration(this.config.ResourceCheckCycle))
 	if err := this.startKafka(ctx); err != nil {
 		this.logger.Error("unable to start kafka consumers", "error", err)
 	}
@@ -650,6 +652,7 @@ func moduleSettings(config configuration.Config) modules.Settings {
 	return modules.Settings{
 		DeviceRepositoryUrl: config.DeviceRepositoryUrl, DeviceSelectionUrl: config.DeviceSelectionUrl, DeviceManagerUrl: config.DeviceManagerUrl,
 		FlowEngineUrl: config.FlowEngineUrl, FlowParserUrl: config.FlowParserUrl, ImportDeployUrl: config.ImportDeployUrl, ServingServiceUrl: config.ServingServiceUrl,
+		FlowRepoUrl: config.FlowRepoUrl, ImportRepositoryUrl: config.ImportRepositoryUrl,
 		AnalyticsEnableMultiplePaths: config.AnalyticsEnableMultiplePaths, AnalyticsDevicePathPrefix: config.AnalyticsDevicePathPrefix,
 		AnalyticsGroupPathPrefix: config.AnalyticsGroupPathPrefix, AnalyticsImportPathPrefix: config.AnalyticsImportPathPrefix,
 		AnalyticsRemoveImportPathRoot: config.AnalyticsRemoveImportPathRoot, DeviceGroupNamePrefix: config.DeviceGroupNamePrefix,

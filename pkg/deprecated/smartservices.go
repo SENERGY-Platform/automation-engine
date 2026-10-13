@@ -49,14 +49,27 @@ type SmartServiceDesign struct {
 }
 
 type SmartServiceRelease struct {
-	Id           string `json:"id"`
-	DesignId     string `json:"design_id"`
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	CreatedAt    int64  `json:"created_at"`
-	NewReleaseId string `json:"new_release_id,omitempty"`
-	Creator      string `json:"creator"`
-	Usable       *bool  `json:"usable,omitempty"`
+	Id               string                  `json:"id"`
+	DesignId         string                  `json:"design_id"`
+	Name             string                  `json:"name"`
+	Description      string                  `json:"description"`
+	CreatedAt        int64                   `json:"created_at"`
+	NewReleaseId     string                  `json:"new_release_id,omitempty"`
+	Creator          string                  `json:"creator"`
+	Usable           *bool                   `json:"usable,omitempty"`
+	ChangedResources []model.ChangedResource `json:"changed_resources,omitempty"`
+}
+
+type ResourceUsage struct {
+	Releases  int                    `json:"releases"`
+	Instances int                    `json:"instances"`
+	Readable  []ResourceUsageRelease `json:"readable"`
+}
+
+type ResourceUsageRelease struct {
+	Id       string `json:"id"`
+	DesignId string `json:"design_id"`
+	Name     string `json:"name"`
 }
 
 type PermissionsInfo struct {
@@ -197,6 +210,8 @@ func (this *Handler) smartServices() {
 	this.handle("PUT /smart-services/instances/{id}/info", this.updateSmartServiceInstanceInfo)
 	this.handle("PUT /smart-services/instances/{id}/parameters", this.updateSmartServiceInstanceParameters)
 	this.handle("GET /smart-services/modules", this.listSmartServiceModules)
+	this.handle("GET /smart-services/releases/{id}/instance-count", this.releaseInstanceCount)
+	this.handle("GET /smart-services/resource-usage/{kind}/{id}", this.resourceUsage)
 }
 
 // userOf reads the user of a token for display; every call checks the token in the engine
@@ -371,7 +386,7 @@ func (this *Handler) updateDesign(w http.ResponseWriter, r *http.Request) {
 //	@Failure	400,403,404	{string}	string
 //	@Router		/deprecated/smart-services/designs/{id} [delete]
 func (this *Handler) deleteDesign(w http.ResponseWriter, r *http.Request) {
-	err := this.c.DeleteModel(r.Context(), token(r), smartServices, r.PathValue("id"))
+	err := this.c.DeleteModel(r.Context(), token(r), smartServices, r.PathValue("id"), false)
 	if errors.Is(err, model.ErrNotFound) {
 		err = nil
 	}
@@ -382,8 +397,9 @@ func (this *Handler) deleteDesign(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func release(d model.Deployment, version int, createdAt int64) SmartServiceRelease {
-	result := SmartServiceRelease{Id: releaseId(d.Id, version, d.Version), DesignId: d.ModelId, Name: d.Name, Description: d.Description, CreatedAt: createdAt, Creator: d.Owner}
+func release(d model.Deployment, version int, createdAt int64, changed []model.ChangedResource) SmartServiceRelease {
+	result := SmartServiceRelease{Id: releaseId(d.Id, version, d.Version), DesignId: d.ModelId, Name: d.Name, Description: d.Description, CreatedAt: createdAt, Creator: d.Owner,
+		ChangedResources: changed}
 	if version != 0 && version < d.Version {
 		result.NewReleaseId = d.Id
 	}
@@ -441,11 +457,16 @@ func (this *Handler) createRelease(w http.ResponseWriter, r *http.Request) {
 		input.UpdateStrategy = model.UpdateDrain
 		d, err = this.c.PutDeployment(r.Context(), token(r), smartServices, existing.Id, input)
 	case request.Id != "":
+		// an id in use belongs to another release, possibly of another user
+		if _, err := this.c.GetDeployment(r.Context(), token(r), smartServices, request.Id); !errors.Is(err, model.ErrNotFound) {
+			writeError(w, model.Conflict("release id %v is already in use", request.Id))
+			return
+		}
 		d, err = this.c.PutDeployment(r.Context(), token(r), smartServices, request.Id, input)
 	default:
 		d, err = this.c.CreateDeployment(r.Context(), token(r), smartServices, input)
 	}
-	respond(w, release(d, d.Version, d.UpdatedAt.Unix()), err)
+	respond(w, release(d, d.Version, d.UpdatedAt.Unix(), nil), err)
 }
 
 // deleteRelease godoc
@@ -508,7 +529,7 @@ func (this *Handler) readRelease(r *http.Request, id string) (model.Deployment, 
 //	@Router		/deprecated/smart-services/releases/{id} [get]
 func (this *Handler) getRelease(w http.ResponseWriter, r *http.Request) {
 	d, v, err := this.readRelease(r, r.PathValue("id"))
-	respond(w, release(d, v.Version, v.CreatedAt.Unix()), err)
+	respond(w, release(d, v.Version, v.CreatedAt.Unix(), v.ChangedResources), err)
 }
 
 // releaseParameter describes a form field of the start event with its properties, as the
@@ -560,7 +581,7 @@ func releaseInfo(xml string) ReleaseInfo {
 }
 
 func (this *Handler) extendedRelease(r *http.Request, d model.Deployment, v model.DeploymentVersion) SmartServiceReleaseExtended {
-	return SmartServiceReleaseExtended{SmartServiceRelease: release(d, v.Version, v.CreatedAt.Unix()), BpmnXml: v.Xml, SvgXml: v.Svg,
+	return SmartServiceReleaseExtended{SmartServiceRelease: release(d, v.Version, v.CreatedAt.Unix(), v.ChangedResources), BpmnXml: v.Xml, SvgXml: v.Svg,
 		ParsedInfo: releaseInfo(v.Xml), PermissionsInfo: permissions(r, d.Owner, releaseRights)}
 }
 
@@ -699,7 +720,7 @@ func (this *Handler) listReleases(w http.ResponseWriter, r *http.Request) {
 	}
 	result := make([]SmartServiceRelease, 0, len(versions))
 	for i, v := range versions {
-		item := release(deployments[i], v.Version, v.CreatedAt.Unix())
+		item := release(deployments[i], v.Version, v.CreatedAt.Unix(), v.ChangedResources)
 		if boolParam(r, "add-usable-flag") {
 			usable := this.usable(r, deployments[i].Id)
 			item.Usable = &usable
@@ -1098,6 +1119,53 @@ func (this *Handler) listSmartServiceModules(w http.ResponseWriter, r *http.Requ
 			}
 		}
 		result = append(result, module)
+	}
+	writeJson(w, http.StatusOK, result)
+}
+
+// releaseInstanceCount godoc
+//
+//	@Summary		count the instances of all users on a release, for its administrators
+//	@Tags			deprecated-smart-services
+//	@Deprecated
+//	@Security		Bearer
+//	@Produce		json
+//	@Param			id	path	string	true	"release id"
+//	@Success		200	{object}	model.Count
+//	@Failure		400,403,404	{string}	string
+//	@Router			/deprecated/smart-services/releases/{id}/instance-count [get]
+func (this *Handler) releaseInstanceCount(w http.ResponseWriter, r *http.Request) {
+	deploymentId, version := parseRelease(r.PathValue("id"))
+	result, err := this.c.DeploymentInstanceCount(r.Context(), token(r), smartServices, deploymentId, version)
+	respond(w, result, err)
+}
+
+// resourceUsage godoc
+//
+//	@Summary		who uses a process model, flow or import type, as smart-service-repository answered it
+//	@Description	Asked by process-model-repository, analytics-flow-repo-v2 and import-repository before they delete a resource.
+//	@Tags			deprecated-smart-services
+//	@Deprecated
+//	@Security		Bearer
+//	@Produce		json
+//	@Param			kind	path	string	true	"process-models, flows or import-types"
+//	@Param			id		path	string	true	"resource id"
+//	@Success		200	{object}	ResourceUsage
+//	@Failure		400,403,404	{string}	string
+//	@Router			/deprecated/smart-services/resource-usage/{kind}/{id} [get]
+func (this *Handler) resourceUsage(w http.ResponseWriter, r *http.Request) {
+	usage, err := this.c.ResourceUsage(r.Context(), token(r), smartServices, r.PathValue("kind"), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	result := ResourceUsage{Releases: usage.Versions, Instances: usage.Instances, Readable: []ResourceUsageRelease{}}
+	for _, d := range usage.Readable {
+		id := d.Id
+		if !d.Current {
+			id = d.Id + ":v" + strconv.Itoa(d.Version)
+		}
+		result.Readable = append(result.Readable, ResourceUsageRelease{Id: id, DesignId: d.ModelId, Name: d.Name})
 	}
 	writeJson(w, http.StatusOK, result)
 }

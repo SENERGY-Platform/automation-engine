@@ -55,6 +55,11 @@ type StartRequest struct {
 	Name, Description string
 }
 
+// ErrDisabled refuses a start of a deployment that is switched off (DEP-12).
+func ErrDisabled(deploymentId string) error {
+	return model.Conflict("deployment %v is disabled", deploymentId)
+}
+
 // StartInstance creates an instance and runs it until all tokens wait or end. With a given
 // id, a second start with the same content returns the existing instance and created=false;
 // different content is a conflict.
@@ -77,6 +82,9 @@ func (this *Engine) startInstance(tx *store.Tx, request StartRequest, cause mode
 	deployment, err := tx.GetDeployment(request.DeploymentId, false)
 	if err != nil {
 		return model.Instance{}, false, err
+	}
+	if deployment.Disabled {
+		return model.Instance{}, false, ErrDisabled(deployment.Id)
 	}
 	version := request.DeploymentVersion
 	if version == 0 {
@@ -385,21 +393,14 @@ func (this *Engine) restartInstance(tx *store.Tx, instanceId string, version int
 	if err != nil {
 		return inst, err
 	}
-	if inst.State == model.StateRunning {
-		r, err := this.newRunner(tx, &inst)
-		if err != nil {
-			return inst, err
-		}
-		if err = r.endRun(model.StateTerminated, "restart"); err != nil {
-			return inst, err
-		}
-		if err = r.finish(); err != nil {
-			return inst, err
-		}
-	}
+	// everything that can refuse the restart is checked before the current run ends, so that a
+	// refused restart leaves the instance as it was
 	deployment, err := tx.GetDeployment(inst.DeploymentId, false)
 	if err != nil {
 		return inst, err
+	}
+	if deployment.Disabled {
+		return inst, ErrDisabled(deployment.Id)
 	}
 	if version == 0 {
 		version = deployment.Version
@@ -414,6 +415,18 @@ func (this *Engine) restartInstance(tx *store.Tx, instanceId string, version int
 	start := proc.NoneStartEvent()
 	if start == nil {
 		return inst, model.BadRequest("deployment %v version %v has no start event without definition", deployment.Id, version)
+	}
+	if inst.State == model.StateRunning {
+		r, err := this.newRunner(tx, &inst)
+		if err != nil {
+			return inst, err
+		}
+		if err = r.endRun(model.StateTerminated, "restart"); err != nil {
+			return inst, err
+		}
+		if err = r.finish(); err != nil {
+			return inst, err
+		}
 	}
 	inst.DeploymentName = deployment.Name
 	if err = this.beginRun(tx, &inst, version, start.Id, nil, cause); err != nil {

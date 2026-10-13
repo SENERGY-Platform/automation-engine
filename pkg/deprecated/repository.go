@@ -242,7 +242,7 @@ func (this *Handler) publishProcess(w http.ResponseWriter, r *http.Request) {
 //	@Failure	400,403,404	{string}	string
 //	@Router		/deprecated/repository/processes/{id} [delete]
 func (this *Handler) deleteProcess(w http.ResponseWriter, r *http.Request) {
-	if err := this.c.DeleteModel(r.Context(), token(r), processes, r.PathValue("id")); err != nil {
+	if err := this.c.DeleteModel(r.Context(), token(r), processes, r.PathValue("id"), r.URL.Query().Get("force") == "true"); err != nil {
 		writeError(w, err)
 		return
 	}

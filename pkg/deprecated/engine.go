@@ -71,6 +71,11 @@ type ExtendedDeployment struct {
 	Diagram      string `json:"diagram"`
 	DefinitionId string `json:"definition_id"`
 	Error        string `json:"error"`
+	Disabled     bool   `json:"disabled"`
+}
+
+type DeploymentDisabled struct {
+	Disabled *bool `json:"disabled"`
 }
 
 type HistoricProcessInstance struct {
@@ -114,6 +119,7 @@ func (this *Handler) engine() {
 	this.handle("GET /engine/deployment", this.listDeployments)
 	this.handle("GET /engine/v2/deployments/{id}", this.getDeployment)
 	this.handle("GET /engine/v2/deployments/{id}/exists", this.deploymentExists)
+	this.handle("PUT /engine/v2/deployments/{id}/disabled", this.setDisabled)
 	this.handle("GET /engine/v2/deployments/{id}/start", this.startDeployment)
 	this.handle("GET /engine/deployment/{id}/start", this.startDeployment)
 	this.handle("GET /engine/v2/deployments/{id}/parameter", this.startParameters)
@@ -221,7 +227,7 @@ func (this *Handler) listDeployments(w http.ResponseWriter, r *http.Request) {
 	}
 	result := make([]ExtendedDeployment, 0, len(deployments))
 	for _, d := range deployments {
-		item := ExtendedDeployment{CamundaDeployment: camundaDeployment(d), DefinitionId: definitionId(d.Id, d.Version)}
+		item := ExtendedDeployment{CamundaDeployment: camundaDeployment(d), DefinitionId: definitionId(d.Id, d.Version), Disabled: d.Disabled}
 		if version, err := this.c.GetDeploymentVersion(r.Context(), token(r), processes, d.Id, d.Version); err != nil {
 			item.Error = err.Error()
 		} else {
@@ -259,6 +265,32 @@ func (this *Handler) getDeployment(w http.ResponseWriter, r *http.Request) {
 //	@Success	200	{object}	bool
 //	@Failure	400,403,404	{string}	string
 //	@Router		/deprecated/engine/v2/deployments/{id}/exists [get]
+//
+// setDisabled godoc
+//
+//	@Summary		switch a deployment off or on, as camunda-engine-wrapper v1.1.0 did
+//	@Tags			deprecated-engine
+//	@Deprecated
+//	@Security		Bearer
+//	@Produce		json
+//	@Param			id		path	string				true	"deployment id"
+//	@Param			body	body	DeploymentDisabled	true	"state"
+//	@Success		200	{object}	DeploymentDisabled
+//	@Failure		400,403,404	{string}	string
+//	@Router			/deprecated/engine/v2/deployments/{id}/disabled [put]
+func (this *Handler) setDisabled(w http.ResponseWriter, r *http.Request) {
+	body, err := decode[DeploymentDisabled](r)
+	if err == nil && body.Disabled == nil {
+		err = model.BadRequest("missing field disabled")
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	_, err = this.c.SetDeploymentDisabled(r.Context(), token(r), processes, r.PathValue("id"), model.DisabledInput{Disabled: *body.Disabled})
+	respond(w, body, err)
+}
+
 func (this *Handler) deploymentExists(w http.ResponseWriter, r *http.Request) {
 	_, err := this.c.GetDeployment(r.Context(), token(r), processes, r.PathValue("id"))
 	if errors.Is(err, model.ErrNotFound) {

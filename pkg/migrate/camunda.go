@@ -90,7 +90,10 @@ func (this *Camunda) CamundaDeployments(ctx context.Context) ([]CamundaDeploymen
 				return nil, err
 			}
 			for _, d := range page {
-				var definitions []struct{ Id, Key string }
+				var definitions []struct {
+					Id, Key   string
+					Suspended bool
+				}
 				if err := this.get(ctx, base, "/process-definition", url.Values{"deploymentId": {d.Id}}, &definitions); err != nil {
 					return nil, err
 				}
@@ -105,7 +108,7 @@ func (this *Camunda) CamundaDeployments(ctx context.Context) ([]CamundaDeploymen
 				}
 				deployed, _ := time.Parse(camundaTime, d.DeploymentTime)
 				result = append(result, CamundaDeployment{Engine: base, Id: d.Id, Name: d.Name, Source: d.Source, TenantId: d.TenantId, Time: deployed,
-					DefinitionId: definitions[0].Id, Key: definitions[0].Key, Bpmn: xml.Bpmn20Xml})
+					DefinitionId: definitions[0].Id, Key: definitions[0].Key, Bpmn: xml.Bpmn20Xml, Suspended: definitions[0].Suspended})
 			}
 			if len(page) < camundaPage {
 				break

@@ -48,6 +48,9 @@ type Settings struct {
 	FlowParserUrl       string
 	ImportDeployUrl     string
 	ServingServiceUrl   string
+	// repositories of flows and import types, asked whether used resources changed (SMS-15)
+	FlowRepoUrl         string
+	ImportRepositoryUrl string
 
 	AnalyticsEnableMultiplePaths  bool
 	AnalyticsDevicePathPrefix     string
@@ -117,6 +120,13 @@ type Runtime struct {
 	// nil until AddWatcher
 	watcher *watcher
 	now     func() time.Time
+	// the token of the engine, for resources the owner may no longer read
+	adminToken auth.TokenSource
+}
+
+// SetAdminToken sets the token of the engine for the check of used resources.
+func (this *Runtime) SetAdminToken(token auth.TokenSource) {
+	this.adminToken = token
 }
 
 // NewRuntime creates the runtime; tokens gives the tokens of owners, e.g. the token exchange.

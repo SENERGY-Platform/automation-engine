@@ -45,7 +45,8 @@ type Controller interface {
 	UpdateModel(ctx context.Context, token string, namespace string, id string, input model.ModelInput) (model.Model, error)
 	GetModel(ctx context.Context, token string, namespace string, id string) (model.Model, error)
 	ListModels(ctx context.Context, token string, namespace string, options model.ModelListOptions) (model.Page[model.Model], error)
-	DeleteModel(ctx context.Context, token string, namespace string, id string) error
+	// DeleteModel refuses a model module tasks deploy, unless an admin forces it (SMS-15)
+	DeleteModel(ctx context.Context, token string, namespace string, id string, force bool) error
 	PublishModel(ctx context.Context, token string, namespace string, id string, input model.PublishInput) (model.Model, error)
 	ListModelVersions(ctx context.Context, token string, namespace string, id string, options model.PageOptions) (model.Page[model.ModelVersion], error)
 	GetModelVersion(ctx context.Context, token string, namespace string, id string, version int) (model.ModelVersion, error)
@@ -56,6 +57,13 @@ type Controller interface {
 	GetDeployment(ctx context.Context, token string, namespace string, id string) (model.Deployment, error)
 	ListDeployments(ctx context.Context, token string, namespace string, options model.DeploymentListOptions) (model.Page[model.Deployment], error)
 	DeleteDeployment(ctx context.Context, token string, namespace string, id string) error
+	// DeploymentInstanceCount counts the instances of all users on a version; administrators only
+	DeploymentInstanceCount(ctx context.Context, token string, namespace string, id string, version int) (model.Count, error)
+	// ResourceUsage counts the deployment versions and instances that use a process model, flow
+	// or import type (SMS-15)
+	ResourceUsage(ctx context.Context, token string, namespace string, kind string, id string) (model.ResourceUsage, error)
+	// SetDeploymentDisabled switches a deployment off or on (DEP-12)
+	SetDeploymentDisabled(ctx context.Context, token string, namespace string, id string, input model.DisabledInput) (model.Deployment, error)
 	ListDeploymentVersions(ctx context.Context, token string, namespace string, id string, options model.PageOptions) (model.Page[model.DeploymentVersion], error)
 	GetDeploymentVersion(ctx context.Context, token string, namespace string, id string, version int) (model.DeploymentVersion, error)
 	GetStartParameters(ctx context.Context, token string, namespace string, deploymentId string) ([]model.StartParameter, error)

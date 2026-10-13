@@ -398,8 +398,10 @@ func (this *Controller) GetDeploymentVersion(ctx context.Context, token string, 
 		if _, err := this.readDeployment(ctx, tx, token, namespace, id, Read, false); err != nil {
 			return err
 		}
-		result, err = tx.GetDeploymentVersion(id, version)
-		return err
+		if result, err = tx.GetDeploymentVersion(id, version); err != nil {
+			return err
+		}
+		return this.addResources(tx, &result)
 	})
 	return result, err
 }
@@ -509,4 +511,43 @@ func (this *Controller) ListEventDescriptions(ctx context.Context, token string,
 		return err
 	})
 	return result, err
+}
+
+// SetDeploymentDisabled switches a deployment off or on (DEP-12). Off stops its running
+// instances; while it is off, starts through the API are refused and schedules, timer and
+// message starts are skipped. Updates keep the state. Deployments of gateways cannot be
+// switched off, as with the engine wrapper.
+func (this *Controller) SetDeploymentDisabled(ctx context.Context, token string, namespace string, id string, input model.DisabledInput) (result model.Deployment, err error) {
+	var running []string
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		result, err = this.readDeployment(ctx, tx, token, namespace, id, Write, true)
+		if err != nil {
+			return err
+		}
+		if result.NetworkId != "" {
+			return model.BadRequest("deployments of gateways cannot be switched off")
+		}
+		if err = tx.SetDeploymentDisabled(id, input.Disabled); err != nil {
+			return err
+		}
+		result.Disabled = input.Disabled
+		if !input.Disabled {
+			return nil
+		}
+		instances, err := tx.ListInstances(namespace, model.InstanceListOptions{DeploymentId: id, State: "running", PageOptions: model.PageOptions{Limit: 100000}}, store.Access{Admin: true})
+		for _, inst := range instances.Items {
+			running = append(running, inst.Id)
+		}
+		return err
+	})
+	if err != nil {
+		return result, err
+	}
+	var errs []error
+	for _, instanceId := range running {
+		if err := this.engine.StopInstance(ctx, instanceId, "deployment disabled"); err != nil && !errors.Is(err, model.ErrConflict) {
+			errs = append(errs, err)
+		}
+	}
+	return result, errors.Join(errs...)
 }

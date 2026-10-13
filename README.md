@@ -39,6 +39,8 @@ API:
 - Wartungsprozeduren: `GET .../instances/{id}/maintenance-procedures[/{procedure}/parameters]`, `POST .../{procedure}/start`. Message-Starts in `smart-services` starten nur so, nicht über `/messages`.
 - Variablen setzen und löschen auch bei beendeten Instanzen: `PUT|DELETE .../instances/{id}/variables/{name}`.
 - Deploy-Parameter je Element: `parameters` am Deployment überschreibt Eingaben, Eventvariablen, Timer und Startvorgaben.
+- Genutzte Ressourcen: Eine Version nennt die Prozessmodelle, Flows und Import-Typen ihrer Modul-Tasks (`used_resources`) und, was sich daran seit dem Deploy geändert hat oder gelöscht wurde (`changed_resources`). Geprüft wird alle `RESOURCE_CHECK_CYCLE` (Vorgabe `1h`, `off` schaltet ab) gegen `FLOW_REPO_URL` und `IMPORT_REPOSITORY_URL`. `GET /namespaces/{ns}/resource-usage/{kind}/{id}` zählt Versionen und Instanzen, die eine Ressource nutzen; ein genutztes Modell löscht nur ein Admin mit `?force=true`.
+- Instanzen je Version: `GET .../deployments/{id}/instance-count?version=` (Administratoren des Deployments).
 
 ## Debugging
 
@@ -84,6 +86,8 @@ Images gibt es für `linux/amd64` und `linux/arm64`, nicht für `arm/v7`. Das Do
 In der Cloud verbindet `SYNC_MQTT_BROKER` die Engine mit dem Broker, den die Gateways über mgw-device-cloud-connector erreichen. Deployments für ein Gateway entstehen über dieselbe API mit `network_id` (die Hub-ID) und laufen dort, nicht in der Cloud; Instanzen eines Gateways startet, stoppt und löscht die Cloud, ihren Zustand meldet das Gateway. Die Replicas teilen die Nachrichten der Gateways (`SYNC_SHARE_GROUP`); das Protokoll bestätigt und sendet selbst erneut (`SYNC_RESEND_AFTER`), Gateways ohne Kontakt seit `SYNC_OFFLINE_AFTER` gelten als offline, nach `NETWORK_CLEANUP_MAX_AGE` werden ihre Daten entfernt. `GET /networks` zeigt Kontakt, Versionen und Rückstand je Gateway, `GET /networks/{id}` Soll- und Ist-Zustand je Ressource. Rechte auf Gateways prüft permissions-v2 (Topic `hubs`: `rx` zum Lesen und Starten, `a` zum Deployen). Das Protokoll ist in `pkg/fogsync/protocol` beschrieben.
 
 Debug-Routen und der Live-Endpunkt einer Gateway-Instanz fragen das Gateway über dasselbe Protokoll an und warten höchstens `SYNC_CALL_TIMEOUT` (Vorgabe 10 s). Ist es nicht erreichbar, antwortet der Debug-Zustand mit dem zuletzt gemeldeten Stand und `offline: true`, die übrigen Routen mit 503.
+
+Deployments ausschalten: `PUT .../deployments/{id}/disabled` mit `{"disabled": true}` stoppt laufende Instanzen; danach startet das Deployment nichts mehr, auch nicht über Nachrichten und Zeitpläne, bis es wieder eingeschaltet wird. Nur Cloud-Deployments.
 
 Namespaces aus `NAMESPACES` werden nur angelegt, wenn es sie noch nicht gibt; danach verwaltet `PUT /namespaces/{ns}` sie (Admins).
 

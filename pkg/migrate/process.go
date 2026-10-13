@@ -212,6 +212,7 @@ func (this *migration) camundaDeployments(ctx context.Context) error {
 	for _, cd := range deployments {
 		vid := vidOf(cd.Key)
 		if _, known := this.deployments[vid]; known && vid != "" {
+			this.disable(ctx, step, cd, vid)
 			continue
 		}
 		id := firstNonEmpty(vid, cd.Id)
@@ -251,8 +252,32 @@ func (this *migration) camundaDeployments(ctx context.Context) error {
 			}
 		}
 		this.result(step, "deployment", cd.Id, owner, Migrated, "as %v", id)
+		this.disable(ctx, step, cd, id)
 	}
 	return nil
+}
+
+// disable switches a deployment off that was switched off in the engine wrapper, which
+// suspended its definition (DEP-12)
+func (this *migration) disable(ctx context.Context, step string, cd CamundaDeployment, deploymentId string) {
+	if !cd.Suspended {
+		return
+	}
+	if this.options.Apply {
+		if !this.known(ctx, deploymentId) {
+			return
+		}
+		var current model.Deployment
+		if err := this.target.Store.Tx(ctx, func(tx *store.Tx) (err error) { current, err = tx.GetDeployment(deploymentId, false); return err }); err == nil && current.Disabled {
+			this.result(step, "disabled", deploymentId, cd.TenantId, Existing, "")
+			return
+		}
+		if _, err := this.target.Controller.SetDeploymentDisabled(ctx, this.target.token(), processes, deploymentId, model.DisabledInput{Disabled: true}); err != nil {
+			this.result(step, "disabled", deploymentId, cd.TenantId, Failed, "%v", describe(err))
+			return
+		}
+	}
+	this.result(step, "disabled", deploymentId, cd.TenantId, Migrated, "switched off as in the engine wrapper")
 }
 
 // known reports a deployment in the engine, or one the dry run would create

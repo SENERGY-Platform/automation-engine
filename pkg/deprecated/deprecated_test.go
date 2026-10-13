@@ -398,3 +398,30 @@ func TestRequestsAreCountedPerRoute(t *testing.T) {
 		t.Errorf("the metric shows when the layer can go (API-03)")
 	}
 }
+
+// The switch of the deployment list of the web-ui, as camunda-engine-wrapper v1.1.0 offered it.
+func TestWrapperSwitchesDeploymentsOffAndOn(t *testing.T) {
+	e := newEnv(t)
+	d := e.deploy(waitingProcess())
+	var answer struct{ Disabled bool }
+	if status, _ := e.call(alice, http.MethodPut, "/engine/v2/deployments/"+d.Id+"/disabled", map[string]any{"disabled": true}, &answer); status != http.StatusOK || !answer.Disabled {
+		t.Fatalf("%v %+v", status, answer)
+	}
+	var list []struct {
+		Id       string
+		Disabled bool
+	}
+	if e.call(alice, http.MethodGet, "/engine/v2/deployments", nil, &list); len(list) != 1 || !list[0].Disabled {
+		t.Errorf("the list shows the state: %+v", list)
+	}
+	if status, _ := e.call(alice, http.MethodGet, "/engine/v2/deployments/"+d.Id+"/start", nil, nil); status != http.StatusConflict {
+		t.Errorf("a disabled deployment answers a start with 409: %v", status)
+	}
+	if status, _ := e.call(alice, http.MethodPut, "/engine/v2/deployments/"+d.Id+"/disabled", map[string]any{}, nil); status != http.StatusBadRequest {
+		t.Errorf("the field is required: %v", status)
+	}
+	e.call(alice, http.MethodPut, "/engine/v2/deployments/"+d.Id+"/disabled", map[string]any{"disabled": false}, nil)
+	if status, _ := e.call(alice, http.MethodGet, "/engine/v2/deployments/"+d.Id+"/start", nil, nil); status != http.StatusOK {
+		t.Errorf("switched on, it starts: %v", status)
+	}
+}

@@ -70,6 +70,15 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 - [x] Die Engine nutzt seit 2026-10-12 `device-repository/v3` (v3.4.0).
 - [ ] **Aufgabe (device-selection):** `device-selection/v2` (bis v2.0.3) zieht über `pkg/model` noch `device-repository/v2` herein; in `go.mod` der Engine steht es deshalb als indirekte Abhängigkeit. Mit einer device-selection auf `/v3` entfällt es.
 
+### process-model-repository, analytics-flow-repo-v2, import-repository
+
+- [ ] **Aufgabe:** Vor dem Löschen einer Ressource fragen sie smart-service-repository, wer sie nutzt. Nach der Umleitung zeigt deren Smart-Service-URL auf `/deprecated/smart-services` (gleiches Format) oder auf `GET /namespaces/smart-services/resource-usage/{kind}/{id}` der neuen API. Prozessmodelle prüft die Engine selbst: Das Löschen eines genutzten Modells über `/deprecated/repository` antwortet mit 409, mit `?force=true` löscht es ein Admin trotzdem (SMS-15, nach M7).
+- [ ] **Frage (Betrieb):** Die Prüfung geänderter Ressourcen liest Flows und Import-Typen mit dem Token des Owners und bei 401/403 mit dem der Engine. Darf der Client der Engine in analytics-flow-repo-v2 und import-repository lesen (Realm-Rolle `admin`)? Ohne das bleibt eine gelöschte Ressource, die der Owner nicht mehr sieht, ungemeldet (nach M7).
+
+### web-ui
+
+- [ ] **Aufgabe:** Der Schalter zum Aus- und Einschalten von Deployments (camunda-engine-wrapper v1.1.0) funktioniert über `/deprecated/engine/v2/deployments/{id}/disabled` weiter; für die neue API ist es `PUT /namespaces/processes/deployments/{id}/disabled`. Die Anzeige geänderter Ressourcen an Releases liest `changed_resources` wie bisher (DEP-12, SMS-15, nach M7).
+
 ### models (`models/go`)
 
 - [ ] **Frage:** Liegen die Typen der Engine dort oder im Engine-Repo? Heute hält das Engine-Repo sie in `pkg/model` (CLI-01).

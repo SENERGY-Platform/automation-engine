@@ -195,11 +195,12 @@ func (h *handlers) updateModel(w http.ResponseWriter, r *http.Request) {
 //	@Security		Bearer
 //	@Param			ns	path	string	true	"namespace"
 //	@Param			id	path	string	true	"model id"
+//	@Param			force	query	bool	false	"delete a model module tasks deploy; admins only"
 //	@Success		204
 //	@Failure		403,404	{object}	model.Error
 //	@Router			/namespaces/{ns}/models/{id} [delete]
 func (h *handlers) deleteModel(w http.ResponseWriter, r *http.Request) {
-	respondEmpty(w, h.c.DeleteModel(r.Context(), token(r), r.PathValue("ns"), r.PathValue("id")))
+	respondEmpty(w, h.c.DeleteModel(r.Context(), token(r), r.PathValue("ns"), r.PathValue("id"), r.URL.Query().Get("force") == "true"))
 }
 
 // publishModel godoc
@@ -556,6 +557,70 @@ func (h *handlers) updateInstanceInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := h.c.UpdateInstanceInfo(r.Context(), token(r), r.PathValue("ns"), r.PathValue("id"), input)
+	respond(w, http.StatusOK, result, err)
+}
+
+// setDeploymentDisabled godoc
+//
+//	@Summary		switch a deployment off or on
+//	@Description	Off stops the running instances; while off, starts are refused (409) and schedules, timer and message starts are skipped. Updates keep the state. Not for deployments of gateways.
+//	@Tags			deployments
+//	@Security		Bearer
+//	@Accept			json
+//	@Produce		json
+//	@Param			ns		path		string				true	"namespace"
+//	@Param			id		path		string				true	"deployment id"
+//	@Param			body	body		model.DisabledInput	true	"state"
+//	@Success		200		{object}	model.Deployment
+//	@Failure		400,403,404	{object}	model.Error
+//	@Router			/namespaces/{ns}/deployments/{id}/disabled [put]
+func (h *handlers) setDeploymentDisabled(w http.ResponseWriter, r *http.Request) {
+	input, ok := decode[model.DisabledInput](w, r)
+	if !ok {
+		return
+	}
+	result, err := h.c.SetDeploymentDisabled(r.Context(), token(r), r.PathValue("ns"), r.PathValue("id"), input)
+	respond(w, http.StatusOK, result, err)
+}
+
+// deploymentInstanceCount godoc
+//
+//	@Summary	count the instances of all users on a version of a deployment
+//	@Tags		deployments
+//	@Security	Bearer
+//	@Produce	json
+//	@Param		ns		path		string	true	"namespace"
+//	@Param		id		path		string	true	"deployment id"
+//	@Param		version	query		int		false	"version, default the current"
+//	@Success	200		{object}	model.Count
+//	@Failure	403,404	{object}	model.Error
+//	@Router		/namespaces/{ns}/deployments/{id}/instance-count [get]
+func (h *handlers) deploymentInstanceCount(w http.ResponseWriter, r *http.Request) {
+	q := newQuery(r)
+	version := q.int("version")
+	if q.err != nil {
+		writeError(w, q.err)
+		return
+	}
+	result, err := h.c.DeploymentInstanceCount(r.Context(), token(r), r.PathValue("ns"), r.PathValue("id"), version)
+	respond(w, http.StatusOK, result, err)
+}
+
+// resourceUsage godoc
+//
+//	@Summary		who uses a process model, flow or import type
+//	@Description	Counts, over all users, the deployment versions whose module tasks name the resource and that are current or still have instances, and their instances; lists those the caller may read. Repositories ask before deleting a resource.
+//	@Tags			deployments
+//	@Security		Bearer
+//	@Produce		json
+//	@Param			ns		path		string	true	"namespace"
+//	@Param			kind	path		string	true	"process-models, flows or import-types"
+//	@Param			id		path		string	true	"resource id"
+//	@Success		200		{object}	model.ResourceUsage
+//	@Failure		400		{object}	model.Error
+//	@Router			/namespaces/{ns}/resource-usage/{kind}/{id} [get]
+func (h *handlers) resourceUsage(w http.ResponseWriter, r *http.Request) {
+	result, err := h.c.ResourceUsage(r.Context(), token(r), r.PathValue("ns"), r.PathValue("kind"), r.PathValue("id"))
 	respond(w, http.StatusOK, result, err)
 }
 

@@ -922,20 +922,25 @@ const docTemplate = `{
                 }
             }
         },
-        "/deprecated/engine/v2/deployments/{id}/exists": {
-            "get": {
+        "/deprecated/engine/v2/deployments/{id}/disabled": {
+            "put": {
                 "security": [
+                    {
+                        "Bearer": []
+                    },
                     {
                         "Bearer": []
                     }
                 ],
                 "produces": [
+                    "application/json",
                     "application/json"
                 ],
                 "tags": [
+                    "deprecated-engine",
                     "deprecated-engine"
                 ],
-                "summary": "whether a deployment exists",
+                "summary": "switch a deployment off or on, as camunda-engine-wrapper v1.1.0 did",
                 "deprecated": true,
                 "parameters": [
                     {
@@ -944,13 +949,102 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/deprecated.DeploymentDisabled"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "boolean"
+                            "$ref": "#/definitions/deprecated.DeploymentDisabled"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/engine/v2/deployments/{id}/exists": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json",
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-engine",
+                    "deprecated-engine"
+                ],
+                "summary": "switch a deployment off or on, as camunda-engine-wrapper v1.1.0 did",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/deprecated.DeploymentDisabled"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/deprecated.DeploymentDisabled"
                         }
                     },
                     "400": {
@@ -5240,6 +5334,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/deprecated/smart-services/releases/{id}/instance-count": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-smart-services"
+                ],
+                "summary": "count the instances of all users on a release, for its administrators",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "release id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Count"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/deprecated/smart-services/releases/{id}/instances": {
             "post": {
                 "security": [
@@ -5333,6 +5479,66 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/deprecated.SmartServiceExtendedParameter"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/smart-services/resource-usage/{kind}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Asked by process-model-repository, analytics-flow-repo-v2 and import-repository before they delete a resource.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-smart-services"
+                ],
+                "summary": "who uses a process model, flow or import type, as smart-service-repository answered it",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "process-models, flows or import-types",
+                        "name": "kind",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/deprecated.ResourceUsage"
                         }
                     },
                     "400": {
@@ -6222,6 +6428,77 @@ const docTemplate = `{
                 }
             }
         },
+        "/namespaces/{ns}/deployments/{id}/disabled": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Off stops the running instances; while off, starts are refused (409) and schedules, timer and message starts are skipped. Updates keep the state. Not for deployments of gateways.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "switch a deployment off or on",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.DisabledInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/namespaces/{ns}/deployments/{id}/event-descriptions": {
             "get": {
                 "security": [
@@ -6260,6 +6537,64 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/model.EventDescription"
                             }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/deployments/{id}/instance-count": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "count the instances of all users on a version of a deployment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "version, default the current",
+                        "name": "version",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Count"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
                         }
                     },
                     "404": {
@@ -8448,6 +8783,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "delete a model module tasks deploy; admins only",
+                        "name": "force",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -8856,6 +9197,60 @@ const docTemplate = `{
                     },
                     "503": {
                         "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/resource-usage/{kind}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Counts, over all users, the deployment versions whose module tasks name the resource and that are current or still have instances, and their instances; lists those the caller may read. Repositories ask before deleting a resource.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "who uses a process model, flow or import type",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "process-models, flows or import-types",
+                        "name": "kind",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ResourceUsage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/model.Error"
                         }
@@ -9610,6 +10005,14 @@ const docTemplate = `{
                 }
             }
         },
+        "deprecated.DeploymentDisabled": {
+            "type": "object",
+            "properties": {
+                "disabled": {
+                    "type": "boolean"
+                }
+            }
+        },
         "deprecated.DeploymentMetadata": {
             "type": "object",
             "properties": {
@@ -9684,6 +10087,9 @@ const docTemplate = `{
                 },
                 "diagram": {
                     "type": "string"
+                },
+                "disabled": {
+                    "type": "boolean"
                 },
                 "error": {
                     "type": "string"
@@ -10118,6 +10524,37 @@ const docTemplate = `{
                 }
             }
         },
+        "deprecated.ResourceUsage": {
+            "type": "object",
+            "properties": {
+                "instances": {
+                    "type": "integer"
+                },
+                "readable": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/deprecated.ResourceUsageRelease"
+                    }
+                },
+                "releases": {
+                    "type": "integer"
+                }
+            }
+        },
+        "deprecated.ResourceUsageRelease": {
+            "type": "object",
+            "properties": {
+                "design_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "deprecated.ScheduleEntry": {
             "type": "object",
             "properties": {
@@ -10355,6 +10792,12 @@ const docTemplate = `{
         "deprecated.SmartServiceRelease": {
             "type": "object",
             "properties": {
+                "changed_resources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ChangedResource"
+                    }
+                },
                 "created_at": {
                     "type": "integer"
                 },
@@ -10386,6 +10829,12 @@ const docTemplate = `{
             "properties": {
                 "bpmn_xml": {
                     "type": "string"
+                },
+                "changed_resources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ChangedResource"
+                    }
                 },
                 "created_at": {
                     "type": "integer"
@@ -10725,6 +11174,25 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ChangedResource": {
+            "type": "object",
+            "properties": {
+                "at": {
+                    "description": "unix seconds: the change time of the resource, or when the check first saw it gone or\n(import types) changed",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "reason": {
+                    "description": "changed or gone",
+                    "type": "string"
+                }
+            }
+        },
         "model.Configurable": {
             "type": "object",
             "properties": {
@@ -10806,6 +11274,14 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.Correlation"
                     }
+                }
+            }
+        },
+        "model.Count": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
                 }
             }
         },
@@ -10948,6 +11424,10 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "disabled": {
+                    "description": "switched off: nothing starts, nothing runs; updates keep it (DEP-12)",
+                    "type": "boolean"
+                },
                 "faulty_since": {
                     "description": "set when automatic restarts exceeded the restart policy; no automatic restarts until reset (INC-04)",
                     "type": "string"
@@ -11066,6 +11546,12 @@ const docTemplate = `{
         "model.DeploymentVersion": {
             "type": "object",
             "properties": {
+                "changed_resources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ChangedResource"
+                    }
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -11098,6 +11584,14 @@ const docTemplate = `{
                 "update_strategy": {
                     "$ref": "#/definitions/model.UpdateStrategy"
                 },
+                "used_resources": {
+                    "description": "resources the module tasks name, and those of them that changed since (SMS-15)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.UsedResources"
+                        }
+                    ]
+                },
                 "version": {
                     "type": "integer"
                 },
@@ -11113,6 +11607,14 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "at_start": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "model.DisabledInput": {
+            "type": "object",
+            "properties": {
+                "disabled": {
                     "type": "boolean"
                 }
             }
@@ -12640,6 +13142,43 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ResourceUsage": {
+            "type": "object",
+            "properties": {
+                "instances": {
+                    "type": "integer"
+                },
+                "readable": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ResourceUsageDeployment"
+                    }
+                },
+                "versions": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.ResourceUsageDeployment": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "model_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.RestartInput": {
             "type": "object",
             "properties": {
@@ -13039,6 +13578,29 @@ const docTemplate = `{
                 "UpdateDrain",
                 "UpdateRestart"
             ]
+        },
+        "model.UsedResources": {
+            "type": "object",
+            "properties": {
+                "flows": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "import_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "process_models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
         },
         "model.UserDependents": {
             "type": "object",

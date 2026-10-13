@@ -205,10 +205,24 @@ func (this *Controller) ListModels(ctx context.Context, token string, namespace 
 	return result, err
 }
 
-func (this *Controller) DeleteModel(ctx context.Context, token string, namespace string, id string) error {
+// DeleteModel deletes a model unless deployments of module tasks use it; force deletes it
+// anyway and is for admins (SMS-15)
+func (this *Controller) DeleteModel(ctx context.Context, token string, namespace string, id string, force bool) error {
+	user, _, err := this.begin(token, namespace)
+	if err != nil {
+		return err
+	}
+	if force && !user.IsAdmin() {
+		return model.Forbidden("only admins may force the delete of a model in use")
+	}
 	return this.store.Tx(ctx, func(tx *store.Tx) error {
 		if _, err := this.readModel(ctx, tx, token, namespace, id, Administrate, true); err != nil {
 			return err
+		}
+		if !force {
+			if err := this.modelInUse(ctx, tx, user, id); err != nil {
+				return err
+			}
 		}
 		return tx.DeleteModel(id)
 	})

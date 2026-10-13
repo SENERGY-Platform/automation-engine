@@ -132,7 +132,7 @@ func TestInitialRightsAndOwnerChange(t *testing.T) {
 		if err = e.DeleteNamespace(ctx, admin, "custom"); !errors.Is(err, model.ErrConflict) {
 			t.Fatalf("a namespace with resources cannot be deleted, got %v", err)
 		}
-		if err = e.DeleteModel(ctx, bob, "custom", m.Id); err != nil {
+		if err = e.DeleteModel(ctx, bob, "custom", m.Id, false); err != nil {
 			t.Fatal(err)
 		}
 		if err = e.DeleteNamespace(ctx, admin, "custom"); err != nil {
@@ -155,7 +155,7 @@ func TestDeletedResourcesLeavePermissions(t *testing.T) {
 		if _, err, _ = e.permissions.GetResource(adminToken, "processes_models", m.Id); err != nil {
 			t.Fatalf("the model is registered: %v", err)
 		}
-		if err = e.DeleteModel(ctx, alice, ns, m.Id); err != nil {
+		if err = e.DeleteModel(ctx, alice, ns, m.Id, false); err != nil {
 			t.Fatal(err)
 		}
 		e.sync(t)

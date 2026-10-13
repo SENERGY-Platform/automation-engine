@@ -54,9 +54,16 @@ type Deployment struct {
 	// the instance that manages the deployment through a module (NS-08)
 	ManagedBy string `json:"managed_by,omitempty"`
 	// the gateway that runs the deployment; empty runs it in the cloud (DEP-09)
-	NetworkId string    `json:"network_id,omitempty"`
+	NetworkId string `json:"network_id,omitempty"`
+	// switched off: nothing starts, nothing runs; updates keep it (DEP-12)
+	Disabled  bool      `json:"disabled,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// DisabledInput switches a deployment off or on (DEP-12).
+type DisabledInput struct {
+	Disabled bool `json:"disabled"`
 }
 
 type DeploymentVersion struct {
@@ -72,6 +79,9 @@ type DeploymentVersion struct {
 	// overrides per BPMN element id
 	Parameters map[string]ElementParameters `json:"parameters,omitempty"`
 	CreatedAt  time.Time                    `json:"created_at"`
+	// resources the module tasks name, and those of them that changed since (SMS-15)
+	UsedResources    *UsedResources    `json:"used_resources,omitempty"`
+	ChangedResources []ChangedResource `json:"changed_resources,omitempty"`
 }
 
 // DeploymentInput creates or updates a deployment from a model (version), from own BPMN, or from

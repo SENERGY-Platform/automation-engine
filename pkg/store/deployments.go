@@ -23,14 +23,15 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 )
 
-const deploymentColumns = "id, namespace, name, description, owner, model_id, model_version, model_deleted, version, source, retention_days, faulty_since, created_at, updated_at, managed_by, network_id"
+const deploymentColumns = "id, namespace, name, description, owner, model_id, model_version, model_deleted, version, source, retention_days, faulty_since, created_at, updated_at, managed_by, network_id, disabled"
 
 func scanDeployment(row interface{ Scan(...any) error }) (d model.Deployment, err error) {
-	var deleted int
+	var deleted, disabled int
 	var created, updated int64
 	var faulty sql.NullInt64
-	err = row.Scan(&d.Id, &d.Namespace, &d.Name, &d.Description, &d.Owner, &d.ModelId, &d.ModelVersion, &deleted, &d.Version, &d.Source, &d.RetentionDays, &faulty, &created, &updated, &d.ManagedBy, &d.NetworkId)
+	err = row.Scan(&d.Id, &d.Namespace, &d.Name, &d.Description, &d.Owner, &d.ModelId, &d.ModelVersion, &deleted, &d.Version, &d.Source, &d.RetentionDays, &faulty, &created, &updated, &d.ManagedBy, &d.NetworkId, &disabled)
 	d.ModelDeleted = deleted == 1
+	d.Disabled = disabled == 1
 	d.FaultySince = fromNullMillis(faulty)
 	d.CreatedAt = fromMillis(created)
 	d.UpdatedAt = fromMillis(updated)
@@ -38,14 +39,20 @@ func scanDeployment(row interface{ Scan(...any) error }) (d model.Deployment, er
 }
 
 func (this *Tx) InsertDeployment(d model.Deployment) error {
-	_, err := this.exec("INSERT INTO deployments ("+deploymentColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		d.Id, d.Namespace, d.Name, d.Description, d.Owner, d.ModelId, d.ModelVersion, boolInt(d.ModelDeleted), d.Version, d.Source, d.RetentionDays, nullMillis(d.FaultySince), millis(d.CreatedAt), millis(d.UpdatedAt), d.ManagedBy, d.NetworkId)
+	_, err := this.exec("INSERT INTO deployments ("+deploymentColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		d.Id, d.Namespace, d.Name, d.Description, d.Owner, d.ModelId, d.ModelVersion, boolInt(d.ModelDeleted), d.Version, d.Source, d.RetentionDays, nullMillis(d.FaultySince), millis(d.CreatedAt), millis(d.UpdatedAt), d.ManagedBy, d.NetworkId, boolInt(d.Disabled))
 	return err
 }
 
 func (this *Tx) UpdateDeployment(d model.Deployment) error {
 	_, err := this.exec("UPDATE deployments SET name = ?, description = ?, owner = ?, model_id = ?, model_version = ?, model_deleted = ?, version = ?, source = ?, retention_days = ?, faulty_since = ?, updated_at = ?, managed_by = ? WHERE id = ?",
 		d.Name, d.Description, d.Owner, d.ModelId, d.ModelVersion, boolInt(d.ModelDeleted), d.Version, d.Source, d.RetentionDays, nullMillis(d.FaultySince), millis(d.UpdatedAt), d.ManagedBy, d.Id)
+	return err
+}
+
+// SetDeploymentDisabled switches a deployment off or on; updates keep the state (DEP-12).
+func (this *Tx) SetDeploymentDisabled(id string, disabled bool) error {
+	_, err := this.exec("UPDATE deployments SET disabled = ? WHERE id = ?", boolInt(disabled), id)
 	return err
 }
 
@@ -239,6 +246,7 @@ func scanStartEvents(rows *sql.Rows, err error) (result []StartEvent, _ error) {
 func (this *Tx) MessageStartEvents(messageName string, owner string) ([]StartEvent, error) {
 	w := &where{}
 	w.add("s.kind = 'message'")
+	w.add("d.disabled = 0")
 	w.add("s.message_name = ?", messageName)
 	if owner != "" {
 		w.add("d.owner = ?", owner)
@@ -247,7 +255,7 @@ func (this *Tx) MessageStartEvents(messageName string, owner string) ([]StartEve
 }
 
 func (this *Tx) DueStartTimers(now time.Time, limit int) ([]StartEvent, error) {
-	return scanStartEvents(this.query(startEventSelect+" WHERE s.kind = 'timer' AND s.due_at IS NOT NULL AND s.due_at <= ? ORDER BY s.due_at LIMIT ?", millis(now), limit))
+	return scanStartEvents(this.query(startEventSelect+" WHERE s.kind = 'timer' AND d.disabled = 0 AND s.due_at IS NOT NULL AND s.due_at <= ? ORDER BY s.due_at LIMIT ?", millis(now), limit))
 }
 
 func (this *Tx) GetStartEvent(deploymentId string, elementId string) (StartEvent, error) {

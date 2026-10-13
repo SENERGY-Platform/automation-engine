@@ -160,3 +160,75 @@ func TestSmartServicesOfTheWebUi(t *testing.T) {
 		t.Error("the deployment of the release is gone")
 	}
 }
+
+// processDeploymentDesign is a design of the old designer that deploys a process model
+func processDeploymentDesign(modelId string) string {
+	return b.Process(
+		b.StartWithForm("start", "room=kitchen"),
+		`<bpmn:serviceTask id="deploy" camunda:type="external" camunda:topic="process_deployment"><bpmn:extensionElements><camunda:inputOutput>`+
+			`<camunda:inputParameter name="process_deployment.process_model_id">`+modelId+`</camunda:inputParameter>`+
+			`</camunda:inputOutput></bpmn:extensionElements></bpmn:serviceTask>`,
+		b.End("end"),
+		b.Flow("start", "deploy"), b.Flow("deploy", "end"),
+	)
+}
+
+// process-model-repository, analytics-flow-repo-v2 and import-repository ask who uses a resource
+// before they delete it; a release id a client chose is not taken over from another release
+// (SMS-15).
+func TestResourceUsageAndInstanceCountOfReleases(t *testing.T) {
+	e := newEnv(t)
+	var design struct{ Id string }
+	e.call(alice, http.MethodPost, "/smart-services/designs", map[string]any{"name": "Deployer", "bpmn_xml": processDeploymentDesign("model-1"), "svg_xml": "<svg/>"}, &design)
+	var release struct{ Id string }
+	status, _ := e.call(alice, http.MethodPost, "/smart-services/releases", map[string]any{"id": "chosen", "design_id": design.Id}, &release)
+	if status != http.StatusOK || release.Id != "chosen" {
+		t.Fatalf("a release with a chosen id: %v %+v", status, release)
+	}
+	var other, foreign struct{ Id string }
+	e.call(alice, http.MethodPost, "/smart-services/designs", map[string]any{"name": "Other", "bpmn_xml": smartServiceDesign("widget"), "svg_xml": "<svg/>"}, &other)
+	if status, _ = e.call(alice, http.MethodPost, "/smart-services/releases", map[string]any{"id": "chosen", "design_id": other.Id}, nil); status != http.StatusConflict {
+		t.Fatalf("the id of another release is not reused: %v", status)
+	}
+	e.call(bob, http.MethodPost, "/smart-services/designs", map[string]any{"name": "Foreign", "bpmn_xml": smartServiceDesign("widget"), "svg_xml": "<svg/>"}, &foreign)
+	if status, _ = e.call(bob, http.MethodPost, "/smart-services/releases", map[string]any{"id": "chosen", "design_id": foreign.Id}, nil); status == http.StatusOK {
+		t.Fatal("nor taken over by another user")
+	}
+	var kept struct {
+		DesignId string `json:"design_id"`
+	}
+	if e.call(alice, http.MethodGet, "/smart-services/releases/chosen", nil, &kept); kept.DesignId != design.Id {
+		t.Fatalf("the release keeps its design: %+v", kept)
+	}
+
+	var instance ssInstance
+	if status, _ = e.call(alice, http.MethodPost, "/smart-services/releases/chosen/instances", map[string]any{"name": "Kitchen"}, &instance); status != http.StatusOK {
+		t.Fatalf("instance: %v", status)
+	}
+	var count struct{ Count int }
+	if status, _ = e.call(alice, http.MethodGet, "/smart-services/releases/chosen/instance-count", nil, &count); status != http.StatusOK || count.Count != 1 {
+		t.Fatalf("instance count: %v %+v", status, count)
+	}
+	if status, _ = e.call(bob, http.MethodGet, "/smart-services/releases/chosen/instance-count", nil, nil); status == http.StatusOK {
+		t.Fatal("only administrators of the release count its instances")
+	}
+
+	var usage struct {
+		Releases  int
+		Instances int
+		Readable  []struct {
+			Id       string
+			DesignId string `json:"design_id"`
+		}
+	}
+	status, _ = e.call(alice, http.MethodGet, "/smart-services/resource-usage/process-models/model-1", nil, &usage)
+	if status != http.StatusOK || usage.Releases != 1 || usage.Instances != 1 || len(usage.Readable) != 1 || usage.Readable[0].Id != "chosen" || usage.Readable[0].DesignId != design.Id {
+		t.Fatalf("usage of the model: %v %+v", status, usage)
+	}
+	if status, _ = e.call(bob, http.MethodGet, "/smart-services/resource-usage/process-models/model-1", nil, &usage); status != http.StatusOK || usage.Releases != 1 || len(usage.Readable) != 0 {
+		t.Fatalf("others learn the count only: %v %+v", status, usage)
+	}
+	if status, _ = e.call(alice, http.MethodGet, "/smart-services/resource-usage/pipelines/p1", nil, nil); status != http.StatusBadRequest {
+		t.Fatalf("an unknown kind: %v", status)
+	}
+}

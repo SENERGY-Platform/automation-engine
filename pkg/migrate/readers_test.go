@@ -173,6 +173,11 @@ func TestCamundaReaderReadsDeploymentsAndRunningInstances(t *testing.T) {
 		t.Fatalf("start: %v %s", err, body)
 	}
 
+	req, _ := http.NewRequest(http.MethodPut, base+"/process-definition/key/"+key+"/tenant-id/alice/suspended", strings.NewReader(`{"suspended":true,"includeProcessInstances":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	if resp, err = http.DefaultClient.Do(req); err != nil || resp.StatusCode >= 300 {
+		t.Fatalf("suspend: %v %v", resp, err)
+	}
 	reader := &migrate.Camunda{Urls: []string{base}}
 	deployments, err := reader.CamundaDeployments(ctx)
 	if err != nil {
@@ -185,7 +190,7 @@ func TestCamundaReaderReadsDeploymentsAndRunningInstances(t *testing.T) {
 			d = candidate
 		}
 	}
-	if d.Key != key || d.TenantId != "alice" || d.Source != "sepl" || d.Name != "Heating" || !strings.Contains(d.Bpmn, "level") || d.Time.IsZero() {
+	if d.Key != key || !d.Suspended || d.TenantId != "alice" || d.Source != "sepl" || d.Name != "Heating" || !strings.Contains(d.Bpmn, "level") || d.Time.IsZero() {
 		t.Errorf("deployment: %+v", d)
 	}
 	instances, err := reader.RunningInstances(ctx, d)

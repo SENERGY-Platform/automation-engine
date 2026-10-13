@@ -145,6 +145,7 @@ func mailModel() string {
 
 const d1 = "4a7e3b0c-1d2e-4f56-8a9b-0c1d2e3f4a5b"
 const d2 = "5b8f4c1d-2e3f-4a67-9bac-1d2e3f4a5b6c"
+const d3 = "6c9a5d2e-3f4a-4b78-8cbd-2e3f4a5b6c7d"
 
 func key(vid string) string {
 	return "deplid_" + strings.ReplaceAll(vid, "-", "_")
@@ -159,11 +160,13 @@ func (this *env) sources() *sources {
 	s.deployments = []migrate.ProcessDeployment{
 		{Id: d1, Owner: "alice", Source: "sepl", Deployment: models.Deployment{Version: 3, Id: d1, Name: "Heating", Diagram: models.Diagram{XmlRaw: designerModel(), Svg: "<svg/>"}}},
 		{Id: d2, Owner: "alice", Deployment: models.Deployment{Version: 3, Id: d2, Name: "Mail", Diagram: models.Diagram{XmlRaw: mailModel(), Svg: "<svg/>"}}},
+		{Id: d3, Owner: "alice", Deployment: models.Deployment{Version: 3, Id: d3, Name: "Switched off", Diagram: models.Diagram{XmlRaw: designerModel(), Svg: "<svg/>"}}},
 	}
 	s.camunda = []migrate.CamundaDeployment{
 		{Engine: "shard-1", Id: "c1", Name: "Heating", TenantId: "alice", Key: key(d1), DefinitionId: key(d1) + ":1:x", Bpmn: designerModel()},
 		{Engine: "shard-1", Id: "c-canary", Name: "canary", TenantId: "canary", Key: "canary_process", Bpmn: designerModel()},
 		{Engine: "shard-2", Id: "c-old", Name: "Old", TenantId: "alice", Key: "old_process", Bpmn: designerModel()},
+		{Engine: "shard-1", Id: "c3", Name: "Switched off", TenantId: "alice", Key: key(d3), DefinitionId: key(d3) + ":1:y", Bpmn: designerModel(), Suspended: true},
 	}
 	s.running = map[string][]migrate.CamundaInstance{
 		"c1": {
@@ -232,6 +235,9 @@ func TestProcessesMigrateOnceAndReportWhatNeedsADecision(t *testing.T) {
 		if got := statusOf(report, step, id); got != status {
 			t.Errorf("%v: %v, expected %v", path, got, status)
 		}
+	}
+	if switched, err := e.srv.Controller.GetDeployment(ctx, alice, "processes", d3); err != nil || !switched.Disabled || statusOf(report, "camunda-deployments", d3) != migrate.Migrated {
+		t.Errorf("a deployment switched off in the engine wrapper stays off (DEP-12): %+v %v", switched, err)
 	}
 	if report.ExitCode() != 1 {
 		t.Errorf("open decisions make the run partial")

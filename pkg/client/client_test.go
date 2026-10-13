@@ -188,7 +188,7 @@ func TestModelLifecycleWithVersionsAndValidationHints(t *testing.T) {
 		if err != nil || d.ModelVersion != 2 || d.Name != "Waiting" {
 			t.Fatalf("deploy: %+v %v", d, err)
 		}
-		if err = c.DeleteModel(ctx, alice, ns, m.Id); err != nil {
+		if err = c.DeleteModel(ctx, alice, ns, m.Id, false); err != nil {
 			t.Fatal(err)
 		}
 		d, err = c.GetDeployment(ctx, alice, ns, d.Id)

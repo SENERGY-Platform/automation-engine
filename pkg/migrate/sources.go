@@ -59,6 +59,8 @@ type CamundaDeployment struct {
 	// deplid_<vid with _> for deployments of process-deployment, the process id otherwise
 	Key  string
 	Bpmn string
+	// switched off through camunda-engine-wrapper v1.1.0, which suspends the definition
+	Suspended bool
 }
 
 // CamundaInstance is a running process instance with its current variables.

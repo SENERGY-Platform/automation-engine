@@ -52,6 +52,11 @@ definitions:
       owner:
         type: string
     type: object
+  deprecated.DeploymentDisabled:
+    properties:
+      disabled:
+        type: boolean
+    type: object
   deprecated.DeploymentMetadata:
     properties:
       camunda_deployment_id:
@@ -101,6 +106,8 @@ definitions:
         type: string
       diagram:
         type: string
+      disabled:
+        type: boolean
       error:
         type: string
       id:
@@ -385,6 +392,26 @@ definitions:
       type:
         type: string
     type: object
+  deprecated.ResourceUsage:
+    properties:
+      instances:
+        type: integer
+      readable:
+        items:
+          $ref: '#/definitions/deprecated.ResourceUsageRelease'
+        type: array
+      releases:
+        type: integer
+    type: object
+  deprecated.ResourceUsageRelease:
+    properties:
+      design_id:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+    type: object
   deprecated.ScheduleEntry:
     properties:
       created_by:
@@ -542,6 +569,10 @@ definitions:
     type: object
   deprecated.SmartServiceRelease:
     properties:
+      changed_resources:
+        items:
+          $ref: '#/definitions/model.ChangedResource'
+        type: array
       created_at:
         type: integer
       creator:
@@ -563,6 +594,10 @@ definitions:
     properties:
       bpmn_xml:
         type: string
+      changed_resources:
+        items:
+          $ref: '#/definitions/model.ChangedResource'
+        type: array
       created_at:
         type: integer
       creator:
@@ -801,6 +836,21 @@ definitions:
         description: older entries have been evicted by the per-instance limit (LONG-03)
         type: boolean
     type: object
+  model.ChangedResource:
+    properties:
+      at:
+        description: |-
+          unix seconds: the change time of the resource, or when the check first saw it gone or
+          (import types) changed
+        type: integer
+      id:
+        type: string
+      kind:
+        type: string
+      reason:
+        description: changed or gone
+        type: string
+    type: object
   model.Configurable:
     properties:
       aspect_node_ids:
@@ -855,6 +905,11 @@ definitions:
         items:
           $ref: '#/definitions/model.Correlation'
         type: array
+    type: object
+  model.Count:
+    properties:
+      count:
+        type: integer
     type: object
   model.Criteria:
     properties:
@@ -954,6 +1009,10 @@ definitions:
         type: string
       description:
         type: string
+      disabled:
+        description: 'switched off: nothing starts, nothing runs; updates keep it
+          (DEP-12)'
+        type: boolean
       faulty_since:
         description: set when automatic restarts exceeded the restart policy; no automatic
           restarts until reset (INC-04)
@@ -1038,6 +1097,10 @@ definitions:
     type: object
   model.DeploymentVersion:
     properties:
+      changed_resources:
+        items:
+          $ref: '#/definitions/model.ChangedResource'
+        type: array
       created_at:
         type: string
       deployment_id:
@@ -1060,6 +1123,11 @@ definitions:
         type: string
       update_strategy:
         $ref: '#/definitions/model.UpdateStrategy'
+      used_resources:
+        allOf:
+        - $ref: '#/definitions/model.UsedResources'
+        description: resources the module tasks name, and those of them that changed
+          since (SMS-15)
       version:
         type: integer
       xml:
@@ -1070,6 +1138,11 @@ definitions:
       at_deploy:
         type: boolean
       at_start:
+        type: boolean
+    type: object
+  model.DisabledInput:
+    properties:
+      disabled:
         type: boolean
     type: object
   model.ElementParameters:
@@ -2122,6 +2195,30 @@ definitions:
       namespace:
         type: string
     type: object
+  model.ResourceUsage:
+    properties:
+      instances:
+        type: integer
+      readable:
+        items:
+          $ref: '#/definitions/model.ResourceUsageDeployment'
+        type: array
+      versions:
+        type: integer
+    type: object
+  model.ResourceUsageDeployment:
+    properties:
+      current:
+        type: boolean
+      id:
+        type: string
+      model_id:
+        type: string
+      name:
+        type: string
+      version:
+        type: integer
+    type: object
   model.RestartInput:
     properties:
       deployment_version:
@@ -2395,6 +2492,21 @@ definitions:
     - UpdateStop
     - UpdateDrain
     - UpdateRestart
+  model.UsedResources:
+    properties:
+      flows:
+        items:
+          type: string
+        type: array
+      import_types:
+        items:
+          type: string
+        type: array
+      process_models:
+        items:
+          type: string
+        type: array
+    type: object
   model.UserDependents:
     properties:
       blocked:
@@ -3443,8 +3555,8 @@ paths:
       summary: process definition of a deployment
       tags:
       - deprecated-engine
-  /deprecated/engine/v2/deployments/{id}/exists:
-    get:
+  /deprecated/engine/v2/deployments/{id}/disabled:
+    put:
       deprecated: true
       parameters:
       - description: deployment id
@@ -3452,13 +3564,25 @@ paths:
         name: id
         required: true
         type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.DeploymentDisabled'
       produces:
+      - application/json
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            type: boolean
+            $ref: '#/definitions/deprecated.DeploymentDisabled'
         "400":
           description: Bad Request
           schema:
@@ -3473,8 +3597,57 @@ paths:
             type: string
       security:
       - Bearer: []
-      summary: whether a deployment exists
+      - Bearer: []
+      summary: switch a deployment off or on, as camunda-engine-wrapper v1.1.0 did
       tags:
+      - deprecated-engine
+      - deprecated-engine
+  /deprecated/engine/v2/deployments/{id}/exists:
+    get:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.DeploymentDisabled'
+      produces:
+      - application/json
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.DeploymentDisabled'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      - Bearer: []
+      summary: switch a deployment off or on, as camunda-engine-wrapper v1.1.0 did
+      tags:
+      - deprecated-engine
       - deprecated-engine
   /deprecated/engine/v2/deployments/{id}/instances:
     get:
@@ -6206,6 +6379,39 @@ paths:
       summary: release
       tags:
       - deprecated-smart-services
+  /deprecated/smart-services/releases/{id}/instance-count:
+    get:
+      deprecated: true
+      parameters:
+      - description: release id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Count'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: count the instances of all users on a release, for its administrators
+      tags:
+      - deprecated-smart-services
   /deprecated/smart-services/releases/{id}/instances:
     post:
       deprecated: true
@@ -6278,6 +6484,47 @@ paths:
       security:
       - Bearer: []
       summary: start parameters of a release with options
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/resource-usage/{kind}/{id}:
+    get:
+      deprecated: true
+      description: Asked by process-model-repository, analytics-flow-repo-v2 and import-repository
+        before they delete a resource.
+      parameters:
+      - description: process-models, flows or import-types
+        in: path
+        name: kind
+        required: true
+        type: string
+      - description: resource id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.ResourceUsage'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: who uses a process model, flow or import type, as smart-service-repository
+        answered it
       tags:
       - deprecated-smart-services
   /health:
@@ -6885,6 +7132,54 @@ paths:
       summary: create a deployment with this id or update it
       tags:
       - deployments
+  /namespaces/{ns}/deployments/{id}/disabled:
+    put:
+      consumes:
+      - application/json
+      description: Off stops the running instances; while off, starts are refused
+        (409) and schedules, timer and message starts are skipped. Updates keep the
+        state. Not for deployments of gateways.
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.DisabledInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Deployment'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/model.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: switch a deployment off or on
+      tags:
+      - deployments
   /namespaces/{ns}/deployments/{id}/event-descriptions:
     get:
       parameters:
@@ -6914,6 +7209,43 @@ paths:
       security:
       - Bearer: []
       summary: event descriptions of a deployment, as event workers evaluate them
+      tags:
+      - deployments
+  /namespaces/{ns}/deployments/{id}/instance-count:
+    get:
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: version, default the current
+        in: query
+        name: version
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Count'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/model.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: count the instances of all users on a version of a deployment
       tags:
       - deployments
   /namespaces/{ns}/deployments/{id}/parameters:
@@ -8266,6 +8598,10 @@ paths:
         name: id
         required: true
         type: string
+      - description: delete a model module tasks deploy; admins only
+        in: query
+        name: force
+        type: boolean
       responses:
         "204":
           description: No Content
@@ -8607,6 +8943,44 @@ paths:
       security:
       - Bearer: []
       summary: prepare a deployment
+      tags:
+      - deployments
+  /namespaces/{ns}/resource-usage/{kind}/{id}:
+    get:
+      description: Counts, over all users, the deployment versions whose module tasks
+        name the resource and that are current or still have instances, and their
+        instances; lists those the caller may read. Repositories ask before deleting
+        a resource.
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: process-models, flows or import-types
+        in: path
+        name: kind
+        required: true
+        type: string
+      - description: resource id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ResourceUsage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: who uses a process model, flow or import type
       tags:
       - deployments
   /namespaces/{ns}/schedules:

@@ -76,6 +76,10 @@ func (this *Engine) fireSchedules(ctx context.Context, now time.Time) error {
 			if err = tx.SaveSchedule(s); err != nil {
 				return err
 			}
+			if deployment.Disabled {
+				this.logger.InfoContext(ctx, "scheduled start skipped, the deployment is disabled", "schedule_id", s.Id, "deployment_id", deployment.Id)
+				return nil
+			}
 			_, _, err = this.startInstance(tx, StartRequest{DeploymentId: deployment.Id, Owner: deployment.Owner}, model.CauseStart)
 			var modelErr *model.Error
 			if errors.As(err, &modelErr) && modelErr.Kind != model.KindInternal && modelErr.Kind != model.KindUnavailable {

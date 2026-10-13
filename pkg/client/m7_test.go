@@ -17,6 +17,7 @@
 package client_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -139,6 +140,42 @@ func TestModelsOfOtherOwners(t *testing.T) {
 		others, err := c.ListModels(ctx, alice, ns, model.ModelListOptions{NotOwner: "alice"})
 		if err != nil || others.Total != 0 {
 			t.Fatalf("%+v %v", others, err)
+		}
+	})
+}
+
+// Switching a deployment off stops its instances and refuses starts; an update keeps the
+// state, switching on allows starts again (DEP-12).
+func TestDeploymentSwitchedOffAndOn(t *testing.T) {
+	each(t, func(t *testing.T, c client.Client) {
+		d, err := c.CreateDeployment(ctx, alice, ns, model.DeploymentInput{Xml: waitingModel()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		running, err := c.StartInstance(ctx, alice, ns, model.StartInstanceInput{DeploymentId: d.Id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d, err = c.SetDeploymentDisabled(ctx, alice, ns, d.Id, model.DisabledInput{Disabled: true}); err != nil || !d.Disabled {
+			t.Fatalf("%+v %v", d, err)
+		}
+		if inst, _ := c.GetInstance(ctx, alice, ns, running.Id); inst.State != model.StateTerminated {
+			t.Errorf("switching off stops running instances: %v", inst.State)
+		}
+		if _, err = c.StartInstance(ctx, alice, ns, model.StartInstanceInput{DeploymentId: d.Id}); !errors.Is(err, model.ErrConflict) {
+			t.Errorf("a disabled deployment refuses starts: %v", err)
+		}
+		if d, err = c.PutDeployment(ctx, alice, ns, d.Id, model.DeploymentInput{Xml: waitingModel(), UpdateStrategy: model.UpdateStop}); err != nil || !d.Disabled {
+			t.Errorf("an update keeps the state: %+v %v", d, err)
+		}
+		if _, err = c.SetDeploymentDisabled(ctx, bob, ns, d.Id, model.DisabledInput{Disabled: false}); err == nil {
+			t.Error("only who may write the deployment switches it")
+		}
+		if _, err = c.SetDeploymentDisabled(ctx, alice, ns, d.Id, model.DisabledInput{Disabled: false}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = c.StartInstance(ctx, alice, ns, model.StartInstanceInput{DeploymentId: d.Id}); err != nil {
+			t.Errorf("switched on, it starts again: %v", err)
 		}
 	})
 }
