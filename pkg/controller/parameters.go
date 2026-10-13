@@ -17,19 +17,19 @@
 package controller
 
 import (
+	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"context"
 	"maps"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
-	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
 
 // SetParameters enables start parameters with options (SMS-08); userToken serves starts without
 // a caller, e.g. by the watcher.
-func (this *Controller) SetParameters(describer *parameters.Describer, userToken auth.UserTokenSource) {
+func (this *Controller) SetParameters(describer *prepare.Describer, userToken auth.UserTokenSource) {
 	this.parameters = describer
 	this.parametersUserToken = userToken
 }
@@ -83,7 +83,7 @@ func (this *Controller) MaintenanceParameters(ctx context.Context, token string,
 
 func (this *Controller) describe(ctx context.Context, token string, start *bpmn.Element) ([]model.ParameterDescription, error) {
 	if this.parameters == nil {
-		return parameters.New("", nil).Describe(ctx, token, start)
+		return prepare.NewDescriber("", nil).Describe(ctx, token, start)
 	}
 	return this.parameters.Describe(ctx, token, start)
 }

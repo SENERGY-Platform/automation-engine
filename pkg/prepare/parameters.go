@@ -14,10 +14,7 @@
  * limitations under the License.
  */
 
-// Package parameters describes the start parameters of a start event with their choices, as
-// smart-service-repository did for releases (SMS-08): form field properties, static options,
-// characteristics and IoT options from device-selection.
-package parameters
+package prepare
 
 import (
 	"bytes"
@@ -43,14 +40,17 @@ type Characteristics interface {
 	GetCharacteristic(id string) (result models.Characteristic, err error, errCode int)
 }
 
+// Describer describes the start parameters of a start event with their choices, as
+// smart-service-repository did for releases (SMS-08): form field properties, static options,
+// characteristics and IoT options from device-selection.
 type Describer struct {
 	deviceSelectionUrl string
 	characteristics    Characteristics
 	http               *http.Client
 }
 
-// New creates a describer; without deviceSelectionUrl, IoT parameters have no options.
-func New(deviceSelectionUrl string, characteristics Characteristics) *Describer {
+// NewDescriber creates a describer; without deviceSelectionUrl, IoT parameters have no options.
+func NewDescriber(deviceSelectionUrl string, characteristics Characteristics) *Describer {
 	return &Describer{deviceSelectionUrl: deviceSelectionUrl, characteristics: characteristics, http: &http.Client{Timeout: 30 * time.Second}}
 }
 

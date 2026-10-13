@@ -37,7 +37,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
-	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
 	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/api"
@@ -267,11 +266,11 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		certs = &jwt.KeycloakCertProvider{CertUrl: config.KeycloakCertUrl}
 	}
 	c := controller.New(s, e, registry, authorizer, certs)
-	var characteristics parameters.Characteristics
+	var characteristics prepare.Characteristics
 	if config.DeviceRepositoryUrl != "" {
 		characteristics = devicerepositoryclient.NewClient(config.DeviceRepositoryUrl, nil)
 	}
-	c.SetParameters(parameters.New(config.DeviceSelectionUrl, characteristics), userToken)
+	c.SetParameters(prepare.NewDescriber(config.DeviceSelectionUrl, characteristics), userToken)
 	runtime.AddProcessModules(c, registry)
 	runtime.AddWatcher(c, httpCalls, modules.WatcherSettings{AllowGenericRequests: config.AllowGenericWatchRequests,
 		MinInterval: configuration.Duration(config.WatcherMinInterval), DefaultInterval: configuration.Duration(config.WatcherDefaultInterval)})

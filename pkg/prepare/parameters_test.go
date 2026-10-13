@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package parameters
+package prepare
 
 import (
 	"context"
@@ -51,7 +51,7 @@ func TestIotOptionsKeepTheFormatOfReleases(t *testing.T) {
 		{Id: "all", Type: "string", Properties: map[string]string{"iot": "group", "multiple": "true", "auto_select_all": "true"}},
 		{Id: "free", Label: "Free", Type: "long", DefaultValue: "3", Properties: map[string]string{"order": "3", "description": "a number"}},
 	}}
-	described, err := New(server.URL, nil).Describe(context.Background(), "Bearer user", start)
+	described, err := NewDescriber(server.URL, nil).Describe(context.Background(), "Bearer user", start)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestIotOptionsKeepTheFormatOfReleases(t *testing.T) {
 		t.Fatalf("a free parameter: %+v", free)
 	}
 
-	auto, err := New(server.URL, nil).AutoSelected(context.Background(), "Bearer user", start)
+	auto, err := NewDescriber(server.URL, nil).AutoSelected(context.Background(), "Bearer user", start)
 	if err != nil || len(auto["all"].([]any)) != 5 {
 		t.Fatalf("auto_select_all takes every option: %v %v", auto, err)
 	}
@@ -100,14 +100,14 @@ func TestIotParameterWithoutOptionsIsReported(t *testing.T) {
 		{Id: "required", Type: "string", Properties: map[string]string{"iot": "device"}},
 		{Id: "optional", Type: "string", Properties: map[string]string{"iot": "device", "optional": "true"}},
 	}}
-	described, err := New(server.URL, nil).Describe(context.Background(), "Bearer user", start)
+	described, err := NewDescriber(server.URL, nil).Describe(context.Background(), "Bearer user", start)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !described[0].HasNoValidOption || described[1].HasNoValidOption || described[0].Options == nil {
 		t.Fatalf("a required IoT parameter without options is reported, its options are an empty list: %+v", described)
 	}
-	if _, err = New(server.URL, nil).Describe(context.Background(), "", &bpmn.Element{FormFields: []bpmn.FormField{{Id: "x", Properties: map[string]string{"auto_select_all": "true"}}}}); model.AsError(err).Kind != model.KindValidation {
+	if _, err = NewDescriber(server.URL, nil).Describe(context.Background(), "", &bpmn.Element{FormFields: []bpmn.FormField{{Id: "x", Properties: map[string]string{"auto_select_all": "true"}}}}); model.AsError(err).Kind != model.KindValidation {
 		t.Fatalf("auto_select_all needs multiple: %v", err)
 	}
 }

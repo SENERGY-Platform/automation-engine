@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-// Package prepare finds the devices, device groups and imports a deployment can select for its
-// device tasks and device events (DEP-01), through device-selection.
+// Package prepare tells what a user chooses before a deploy or a start: the devices, device
+// groups and imports a deployment can select for its device tasks and device events (DEP-01),
+// through device-selection, and the start parameters with their choices (Describer, SMS-08).
 package prepare
 
 import (

@@ -30,7 +30,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
-	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
 	"github.com/SENERGY-Platform/automation-engine/pkg/permissions"
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
@@ -89,7 +88,7 @@ type Controller struct {
 	liveMux      sync.Mutex
 	liveCount    map[string]int
 	// start parameters with options (SMS-08)
-	parameters          *parameters.Describer
+	parameters          *prepare.Describer
 	parametersUserToken auth.UserTokenSource
 	// event debugging; nil without timescale-wrapper (EVT-10, DBG-18)
 	series    events.Series
