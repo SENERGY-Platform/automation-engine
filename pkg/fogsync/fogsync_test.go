@@ -143,7 +143,12 @@ func newEnv(t *testing.T, configure ...func(*configuration.Config)) *env {
 
 func (this *env) waitFor(what string, check func() bool) {
 	this.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	this.waitUpTo(what, 10*time.Second, check)
+}
+
+func (this *env) waitUpTo(what string, timeout time.Duration, check func() bool) {
+	this.t.Helper()
+	deadline := time.Now().Add(timeout)
 	for !check() {
 		if time.Now().After(deadline) {
 			this.t.Fatalf("timeout waiting for %v", what)
@@ -526,6 +531,16 @@ func TestTheCloudLearnsTheEndBeforeTheGatewayTrims(t *testing.T) {
 	if _, err = e.gateway.Engine.Correlate(ctx, engine.CorrelationRequest{MessageInput: model.MessageInput{Name: "go", InstanceId: inst.Id}}); err != nil {
 		t.Fatal(err)
 	}
+	// trimming has to meet the ended instance, or keeping it proves nothing
+	e.waitFor("the completed instance on the gateway", func() bool {
+		var state model.InstanceState
+		_ = e.gateway.Store.Tx(ctx, func(tx *store.Tx) error {
+			inst, err := tx.GetInstance(inst.Id, false)
+			state = inst.State
+			return err
+		})
+		return state == model.StateCompleted
+	})
 	trim := func() {
 		err := e.gateway.Store.Tx(ctx, func(tx *store.Tx) error {
 			if _, err := tx.TrimOldestHistory(1000); err != nil {
@@ -546,7 +561,9 @@ func TestTheCloudLearnsTheEndBeforeTheGatewayTrims(t *testing.T) {
 		t.Fatal("the ended instance stays until the cloud has taken its end")
 	}
 	e.online.Store(true)
-	e.waitFor("the completed instance in the cloud", func() bool { return e.cloudInstance(inst.Id).State == model.StateCompleted })
+	// a batch the gateway sent while offline is lost and sent again after the resend time of
+	// the gateway, 30 s by default; whether one was sent depends on its one-second tick
+	e.waitUpTo("the completed instance in the cloud", 45*time.Second, func() bool { return e.cloudInstance(inst.Id).State == model.StateCompleted })
 	e.waitFor("the acknowledgement on the gateway", func() bool {
 		var acked, latest int64
 		_ = e.gateway.Store.Tx(ctx, func(tx *store.Tx) (err error) {
