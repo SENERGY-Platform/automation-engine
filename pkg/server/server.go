@@ -58,7 +58,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/devicecommand"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/httpcall"
-	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/notify"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/processio"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
@@ -239,7 +238,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 
 	io := processio.New(s, processio.Limits{MaxValuesPerUser: config.MaxIoValuesPerUser, MaxValueBytes: config.MaxIoValueBytes})
 	e.RegisterTaskType(processio.TaskType, processio.NewType(io))
-	e.RegisterTaskType(notify.TaskType, notify.New(notifier))
+	e.RegisterTaskType(notification.TaskType, notification.NewTask(notifier))
 	httpCalls := httpcall.New(registry, config.Mode)
 	e.RegisterTaskType(httpcall.TaskType, httpCalls)
 	moduleSettings := moduleSettings(config)

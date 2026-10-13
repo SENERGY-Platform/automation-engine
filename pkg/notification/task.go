@@ -14,9 +14,7 @@
  * limitations under the License.
  */
 
-// Package notify is the task type "notification" (BPMN-09): it sends a notification to the
-// owner of the instance, which process-deployment did by filling an http-connector.
-package notify
+package notification
 
 import (
 	"context"
@@ -37,12 +35,14 @@ type Sender interface {
 	Send(ctx context.Context, n store.Notification) error
 }
 
-type Type struct {
+// Task is the task type "notification" (BPMN-09): it sends a notification to the owner of the
+// instance, which process-deployment did by filling an http-connector.
+type Task struct {
 	sender Sender
 }
 
-func New(sender Sender) *Type {
-	return &Type{sender: sender}
+func NewTask(sender Sender) *Task {
+	return &Task{sender: sender}
 }
 
 func text(input map[string]any, name string) string {
@@ -57,7 +57,7 @@ func text(input map[string]any, name string) string {
 }
 
 // Execute sends title and message; a failed delivery is retried by the engine.
-func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskResult, error) {
+func (this *Task) Execute(ctx context.Context, task engine.Task) (engine.TaskResult, error) {
 	n := store.Notification{Id: uuid.NewString(), UserId: task.Owner, Title: text(task.Input, "title"), Message: text(task.Input, "message"), Topic: Topic, CreatedAt: time.Now()}
 	if n.Title == "" && n.Message == "" {
 		return engine.TaskResult{}, &engine.PermanentError{Message: "notification needs the input title or message"}

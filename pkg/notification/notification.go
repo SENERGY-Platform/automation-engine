@@ -15,7 +15,8 @@
  */
 
 // Package notification sends user notifications through the notifier and copies them to
-// developer-notifications, in the format process-incident-api uses today (INC-02).
+// developer-notifications, in the format process-incident-api uses today (INC-02), and is the
+// task type "notification" of processes (Task, BPMN-09).
 package notification
 
 import (
