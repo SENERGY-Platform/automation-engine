@@ -32,25 +32,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
-
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
-
-	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
-	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v3/lib/client"
-
 	"github.com/SENERGY-Platform/automation-engine/pkg/api"
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/controller"
+	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/deprecated"
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
-	"github.com/SENERGY-Platform/automation-engine/pkg/metrics"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
 	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/legacyio"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules"
+	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/namespaces"
 	"github.com/SENERGY-Platform/automation-engine/pkg/notification"
 	"github.com/SENERGY-Platform/automation-engine/pkg/permissions"
@@ -60,6 +55,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/httpcall"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/processio"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
+	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
 	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/invalidator"
@@ -74,7 +70,7 @@ type Server struct {
 	Handler     http.Handler
 	Namespaces  *namespaces.Registry
 	Permissions *permissions.Service
-	Metrics     *metrics.Metrics
+	Metrics     *Metrics
 	Live        *debug.Hub
 	// removes the resources of deleted modules (SMS-06)
 	ModuleRemover *modules.Remover
@@ -233,7 +229,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	e := engine.New(s, engineSettings, registry, logger)
 	notifier := notification.New(config.NotifierUrl, config.DeveloperNotificationsUrl, logger)
 	e.SetNotifier(notifier)
-	m := metrics.New(configuration.Duration(config.StalledAfter))
+	m := NewMetrics(configuration.Duration(config.StalledAfter))
 	e.SetMetrics(m)
 
 	io := processio.New(s, processio.Limits{MaxValuesPerUser: config.MaxIoValuesPerUser, MaxValueBytes: config.MaxIoValueBytes})
@@ -375,7 +371,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 }
 
 // deviceCommands creates the task type device_command if its services are configured (TASK-01)
-func deviceCommands(ctx context.Context, config configuration.Config, deps Dependencies, broker mqtt.Broker, repo devices.Repository, aspects *devices.AspectNodes, s *store.Store, m *metrics.Metrics, logger *slog.Logger) (*devicecommand.Type, error) {
+func deviceCommands(ctx context.Context, config configuration.Config, deps Dependencies, broker mqtt.Broker, repo devices.Repository, aspects *devices.AspectNodes, s *store.Store, m *Metrics, logger *slog.Logger) (*devicecommand.Type, error) {
 	mar, ts, producer := deps.Marshaller, deps.Timescale, deps.Producer
 	prefix := ""
 	if config.Mode == "fog" && repo != nil {

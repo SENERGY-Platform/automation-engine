@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-// Package metrics exposes Prometheus metrics of the engine (OPS-05, LONG-13, LONG-14).
-package metrics
+package server
 
 import (
 	"context"
@@ -31,8 +30,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-const prefix = "automation_engine_"
+const metricsPrefix = "automation_engine_"
 
+// Metrics exposes Prometheus metrics of the engine (OPS-05, LONG-13, LONG-14).
 type Metrics struct {
 	registry       *prometheus.Registry
 	started        *prometheus.CounterVec
@@ -59,44 +59,44 @@ type Metrics struct {
 
 var _ engine.Metrics = (*Metrics)(nil)
 
-// New registers the metrics; stalledAfter is the time without element change after which a
+// NewMetrics registers the metrics; stalledAfter is the time without element change after which a
 // running instance counts as stalled.
-func New(stalledAfter time.Duration) *Metrics {
+func NewMetrics(stalledAfter time.Duration) *Metrics {
 	m := &Metrics{
 		registry:     prometheus.NewRegistry(),
 		stalledAfter: stalledAfter,
-		started: prometheus.NewCounterVec(prometheus.CounterOpts{Name: prefix + "runs_started_total", Help: "started runs of instances, including restarts"},
+		started: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "runs_started_total", Help: "started runs of instances, including restarts"},
 			[]string{"namespace", "deployment_id", "user_id"}),
-		ended: prometheus.NewCounterVec(prometheus.CounterOpts{Name: prefix + "runs_ended_total", Help: "ended runs by end state"},
+		ended: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "runs_ended_total", Help: "ended runs by end state"},
 			[]string{"namespace", "deployment_id", "user_id", "state"}),
-		incidents: prometheus.NewCounterVec(prometheus.CounterOpts{Name: prefix + "incidents_total", Help: "incidents"},
+		incidents: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "incidents_total", Help: "incidents"},
 			[]string{"namespace", "deployment_id", "user_id"}),
-		restarts: prometheus.NewCounterVec(prometheus.CounterOpts{Name: prefix + "automatic_restarts_total", Help: "automatic restarts after incidents; performed=false when the restart policy prevented them"},
+		restarts: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "automatic_restarts_total", Help: "automatic restarts after incidents; performed=false when the restart policy prevented them"},
 			[]string{"namespace", "deployment_id", "performed"}),
-		correlations: prometheus.NewCounterVec(prometheus.CounterOpts{Name: prefix + "correlations_total", Help: "message correlations by result: matched, unmatched, duplicate"},
+		correlations: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "correlations_total", Help: "message correlations by result: matched, unmatched, duplicate"},
 			[]string{"result"}),
-		tasks: prometheus.NewCounterVec(prometheus.CounterOpts{Name: prefix + "task_executions_total", Help: "task executions by task type and result"},
+		tasks: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "task_executions_total", Help: "task executions by task type and result"},
 			[]string{"task_type", "result"}),
-		taskDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: prefix + "task_execution_seconds", Help: "duration of task executions", Buckets: prometheus.DefBuckets},
+		taskDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: metricsPrefix + "task_execution_seconds", Help: "duration of task executions", Buckets: prometheus.DefBuckets},
 			[]string{"task_type"}),
-		timerDelay: prometheus.NewHistogram(prometheus.HistogramOpts{Name: prefix + "timer_delay_seconds", Help: "delay between due time and firing of timers",
+		timerDelay: prometheus.NewHistogram(prometheus.HistogramOpts{Name: metricsPrefix + "timer_delay_seconds", Help: "delay between due time and firing of timers",
 			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 300, 3600}}),
-		storageRows: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: prefix + "storage_rows", Help: "rows per table of runtime state, history, outboxes and IO"},
+		storageRows: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: metricsPrefix + "storage_rows", Help: "rows per table of runtime state, history, outboxes and IO"},
 			[]string{"table"}),
-		databaseBytes: prometheus.NewGauge(prometheus.GaugeOpts{Name: prefix + "database_bytes", Help: "size of the database"}),
-		stalled: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: prefix + "stalled_instances", Help: "running instances without element change for the configured time"},
+		databaseBytes: prometheus.NewGauge(prometheus.GaugeOpts{Name: metricsPrefix + "database_bytes", Help: "size of the database"}),
+		stalled: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: metricsPrefix + "stalled_instances", Help: "running instances without element change for the configured time"},
 			[]string{"namespace"}),
-		networkContact: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: prefix + "network_last_contact_seconds", Help: "seconds since the last message of a gateway; alarm on large values (SYNC-12)"},
+		networkContact: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: metricsPrefix + "network_last_contact_seconds", Help: "seconds since the last message of a gateway; alarm on large values (SYNC-12)"},
 			[]string{"network_id"}),
-		networkBacklog: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: prefix + "network_backlog", Help: "unacknowledged synchronisation of a gateway: up in positions of its change stream, down in resources not applied, failed in resources it could not apply"},
+		networkBacklog: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: metricsPrefix + "network_backlog", Help: "unacknowledged synchronisation of a gateway: up in positions of its change stream, down in resources not applied, failed in resources it could not apply"},
 			[]string{"network_id", "direction"}),
-		topActivities: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: prefix + "instance_activities_top", Help: "activity entries of the instances with the most entries"},
+		topActivities: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: metricsPrefix + "instance_activities_top", Help: "activity entries of the instances with the most entries"},
 			[]string{"namespace", "instance_id"}),
 		commandSent: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "external_task_worker_task_command_send_count_vec", Help: "device commands sent; process_definition_id carries the deployment id"},
 			[]string{"instance_id", "user_id", "process_definition_id"}),
 		marshallingLatency: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "external_task_worker_task_marshalling_latency", Help: "latency of marshaller calls",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5}}, []string{"instance_id", "user_id", "endpoint", "service_id", "function_id"}),
-		deprecated: prometheus.NewCounterVec(prometheus.CounterOpts{Name: prefix + "deprecated_requests_total", Help: "requests to the routes of the old APIs under deprecated/; none for a while means the layer can go (API-03)"},
+		deprecated: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "deprecated_requests_total", Help: "requests to the routes of the old APIs under deprecated/; none for a while means the layer can go (API-03)"},
 			[]string{"route"}),
 	}
 	m.instanceId, _ = os.Hostname()

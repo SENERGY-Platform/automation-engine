@@ -31,7 +31,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
-	"github.com/SENERGY-Platform/automation-engine/pkg/metrics"
 	"github.com/SENERGY-Platform/automation-engine/pkg/namespaces"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/invalidator"
@@ -50,7 +49,7 @@ type EventServer struct {
 	Store   *store.Store
 	Engine  *engine.Engine
 	Worker  *events.Worker
-	Metrics *metrics.Metrics
+	Metrics *Metrics
 	config  configuration.Config
 	logger  *slog.Logger
 	wg      sync.WaitGroup
@@ -93,7 +92,7 @@ func NewEventServer(ctx context.Context, config configuration.Config, logger *sl
 		return nil, err
 	}
 	e := engine.New(s, settings, registry, logger)
-	m := metrics.New(configuration.Duration(config.StalledAfter))
+	m := NewMetrics(configuration.Duration(config.StalledAfter))
 	e.SetMetrics(m)
 	result := &EventServer{Store: s, Engine: e, Metrics: m, config: config, logger: logger}
 
