@@ -52,6 +52,27 @@ definitions:
       owner:
         type: string
     type: object
+  deprecated.DeploymentMetadata:
+    properties:
+      camunda_deployment_id:
+        type: string
+      deployment_model:
+        $ref: '#/definitions/models.Deployment'
+      is_placeholder:
+        type: boolean
+      marked_as_missing:
+        type: boolean
+      marked_for_delete:
+        type: boolean
+      network_id:
+        type: string
+      process_parameter:
+        additionalProperties:
+          $ref: '#/definitions/deprecated.Variable'
+        type: object
+      sync_date:
+        type: string
+    type: object
   deprecated.DeviceDependency:
     properties:
       bpmn_resources:
@@ -126,6 +147,25 @@ definitions:
       superProcessInstanceId:
         type: string
       tenantId:
+        type: string
+    type: object
+  deprecated.Hub:
+    properties:
+      device_ids:
+        items:
+          type: string
+        type: array
+      device_local_ids:
+        items:
+          type: string
+        type: array
+      hash:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner_id:
         type: string
     type: object
   deprecated.Incident:
@@ -545,6 +585,117 @@ definitions:
         type: string
       usable:
         type: boolean
+    type: object
+  deprecated.SyncDeployment:
+    properties:
+      definition_id:
+        type: string
+      deploymentTime:
+        type: string
+      diagram:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      is_placeholder:
+        type: boolean
+      marked_as_missing:
+        type: boolean
+      marked_for_delete:
+        type: boolean
+      name:
+        type: string
+      network_id:
+        type: string
+      source:
+        type: string
+      sync_date:
+        type: string
+      tenantId:
+        type: string
+    type: object
+  deprecated.SyncHistoricProcessInstance:
+    properties:
+      businessKey:
+        type: string
+      caseInstanceId:
+        type: string
+      deleteReason:
+        type: string
+      durationInMillis:
+        type: number
+      endTime:
+        type: string
+      id:
+        type: string
+      is_placeholder:
+        type: boolean
+      marked_as_missing:
+        type: boolean
+      marked_for_delete:
+        type: boolean
+      network_id:
+        type: string
+      processDefinitionId:
+        type: string
+      processDefinitionKey:
+        type: string
+      processDefinitionName:
+        type: string
+      processDefinitionVersion:
+        type: number
+      startActivityId:
+        type: string
+      startTime:
+        type: string
+      startUserId:
+        type: string
+      state:
+        type: string
+      superCaseInstanceId:
+        type: string
+      superProcessInstanceId:
+        type: string
+      sync_date:
+        type: string
+      tenantId:
+        type: string
+    type: object
+  deprecated.SyncIncident:
+    properties:
+      business_key:
+        type: string
+      deployment_name:
+        type: string
+      error_message:
+        type: string
+      external_task_id:
+        type: string
+      id:
+        type: string
+      is_placeholder:
+        type: boolean
+      marked_as_missing:
+        type: boolean
+      marked_for_delete:
+        type: boolean
+      msg_version:
+        type: integer
+      network_id:
+        type: string
+      process_definition_id:
+        type: string
+      process_instance_id:
+        type: string
+      sync_date:
+        type: string
+      tenant_id:
+        type: string
+      time:
+        type: string
+      worker_id:
+        type: string
     type: object
   deprecated.Variable:
     properties:
@@ -3914,6 +4065,206 @@ paths:
       summary: number of running instances
       tags:
       - deprecated-engine
+  /deprecated/fog-deployment/deployments/{networkId}:
+    post:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: source
+        in: query
+        name: source
+        type: string
+      - description: deployment
+        in: body
+        name: deployment
+        required: true
+        schema:
+          $ref: '#/definitions/models.Deployment'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Deployment'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: deploy to a gateway in the format version 3
+      tags:
+      - deprecated-fog-deployment
+  /deprecated/fog-deployment/deployments/{networkId}/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: boolean
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete a deployment of a gateway
+      tags:
+      - deprecated-process-sync
+  /deprecated/fog-deployment/deployments/{networkId}/{id}/start:
+    get:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: instance id
+        in: query
+        name: business_key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: boolean
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: start a deployment of a gateway
+      tags:
+      - deprecated-process-sync
+  /deprecated/fog-deployment/prepared-deployments/{networkId}:
+    post:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: BPMN and SVG
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.PrepareRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Deployment'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: prepare a deployment for a gateway
+      tags:
+      - deprecated-fog-deployment
+  /deprecated/fog-deployment/prepared-deployments/{networkId}/{modelId}:
+    get:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: model id
+        in: path
+        name: modelId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Deployment'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: prepare a deployment of a model for a gateway
+      tags:
+      - deprecated-fog-deployment
   /deprecated/incidents/incidents:
     get:
       deprecated: true
@@ -4288,6 +4639,541 @@ paths:
       summary: set a process-io value
       tags:
       - deprecated-io
+  /deprecated/process-sync/deployments:
+    get:
+      deprecated: true
+      parameters:
+      - description: comma separated network ids
+        in: query
+        name: network_id
+        required: true
+        type: string
+      - description: page size, default 100
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: part of the name
+        in: query
+        name: search
+        type: string
+      - description: name or deploymentTime with .asc or .desc
+        in: query
+        name: sort
+        type: string
+      - description: with diagram and definition
+        in: query
+        name: extended
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.SyncDeployment'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: deployments of gateways
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/deployments/{networkId}/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: boolean
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete a deployment of a gateway
+      tags:
+      - deprecated-process-sync
+    get:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SyncDeployment'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: deployment of a gateway
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/deployments/{networkId}/{id}/metadata:
+    get:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.DeploymentMetadata'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: metadata of a deployment of a gateway
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/deployments/{networkId}/{id}/start:
+    get:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: instance id
+        in: query
+        name: business_key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: boolean
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: start a deployment of a gateway
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/history/process-instances:
+    get:
+      deprecated: true
+      parameters:
+      - description: comma separated network ids
+        in: query
+        name: network_id
+        required: true
+        type: string
+      - description: page size, default 100
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: startTime, endTime or processDefinitionName with .asc or .desc
+        in: query
+        name: sort
+        type: string
+      - description: part of the deployment name
+        in: query
+        name: search
+        type: string
+      - description: comma separated business keys
+        in: query
+        name: business_key
+        type: string
+      - description: process definition id
+        in: query
+        name: processDefinitionId
+        type: string
+      - description: finished or unfinished
+        in: query
+        name: state
+        type: string
+      - description: answer {total, data}
+        in: query
+        name: with_total
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.SyncHistoricProcessInstance'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: instances of gateways
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/history/process-instances/{networkId}/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: boolean
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete an instance of a gateway
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/incidents:
+    get:
+      deprecated: true
+      parameters:
+      - description: comma separated network ids
+        in: query
+        name: network_id
+        required: true
+        type: string
+      - description: instance id
+        in: query
+        name: process_instance_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.SyncIncident'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: incidents of gateways
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/metadata/{networkId}:
+    get:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: deployment id
+        in: query
+        name: deployment_id
+        type: string
+      - description: the same id
+        in: query
+        name: camunda_deployment_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.DeploymentMetadata'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: metadata of the deployments of a gateway
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/networks:
+    get:
+      deprecated: true
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.Hub'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: gateways with the engine
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/process-instances-by-business-key/{networkId}/{business_key}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: 'business key, with or without wardened:'
+        in: path
+        name: business_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: boolean
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: stop the instance of a business key on a gateway
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/process-instances/{networkId}/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: boolean
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: stop an instance of a gateway
+      tags:
+      - deprecated-process-sync
+  /deprecated/process-sync/sync/deployments/{networkId}:
+    post:
+      deprecated: true
+      parameters:
+      - description: network id
+        in: path
+        name: networkId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: boolean
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: no longer needed; the engine reconciles by itself
+      tags:
+      - deprecated-process-sync
   /deprecated/repository/processes:
     post:
       deprecated: true

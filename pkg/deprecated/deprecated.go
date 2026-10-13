@@ -62,6 +62,7 @@ func New(c api.Controller, counter Counter) *Handler {
 	this.engine()
 	this.deployments()
 	this.smartServices()
+	this.processSync()
 	this.repository()
 	this.io()
 	this.incidents()

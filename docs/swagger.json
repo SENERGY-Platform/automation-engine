@@ -1889,6 +1889,317 @@
                 }
             }
         },
+        "/deprecated/fog-deployment/deployments/{networkId}": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-fog-deployment"
+                ],
+                "summary": "deploy to a gateway in the format version 3",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "source",
+                        "name": "source",
+                        "in": "query"
+                    },
+                    {
+                        "description": "deployment",
+                        "name": "deployment",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/fog-deployment/deployments/{networkId}/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "delete a deployment of a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/fog-deployment/deployments/{networkId}/{id}/start": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "start a deployment of a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "business_key",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/fog-deployment/prepared-deployments/{networkId}": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-fog-deployment"
+                ],
+                "summary": "prepare a deployment for a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "BPMN and SVG",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/deprecated.PrepareRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/fog-deployment/prepared-deployments/{networkId}/{modelId}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-fog-deployment"
+                ],
+                "summary": "prepare a deployment of a model for a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "model id",
+                        "name": "modelId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/deprecated/incidents/incidents": {
             "get": {
                 "security": [
@@ -2453,6 +2764,837 @@
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/deployments": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "deployments of gateways",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "comma separated network ids",
+                        "name": "network_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size, default 100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "part of the name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "name or deploymentTime with .asc or .desc",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "with diagram and definition",
+                        "name": "extended",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/deprecated.SyncDeployment"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/deployments/{networkId}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "deployment of a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/deprecated.SyncDeployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "delete a deployment of a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/deployments/{networkId}/{id}/metadata": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "metadata of a deployment of a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/deprecated.DeploymentMetadata"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/deployments/{networkId}/{id}/start": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "start a deployment of a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "business_key",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/history/process-instances": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "instances of gateways",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "comma separated network ids",
+                        "name": "network_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size, default 100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "startTime, endTime or processDefinitionName with .asc or .desc",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "part of the deployment name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "comma separated business keys",
+                        "name": "business_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "process definition id",
+                        "name": "processDefinitionId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "finished or unfinished",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "answer {total, data}",
+                        "name": "with_total",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/deprecated.SyncHistoricProcessInstance"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/history/process-instances/{networkId}/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "delete an instance of a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/incidents": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "incidents of gateways",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "comma separated network ids",
+                        "name": "network_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "process_instance_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/deprecated.SyncIncident"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/metadata/{networkId}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "metadata of the deployments of a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "deployment id",
+                        "name": "deployment_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "the same id",
+                        "name": "camunda_deployment_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/deprecated.DeploymentMetadata"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/networks": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "gateways with the engine",
+                "deprecated": true,
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/deprecated.Hub"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/process-instances-by-business-key/{networkId}/{business_key}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "stop the instance of a business key on a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "business key, with or without wardened:",
+                        "name": "business_key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/process-instances/{networkId}/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "stop an instance of a gateway",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/deprecated/process-sync/sync/deployments/{networkId}": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deprecated-process-sync"
+                ],
+                "summary": "no longer needed; the engine reconciles by itself",
+                "deprecated": true,
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id",
+                        "name": "networkId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "boolean"
+                        }
                     },
                     "400": {
                         "description": "Bad Request",
@@ -8461,6 +9603,38 @@
                 }
             }
         },
+        "deprecated.DeploymentMetadata": {
+            "type": "object",
+            "properties": {
+                "camunda_deployment_id": {
+                    "type": "string"
+                },
+                "deployment_model": {
+                    "$ref": "#/definitions/models.Deployment"
+                },
+                "is_placeholder": {
+                    "type": "boolean"
+                },
+                "marked_as_missing": {
+                    "type": "boolean"
+                },
+                "marked_for_delete": {
+                    "type": "boolean"
+                },
+                "network_id": {
+                    "type": "string"
+                },
+                "process_parameter": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/deprecated.Variable"
+                    }
+                },
+                "sync_date": {
+                    "type": "string"
+                }
+            }
+        },
         "deprecated.DeviceDependency": {
             "type": "object",
             "properties": {
@@ -8573,6 +9747,35 @@
                     "type": "string"
                 },
                 "tenantId": {
+                    "type": "string"
+                }
+            }
+        },
+        "deprecated.Hub": {
+            "type": "object",
+            "properties": {
+                "device_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "device_local_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "hash": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_id": {
                     "type": "string"
                 }
             }
@@ -9209,6 +10412,174 @@
                 },
                 "usable": {
                     "type": "boolean"
+                }
+            }
+        },
+        "deprecated.SyncDeployment": {
+            "type": "object",
+            "properties": {
+                "definition_id": {
+                    "type": "string"
+                },
+                "deploymentTime": {
+                    "type": "string"
+                },
+                "diagram": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_placeholder": {
+                    "type": "boolean"
+                },
+                "marked_as_missing": {
+                    "type": "boolean"
+                },
+                "marked_for_delete": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "network_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "sync_date": {
+                    "type": "string"
+                },
+                "tenantId": {
+                    "type": "string"
+                }
+            }
+        },
+        "deprecated.SyncHistoricProcessInstance": {
+            "type": "object",
+            "properties": {
+                "businessKey": {
+                    "type": "string"
+                },
+                "caseInstanceId": {
+                    "type": "string"
+                },
+                "deleteReason": {
+                    "type": "string"
+                },
+                "durationInMillis": {
+                    "type": "number"
+                },
+                "endTime": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_placeholder": {
+                    "type": "boolean"
+                },
+                "marked_as_missing": {
+                    "type": "boolean"
+                },
+                "marked_for_delete": {
+                    "type": "boolean"
+                },
+                "network_id": {
+                    "type": "string"
+                },
+                "processDefinitionId": {
+                    "type": "string"
+                },
+                "processDefinitionKey": {
+                    "type": "string"
+                },
+                "processDefinitionName": {
+                    "type": "string"
+                },
+                "processDefinitionVersion": {
+                    "type": "number"
+                },
+                "startActivityId": {
+                    "type": "string"
+                },
+                "startTime": {
+                    "type": "string"
+                },
+                "startUserId": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "superCaseInstanceId": {
+                    "type": "string"
+                },
+                "superProcessInstanceId": {
+                    "type": "string"
+                },
+                "sync_date": {
+                    "type": "string"
+                },
+                "tenantId": {
+                    "type": "string"
+                }
+            }
+        },
+        "deprecated.SyncIncident": {
+            "type": "object",
+            "properties": {
+                "business_key": {
+                    "type": "string"
+                },
+                "deployment_name": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "external_task_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_placeholder": {
+                    "type": "boolean"
+                },
+                "marked_as_missing": {
+                    "type": "boolean"
+                },
+                "marked_for_delete": {
+                    "type": "boolean"
+                },
+                "msg_version": {
+                    "type": "integer"
+                },
+                "network_id": {
+                    "type": "string"
+                },
+                "process_definition_id": {
+                    "type": "string"
+                },
+                "process_instance_id": {
+                    "type": "string"
+                },
+                "sync_date": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "time": {
+                    "type": "string"
+                },
+                "worker_id": {
+                    "type": "string"
                 }
             }
         },
