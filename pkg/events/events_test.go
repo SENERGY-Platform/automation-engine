@@ -157,6 +157,40 @@ func TestDescribeExpandsGroupsDevicesAndImports(t *testing.T) {
 	}
 }
 
+// aspectImports serves an import type whose output names two aspects, as import-repository
+// answers: the list in aspect_ids, the deprecated aspect_id filled with its first entry
+type aspectImports struct{ fakeImports }
+
+func (aspectImports) Type(devices.Token, string) (models.ImportType, error) {
+	return models.ImportType{Id: "type", Name: "weather", Output: models.ImportContentVariable{Name: "output", Type: models.Structure,
+		SubContentVariables: []models.ImportContentVariable{{Name: "value", Type: models.Structure, SubContentVariables: []models.ImportContentVariable{
+			{Name: "temperature", Type: models.Float, FunctionId: measuring, AspectId: "air", AspectIds: []string{"air", "outside"}},
+		}}}}}, nil
+}
+
+// The unmarshalling finds the value of an import by function and aspects; a variable of an
+// import type that serves several aspects keeps all of them in the description (EVT-02).
+func TestImportDescriptionKeepsAllAspectsOfAVariable(t *testing.T) {
+	describer := events.NewDescriber(&fakeRepo{}, aspects(), aspectImports{})
+	process, _, err := bpmn.Parse(eventProcess())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, _, err := describer.Describe(model.Deployment{Id: "dep", Namespace: "processes", Owner: "alice"}, 1, process,
+		map[string]model.Selection{"reading": {ImportId: "imp"}})
+	if err != nil || len(result) != 1 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	var service models.Service
+	if err = json.Unmarshal(result[0].Service, &service); err != nil {
+		t.Fatal(err)
+	}
+	temperature := service.Outputs[0].ContentVariable.SubContentVariables[0]
+	if temperature.AspectId != "air" || !reflect.DeepEqual(temperature.AspectIds, []string{"air", "outside"}) {
+		t.Fatalf("the variable keeps its aspects: %+v", temperature)
+	}
+}
+
 // fakeUnmarshaller reads the field value of the message, fails for "broken" and finds
 // device-repository unavailable for "unavailable"
 type fakeUnmarshaller struct{}

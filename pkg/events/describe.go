@@ -252,7 +252,10 @@ func (this *Describer) importDescription(token devices.Token, base model.EventDe
 }
 
 func importVariable(v models.ImportContentVariable) models.ContentVariable {
-	result := models.ContentVariable{Name: v.Name, Type: models.Type(v.Type), CharacteristicId: v.CharacteristicId, FunctionId: v.FunctionId, AspectId: v.AspectId}
+	// import-repository keeps the aspects in AspectIds and fills the deprecated AspectId with
+	// the first of them; the unmarshalling needs all
+	result := models.ContentVariable{Name: v.Name, Type: models.Type(v.Type), CharacteristicId: v.CharacteristicId, FunctionId: v.FunctionId,
+		AspectId: v.AspectId, AspectIds: slices.Clone(v.AspectIds)}
 	for _, sub := range v.SubContentVariables {
 		result.SubContentVariables = append(result.SubContentVariables, importVariable(sub))
 	}
