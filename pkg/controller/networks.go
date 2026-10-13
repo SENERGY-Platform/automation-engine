@@ -22,7 +22,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
@@ -33,13 +34,13 @@ import (
 // gateways is configured (DEP-09, SYNC-01). Deployments and instances of a gateway are stored
 // in the cloud with their network id, but run on the gateway: the cloud only desires them.
 type Networks interface {
-	Desire(tx *store.Tx, networkId string, resource protocol.Resource) error
+	Desire(tx *store.Tx, networkId string, resource fogsync.Resource) error
 	// sends the desired state now instead of with the next pass
 	Wake()
 	// the networks with the ids, all if ids is nil, with their resources if detailed
 	Overview(ctx context.Context, ids []string, detailed bool) ([]model.Network, error)
 	// reads from a gateway (DBG-15) and watches an instance there (DBG-12)
-	Call(ctx context.Context, networkId string, method string, namespace string, instance string, args protocol.RequestArgs, result any) error
+	Call(ctx context.Context, networkId string, method string, namespace string, instance string, args fogsync.RequestArgs, result any) error
 	Watch(ctx context.Context, networkId string, namespace string, instance string, options model.WatchOptions) (<-chan model.DebugMessage, error)
 }
 
@@ -130,7 +131,7 @@ func (this *Controller) desireDeployment(tx *store.Tx, d model.Deployment) error
 	if !ok {
 		return model.NotFound("namespace %v not found", d.Namespace)
 	}
-	if err := this.networks.Desire(tx, d.NetworkId, protocol.Resource{Kind: protocol.ResourceNamespace, Id: ns.Name, Namespace: &ns}); err != nil {
+	if err := this.networks.Desire(tx, d.NetworkId, fogsync.Resource{Kind: fogsync.ResourceNamespace, Id: ns.Name, Namespace: &ns}); err != nil {
 		return err
 	}
 	version, err := tx.GetDeploymentVersion(d.Id, d.Version)
@@ -145,12 +146,12 @@ func (this *Controller) desireDeployment(tx *store.Tx, d model.Deployment) error
 	if err != nil {
 		return err
 	}
-	return this.networks.Desire(tx, d.NetworkId, protocol.Resource{Kind: protocol.ResourceDeployment, Id: d.Id,
-		Deployment: &protocol.DeploymentSpec{Deployment: d, Version: version, Descriptions: descriptions, Groups: groups}})
+	return this.networks.Desire(tx, d.NetworkId, fogsync.Resource{Kind: fogsync.ResourceDeployment, Id: d.Id,
+		Deployment: &fogsync.DeploymentSpec{Deployment: d, Version: version, Descriptions: descriptions, Groups: groups}})
 }
 
 func (this *Controller) desireDeletedDeployment(tx *store.Tx, d model.Deployment) error {
-	return this.networks.Desire(tx, d.NetworkId, protocol.Resource{Kind: protocol.ResourceDeployment, Id: d.Id, Deleted: true})
+	return this.networks.Desire(tx, d.NetworkId, fogsync.Resource{Kind: fogsync.ResourceDeployment, Id: d.Id, Deleted: true})
 }
 
 // startOnNetwork records an instance the gateway shall start; it is pending until the gateway
@@ -181,8 +182,8 @@ func (this *Controller) startOnNetwork(ctx context.Context, user jwt.Token, d mo
 		if err = tx.InsertInstance(store.Instance{Instance: result, ActivityMinSeq: 1}); err != nil {
 			return err
 		}
-		return this.networks.Desire(tx, d.NetworkId, protocol.Resource{Kind: protocol.ResourceInstance, Id: id,
-			Instance: &protocol.InstanceSpec{DeploymentId: d.Id, Owner: owner, Variables: variables}})
+		return this.networks.Desire(tx, d.NetworkId, fogsync.Resource{Kind: fogsync.ResourceInstance, Id: id,
+			Instance: &fogsync.InstanceSpec{DeploymentId: d.Id, Owner: owner, Variables: variables}})
 	})
 	if err == nil {
 		this.networks.Wake()
@@ -192,9 +193,9 @@ func (this *Controller) startOnNetwork(ctx context.Context, user jwt.Token, d mo
 
 // desireInstance stops or deletes an instance of a gateway; the gateway reports the result
 func (this *Controller) desireInstance(tx *store.Tx, inst model.Instance, deleted bool) error {
-	resource := protocol.Resource{Kind: protocol.ResourceInstance, Id: inst.Id, Deleted: deleted}
+	resource := fogsync.Resource{Kind: fogsync.ResourceInstance, Id: inst.Id, Deleted: deleted}
 	if !deleted {
-		resource.Instance = &protocol.InstanceSpec{DeploymentId: inst.DeploymentId, Owner: inst.Owner, Variables: inst.StartVariables, Stopped: true}
+		resource.Instance = &fogsync.InstanceSpec{DeploymentId: inst.DeploymentId, Owner: inst.Owner, Variables: inst.StartVariables, Stopped: true}
 	}
 	return this.networks.Desire(tx, inst.NetworkId, resource)
 }
@@ -243,9 +244,9 @@ func (this *Controller) onGateway(ctx context.Context, token string, namespace s
 }
 
 // requestOptions is the JSON of request options
-func requestOptions(value any) protocol.RequestArgs {
+func requestOptions(value any) fogsync.RequestArgs {
 	raw, _ := json.Marshal(value)
-	return protocol.RequestArgs{Options: raw}
+	return fogsync.RequestArgs{Options: raw}
 }
 
 // offlineState is the state of an instance of an unreachable gateway: what the cloud has (DBG-15)

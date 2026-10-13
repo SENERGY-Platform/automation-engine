@@ -31,13 +31,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/permissions"
@@ -570,11 +571,11 @@ func TestTheCloudLearnsTheEndBeforeTheGatewayTrims(t *testing.T) {
 	}
 	var appliedOnGateway, desiredInCloud bool
 	_ = e.gateway.Store.Tx(ctx, func(tx *store.Tx) (err error) {
-		_, appliedOnGateway, err = tx.GetApplied(protocol.ResourceInstance, inst.Id)
+		_, appliedOnGateway, err = tx.GetApplied(fogsync.ResourceInstance, inst.Id)
 		return err
 	})
 	_ = e.cloud.Store.Tx(ctx, func(tx *store.Tx) (err error) {
-		_, desiredInCloud, err = tx.GetDesired(network, protocol.ResourceInstance, inst.Id)
+		_, desiredInCloud, err = tx.GetDesired(network, fogsync.ResourceInstance, inst.Id)
 		return err
 	})
 	if appliedOnGateway || desiredInCloud {

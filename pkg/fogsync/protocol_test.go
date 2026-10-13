@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package protocol_test
+package fogsync_test
 
 import (
 	"testing"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 )
 
@@ -27,40 +28,40 @@ import (
 // processes/state/# of the gateway to processes/{network}/state/# of the cloud; the topics of the
 // protocol have to survive that mapping and stay apart from those of process-sync.
 func TestTopicsSurviveTheBridgeOfTheConnector(t *testing.T) {
-	cloudCommand := protocol.CloudCommandTopic("hub-1", protocol.KindDesired)
+	cloudCommand := fogsync.CloudCommandTopic("hub-1", fogsync.KindDesired)
 	gatewayCommand := "processes/cmd/" + cloudCommand[len("processes/hub-1/cmd/"):]
-	if !mqtt.Matches(protocol.GatewayCommandFilter, gatewayCommand) {
+	if !mqtt.Matches(fogsync.GatewayCommandFilter, gatewayCommand) {
 		t.Errorf("the gateway receives %v", gatewayCommand)
 	}
-	gatewayState := protocol.GatewayStateTopic(protocol.KindChanges)
+	gatewayState := fogsync.GatewayStateTopic(fogsync.KindChanges)
 	cloudState := "processes/hub-1/state/" + gatewayState[len("processes/state/"):]
-	if !mqtt.Matches(protocol.CloudStateFilter("engine"), cloudState) || !mqtt.Matches(protocol.CloudStateFilter(""), cloudState) {
+	if !mqtt.Matches(fogsync.CloudStateFilter("engine"), cloudState) || !mqtt.Matches(fogsync.CloudStateFilter(""), cloudState) {
 		t.Errorf("the cloud receives %v", cloudState)
 	}
 	for _, processSync := range []string{"processes/hub-1/state/deployment", "processes/hub-1/state/process-instance/known"} {
-		if mqtt.Matches(protocol.CloudStateFilter(""), processSync) {
+		if mqtt.Matches(fogsync.CloudStateFilter(""), processSync) {
 			t.Errorf("a message of process-sync is not one of the engine: %v", processSync)
 		}
 	}
 	cases := map[string][2]string{
-		cloudCommand:   {"hub-1", protocol.KindDesired},
-		gatewayCommand: {"", protocol.KindDesired},
-		gatewayState:   {"", protocol.KindChanges},
-		cloudState:     {"hub-1", protocol.KindChanges},
+		cloudCommand:   {"hub-1", fogsync.KindDesired},
+		gatewayCommand: {"", fogsync.KindDesired},
+		gatewayState:   {"", fogsync.KindChanges},
+		cloudState:     {"hub-1", fogsync.KindChanges},
 	}
 	for topic, expected := range cases {
-		network, kind, ok := protocol.KindOf(topic)
+		network, kind, ok := fogsync.KindOf(topic)
 		if !ok || network != expected[0] || kind != expected[1] {
 			t.Errorf("%v: %v %v %v", topic, network, kind, ok)
 		}
 	}
-	if _, _, ok := protocol.KindOf("processes/hub-1/state/deployment"); ok {
+	if _, _, ok := fogsync.KindOf("processes/hub-1/state/deployment"); ok {
 		t.Errorf("topics of process-sync are not read")
 	}
 }
 
 func TestCompatibilityWindow(t *testing.T) {
-	if !protocol.Compatible(protocol.Version, 1) || !protocol.Compatible(protocol.Version-1, 1) || protocol.Compatible(protocol.Version-2, 1) || protocol.Compatible(protocol.Version+1, 1) {
+	if !fogsync.Compatible(fogsync.Version, 1) || !fogsync.Compatible(fogsync.Version-1, 1) || fogsync.Compatible(fogsync.Version-2, 1) || fogsync.Compatible(fogsync.Version+1, 1) {
 		t.Errorf("the cloud serves its version and the window before it, never a newer one (SYNC-11)")
 	}
 }

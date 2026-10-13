@@ -22,11 +22,12 @@ import (
 	"sort"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
@@ -77,7 +78,7 @@ func (this *Controller) EventEvaluations(ctx context.Context, token string, name
 	}
 	var runs []model.Run
 	if networkId != "" {
-		if err = this.networks.Call(ctx, networkId, protocol.MethodListRuns, namespace, id, protocol.RequestArgs{}, &runs); err != nil {
+		if err = this.networks.Call(ctx, networkId, fogsync.MethodListRuns, namespace, id, fogsync.RequestArgs{}, &runs); err != nil {
 			return result, err
 		}
 		run := options.Run
@@ -86,7 +87,7 @@ func (this *Controller) EventEvaluations(ctx context.Context, token string, name
 		}
 		for after := int64(0); ; {
 			var page model.ActivityPage
-			err = this.networks.Call(ctx, networkId, protocol.MethodListActivities, namespace, id,
+			err = this.networks.Call(ctx, networkId, fogsync.MethodListActivities, namespace, id,
 				requestOptions(model.ActivityListOptions{Run: run, ElementId: options.ElementId, AfterSeq: after, Limit: model.MaxPageLimit}), &page)
 			if err != nil {
 				return result, err

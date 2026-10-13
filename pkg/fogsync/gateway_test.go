@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package gateway_test
+package fogsync_test
 
 import (
 	"context"
@@ -25,12 +25,11 @@ import (
 	"testing"
 	"time"
 
-	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/gateway"
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
@@ -38,20 +37,19 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 )
 
-var ctx = context.Background()
 var admin = client.TestToken("gateway", "admin")
 
-// env is a gateway with its agent; the test plays the cloud on the broker of the gateway
-type env struct {
+// gatewayEnv is a gateway with its agent; the test plays the cloud on the broker of the gateway
+type gatewayEnv struct {
 	t      *testing.T
 	srv    *server.Server
-	agent  *gateway.Agent
+	agent  *fogsync.Gateway
 	broker *mqtt.Memory
 	mux    sync.Mutex
 	clock  time.Time
 }
 
-func newEnv(t *testing.T) *env {
+func newGatewayEnv(t *testing.T) *gatewayEnv {
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
 	config := configuration.Default()
@@ -63,12 +61,12 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	srv.Start(ctx)
-	this := &env{t: t, srv: srv, broker: mqtt.NewMemory(), clock: time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)}
-	settings := gateway.DefaultSettings()
+	this := &gatewayEnv{t: t, srv: srv, broker: mqtt.NewMemory(), clock: time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)}
+	settings := fogsync.DefaultGatewaySettings()
 	settings.EngineVersion = "test"
-	this.agent = gateway.New(settings, srv.Store, srv.Engine, srv.Namespaces, this.broker, logger)
+	this.agent = fogsync.NewGateway(settings, srv.Store, srv.Engine, srv.Namespaces, this.broker, logger)
 	this.agent.SetClock(this.now)
-	if err = this.broker.Subscribe(protocol.GatewayCommandFilter, 1, func(topic string, payload []byte) error {
+	if err = this.broker.Subscribe(fogsync.GatewayCommandFilter, 1, func(topic string, payload []byte) error {
 		return this.agent.Handle(ctx, topic, payload)
 	}); err != nil {
 		t.Fatal(err)
@@ -76,20 +74,20 @@ func newEnv(t *testing.T) *env {
 	return this
 }
 
-func (this *env) now() time.Time {
+func (this *gatewayEnv) now() time.Time {
 	this.mux.Lock()
 	defer this.mux.Unlock()
 	return this.clock
 }
 
-func (this *env) advance(d time.Duration) {
+func (this *gatewayEnv) advance(d time.Duration) {
 	this.mux.Lock()
 	this.clock = this.clock.Add(d)
 	this.mux.Unlock()
 }
 
 // send plays the cloud: a message of a kind to the gateway
-func (this *env) send(kind string, message any) {
+func (this *gatewayEnv) send(kind string, message any) {
 	this.t.Helper()
 	raw, err := json.Marshal(message)
 	if err != nil {
@@ -100,14 +98,14 @@ func (this *env) send(kind string, message any) {
 	}
 }
 
-func envelope() protocol.Envelope {
-	return protocol.Envelope{Protocol: protocol.Version, Engine: "cloud", SentAt: time.Now()}
+func envelope() fogsync.Envelope {
+	return fogsync.Envelope{Protocol: fogsync.Version, Engine: "cloud", SentAt: time.Now()}
 }
 
 // received decodes what the gateway sent of a kind
-func received[T any](this *env, kind string) (result []T) {
+func received[T any](this *gatewayEnv, kind string) (result []T) {
 	this.t.Helper()
-	for _, p := range this.broker.Published(protocol.GatewayStateTopic(kind)) {
+	for _, p := range this.broker.Published(fogsync.GatewayStateTopic(kind)) {
 		var message T
 		if err := json.Unmarshal(p.Payload, &message); err != nil {
 			this.t.Fatal(err)
@@ -117,29 +115,25 @@ func received[T any](this *env, kind string) (result []T) {
 	return result
 }
 
-func (this *env) tick() {
+func (this *gatewayEnv) tick() {
 	this.t.Helper()
 	if err := this.agent.Tick(ctx); err != nil {
 		this.t.Fatal(err)
 	}
 }
 
-func waitProcess() string {
-	return b.Process(b.Message("m", "go"), b.Start("start"), b.CatchMessage("wait", "m"), b.End("end"), b.Flow("start", "wait"), b.Flow("wait", "end"))
-}
-
-func deployment(id string, version int, xml string) protocol.Resource {
-	return protocol.Resource{Kind: protocol.ResourceDeployment, Id: id, Version: int64(version), Deployment: &protocol.DeploymentSpec{
+func deployment(id string, version int, xml string) fogsync.Resource {
+	return fogsync.Resource{Kind: fogsync.ResourceDeployment, Id: id, Version: int64(version), Deployment: &fogsync.DeploymentSpec{
 		Deployment: model.Deployment{Namespace: "processes", Name: "loop", Owner: "alice", Version: version, CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		Version:    model.DeploymentVersion{Version: version, Xml: xml, UpdateStrategy: model.UpdateDrain},
 	}}
 }
 
-func start(id string, deploymentId string, version int64) protocol.Resource {
-	return protocol.Resource{Kind: protocol.ResourceInstance, Id: id, Version: version, Instance: &protocol.InstanceSpec{DeploymentId: deploymentId, Owner: "alice", Variables: map[string]any{"room": "kitchen"}}}
+func start(id string, deploymentId string, version int64) fogsync.Resource {
+	return fogsync.Resource{Kind: fogsync.ResourceInstance, Id: id, Version: version, Instance: &fogsync.InstanceSpec{DeploymentId: deploymentId, Owner: "alice", Variables: map[string]any{"room": "kitchen"}}}
 }
 
-func (this *env) instance(id string) (model.Instance, error) {
+func (this *gatewayEnv) instance(id string) (model.Instance, error) {
 	var result model.Instance
 	err := this.srv.Store.Tx(ctx, func(tx *store.Tx) error {
 		inst, err := tx.GetInstance(id, false)
@@ -150,9 +144,9 @@ func (this *env) instance(id string) (model.Instance, error) {
 }
 
 func TestDesiredStateIsAppliedIdempotentlyWithTheIdsAndVersionsOfTheCloud(t *testing.T) {
-	e := newEnv(t)
-	e.send(protocol.KindDesired, protocol.Desired{Envelope: envelope(), Resources: []protocol.Resource{deployment("d1", 3, waitProcess()), start("i1", "d1", 1)}})
-	acks := received[protocol.Applied](e, protocol.KindDesiredAck)
+	e := newGatewayEnv(t)
+	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: envelope(), Resources: []fogsync.Resource{deployment("d1", 3, waitProcess()), start("i1", "d1", 1)}})
+	acks := received[fogsync.Applied](e, fogsync.KindDesiredAck)
 	if len(acks) != 1 || len(acks[0].Results) != 2 || acks[0].Results[0].Error != "" || acks[0].Results[1].Error != "" {
 		t.Fatalf("both resources are applied and acknowledged: %+v", acks)
 	}
@@ -166,8 +160,8 @@ func TestDesiredStateIsAppliedIdempotentlyWithTheIdsAndVersionsOfTheCloud(t *tes
 	}
 
 	// a repeated message changes nothing and is acknowledged with the same result
-	e.send(protocol.KindDesired, protocol.Desired{Envelope: envelope(), Resources: []protocol.Resource{deployment("d1", 3, waitProcess()), start("i1", "d1", 1)}})
-	if acks = received[protocol.Applied](e, protocol.KindDesiredAck); len(acks) != 2 || acks[1].Results[0].Version != 3 || acks[1].Results[0].Error != "" {
+	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: envelope(), Resources: []fogsync.Resource{deployment("d1", 3, waitProcess()), start("i1", "d1", 1)}})
+	if acks = received[fogsync.Applied](e, fogsync.KindDesiredAck); len(acks) != 2 || acks[1].Results[0].Version != 3 || acks[1].Results[0].Error != "" {
 		t.Fatalf("a repeated message is acknowledged again: %+v", acks)
 	}
 	if d, _ = e.srv.Controller.GetDeployment(ctx, admin, "processes", "d1"); d.Version != 3 {
@@ -176,8 +170,8 @@ func TestDesiredStateIsAppliedIdempotentlyWithTheIdsAndVersionsOfTheCloud(t *tes
 
 	// a newer version updates the deployment, a failing resource reports its error (SYNC-13)
 	broken := deployment("d2", 1, "<no bpmn/>")
-	e.send(protocol.KindDesired, protocol.Desired{Envelope: envelope(), Resources: []protocol.Resource{deployment("d1", 4, waitProcess()), broken}})
-	acks = received[protocol.Applied](e, protocol.KindDesiredAck)
+	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: envelope(), Resources: []fogsync.Resource{deployment("d1", 4, waitProcess()), broken}})
+	acks = received[fogsync.Applied](e, fogsync.KindDesiredAck)
 	last := acks[len(acks)-1].Results
 	if last[0].Error != "" || last[1].Error == "" {
 		t.Fatalf("the update applies, the broken deployment fails with a message: %+v", last)
@@ -189,11 +183,11 @@ func TestDesiredStateIsAppliedIdempotentlyWithTheIdsAndVersionsOfTheCloud(t *tes
 	// stop and delete follow the desired state
 	stopped := start("i1", "d1", 2)
 	stopped.Instance.Stopped = true
-	e.send(protocol.KindDesired, protocol.Desired{Envelope: envelope(), Resources: []protocol.Resource{stopped}})
+	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: envelope(), Resources: []fogsync.Resource{stopped}})
 	if inst, _ = e.instance("i1"); inst.State != model.StateTerminated {
 		t.Fatalf("the instance is stopped: %+v", inst)
 	}
-	e.send(protocol.KindDesired, protocol.Desired{Envelope: envelope(), Resources: []protocol.Resource{{Kind: protocol.ResourceInstance, Id: "i1", Version: 3, Deleted: true}, {Kind: protocol.ResourceDeployment, Id: "d1", Version: 5, Deleted: true}}})
+	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: envelope(), Resources: []fogsync.Resource{{Kind: fogsync.ResourceInstance, Id: "i1", Version: 3, Deleted: true}, {Kind: fogsync.ResourceDeployment, Id: "d1", Version: 5, Deleted: true}}})
 	if _, err = e.instance("i1"); err == nil {
 		t.Errorf("the instance is deleted")
 	}
@@ -203,24 +197,24 @@ func TestDesiredStateIsAppliedIdempotentlyWithTheIdsAndVersionsOfTheCloud(t *tes
 }
 
 func TestMessagesOfAnotherProtocolVersionAreNotApplied(t *testing.T) {
-	e := newEnv(t)
+	e := newGatewayEnv(t)
 	other := envelope()
-	other.Protocol = protocol.Version + 1
-	e.send(protocol.KindDesired, protocol.Desired{Envelope: other, Resources: []protocol.Resource{deployment("d1", 1, waitProcess())}})
-	if acks := received[protocol.Applied](e, protocol.KindDesiredAck); len(acks) != 0 {
+	other.Protocol = fogsync.Version + 1
+	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: other, Resources: []fogsync.Resource{deployment("d1", 1, waitProcess())}})
+	if acks := received[fogsync.Applied](e, fogsync.KindDesiredAck); len(acks) != 0 {
 		t.Fatalf("a gateway does not guess the meaning of a newer protocol (SYNC-11): %+v", acks)
 	}
 }
 
 func TestChangeStreamIsFoldedAcknowledgedAndSentAgain(t *testing.T) {
-	e := newEnv(t)
-	e.send(protocol.KindDesired, protocol.Desired{Envelope: envelope(), Resources: []protocol.Resource{deployment("d1", 1, waitProcess()), start("i1", "d1", 1), start("i2", "d1", 1)}})
+	e := newGatewayEnv(t)
+	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: envelope(), Resources: []fogsync.Resource{deployment("d1", 1, waitProcess()), start("i1", "d1", 1), start("i2", "d1", 1)}})
 	e.tick()
-	statuses := received[protocol.Status](e, protocol.KindStatus)
-	if len(statuses) != 1 || statuses[0].Protocol != protocol.Version || statuses[0].Engine != "test" || len(statuses[0].Applied) != 3 {
+	statuses := received[fogsync.Status](e, fogsync.KindStatus)
+	if len(statuses) != 1 || statuses[0].Protocol != fogsync.Version || statuses[0].Engine != "test" || len(statuses[0].Applied) != 3 {
 		t.Fatalf("the status reports versions and applied resources (SYNC-11, SYNC-13): %+v", statuses)
 	}
-	batches := received[protocol.Changes](e, protocol.KindChanges)
+	batches := received[fogsync.Changes](e, fogsync.KindChanges)
 	if len(batches) != 1 || batches[0].After != 0 || batches[0].Snapshot || len(batches[0].Instances) != 2 {
 		t.Fatalf("a batch with the latest state of each instance, not one entry per step (LONG-09): %+v", batches)
 	}
@@ -228,26 +222,26 @@ func TestChangeStreamIsFoldedAcknowledgedAndSentAgain(t *testing.T) {
 
 	// without acknowledgement nothing new goes out until the resend time, then the same batch
 	e.tick()
-	if n := len(received[protocol.Changes](e, protocol.KindChanges)); n != 1 {
+	if n := len(received[fogsync.Changes](e, fogsync.KindChanges)); n != 1 {
 		t.Fatalf("one batch in flight: %v", n)
 	}
 	e.advance(31 * time.Second)
 	e.tick()
-	batches = received[protocol.Changes](e, protocol.KindChanges)
+	batches = received[fogsync.Changes](e, fogsync.KindChanges)
 	if len(batches) != 2 || batches[1].After != 0 || batches[1].Upto != upto {
 		t.Fatalf("the batch goes again after the resend time: %+v", batches)
 	}
 
-	e.send(protocol.KindUpAck, protocol.UpAck{Envelope: envelope(), Acked: upto})
+	e.send(fogsync.KindUpAck, fogsync.UpAck{Envelope: envelope(), Acked: upto})
 	e.tick()
-	if n := len(received[protocol.Changes](e, protocol.KindChanges)); n != 2 {
+	if n := len(received[fogsync.Changes](e, fogsync.KindChanges)); n != 2 {
 		t.Fatalf("nothing changed after the acknowledged position: %v", n)
 	}
 	if _, err := e.srv.Engine.Correlate(ctx, engine.CorrelationRequest{MessageInput: model.MessageInput{Name: "go", InstanceId: "i1"}}); err != nil {
 		t.Fatal(err)
 	}
 	e.tick()
-	batches = received[protocol.Changes](e, protocol.KindChanges)
+	batches = received[fogsync.Changes](e, fogsync.KindChanges)
 	last := batches[len(batches)-1]
 	if last.After != upto || len(last.Instances) != 1 || last.Instances[0].Instance.Id != "i1" || last.Instances[0].Instance.State != model.StateCompleted {
 		t.Fatalf("the next batch continues after the acknowledged position: %+v", last)
@@ -255,8 +249,8 @@ func TestChangeStreamIsFoldedAcknowledgedAndSentAgain(t *testing.T) {
 }
 
 func TestPurgedChangesAreReplacedByASnapshot(t *testing.T) {
-	e := newEnv(t)
-	e.send(protocol.KindDesired, protocol.Desired{Envelope: envelope(), Resources: []protocol.Resource{deployment("d1", 1, waitProcess()), start("i1", "d1", 1)}})
+	e := newGatewayEnv(t)
+	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: envelope(), Resources: []fogsync.Resource{deployment("d1", 1, waitProcess()), start("i1", "d1", 1)}})
 	err := e.srv.Store.Tx(ctx, func(tx *store.Tx) error {
 		_, err := tx.PurgeChanges(time.Now().Add(time.Hour), 1000)
 		return err
@@ -265,9 +259,9 @@ func TestPurgedChangesAreReplacedByASnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	// a later change; the earlier ones are gone
-	e.send(protocol.KindDesired, protocol.Desired{Envelope: envelope(), Resources: []protocol.Resource{start("i2", "d1", 1)}})
+	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: envelope(), Resources: []fogsync.Resource{start("i2", "d1", 1)}})
 	e.tick()
-	batches := received[protocol.Changes](e, protocol.KindChanges)
+	batches := received[fogsync.Changes](e, fogsync.KindChanges)
 	if len(batches) != 1 || !batches[0].Snapshot || len(batches[0].Instances) != 2 {
 		t.Fatalf("a gateway that cannot continue sends a snapshot (LONG-10): %+v", batches)
 	}

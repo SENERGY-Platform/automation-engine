@@ -14,10 +14,7 @@
  * limitations under the License.
  */
 
-// Package gateway is the side of the synchronisation that runs in the engine on a gateway
-// (SYNC-09): it applies the desired state of the cloud and sends the change stream of the
-// gateway, see package protocol. It replaces mgw-process-sync-client.
-package gateway
+package fogsync
 
 import (
 	"context"
@@ -30,7 +27,6 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
@@ -39,7 +35,7 @@ import (
 // positionAcked is the position of the change stream the cloud has taken.
 const positionAcked = store.PositionUpAcked
 
-type Settings struct {
+type GatewaySettings struct {
 	EngineVersion string
 	// a batch without acknowledgement is sent again after this time, then with backoff up to MaxResendAfter
 	ResendAfter    time.Duration
@@ -50,8 +46,8 @@ type Settings struct {
 	StorageBudget int64
 }
 
-func DefaultSettings() Settings {
-	return Settings{ResendAfter: 30 * time.Second, MaxResendAfter: 5 * time.Minute, StatusInterval: 5 * time.Minute, BatchSize: 100}
+func DefaultGatewaySettings() GatewaySettings {
+	return GatewaySettings{ResendAfter: 30 * time.Second, MaxResendAfter: 5 * time.Minute, StatusInterval: 5 * time.Minute, BatchSize: 100}
 }
 
 // Local is the API of the gateway the cloud reads through requests: the history stays on the
@@ -74,8 +70,11 @@ type Namespaces interface {
 	Put(ctx context.Context, ns model.Namespace) (model.Namespace, bool, error)
 }
 
-type Agent struct {
-	settings   Settings
+// Gateway is the side of the synchronisation that runs in the engine on a gateway (SYNC-09):
+// it applies the desired state of the cloud and sends the change stream of the gateway, see
+// protocol.go. It replaces mgw-process-sync-client.
+type Gateway struct {
+	settings   GatewaySettings
 	store      *store.Store
 	engine     *engine.Engine
 	namespaces Namespaces
@@ -102,40 +101,40 @@ type watch struct {
 }
 
 // SetLocal lets the cloud read instances of the gateway.
-func (this *Agent) SetLocal(local Local) {
+func (this *Gateway) SetLocal(local Local) {
 	this.local = local
 }
 
-func New(settings Settings, s *store.Store, e *engine.Engine, namespaces Namespaces, broker mqtt.Broker, logger *slog.Logger) *Agent {
-	return &Agent{settings: settings, store: s, engine: e, namespaces: namespaces, broker: broker, logger: logger, now: time.Now,
+func NewGateway(settings GatewaySettings, s *store.Store, e *engine.Engine, namespaces Namespaces, broker mqtt.Broker, logger *slog.Logger) *Gateway {
+	return &Gateway{settings: settings, store: s, engine: e, namespaces: namespaces, broker: broker, logger: logger, now: time.Now,
 		resendAfter: settings.ResendAfter, wake: make(chan struct{}, 1), watches: map[string]*watch{}}
 }
 
 // SetClock replaces the clock, for tests.
-func (this *Agent) SetClock(now func() time.Time) {
+func (this *Gateway) SetClock(now func() time.Time) {
 	this.now = now
 }
 
-func (this *Agent) envelope() protocol.Envelope {
-	return protocol.Envelope{Protocol: protocol.Version, Engine: this.settings.EngineVersion, SentAt: this.now().UTC()}
+func (this *Gateway) envelope() Envelope {
+	return Envelope{Protocol: Version, Engine: this.settings.EngineVersion, SentAt: this.now().UTC()}
 }
 
-func (this *Agent) publish(ctx context.Context, kind string, message any) error {
+func (this *Gateway) publish(ctx context.Context, kind string, message any) error {
 	raw, err := json.Marshal(message)
 	if err != nil {
 		return err
 	}
-	return this.broker.Publish(ctx, protocol.GatewayStateTopic(kind), 1, raw)
+	return this.broker.Publish(ctx, GatewayStateTopic(kind), 1, raw)
 }
 
 // Start subscribes to the messages of the cloud and sends status and change stream until ctx is done.
-func (this *Agent) Start(ctx context.Context) error {
+func (this *Gateway) Start(ctx context.Context) error {
 	this.started = this.now()
 	// from now on, retention and budget keep instances until the cloud has taken their end
 	if err := this.store.Tx(ctx, func(tx *store.Tx) error { return tx.InitSyncPosition(positionAcked) }); err != nil {
 		return err
 	}
-	err := this.broker.Subscribe(protocol.GatewayCommandFilter, 1, func(topic string, payload []byte) error {
+	err := this.broker.Subscribe(GatewayCommandFilter, 1, func(topic string, payload []byte) error {
 		return this.Handle(ctx, topic, payload)
 	})
 	if err != nil {
@@ -145,7 +144,7 @@ func (this *Agent) Start(ctx context.Context) error {
 	return nil
 }
 
-func (this *Agent) run(ctx context.Context) {
+func (this *Gateway) run(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -162,7 +161,7 @@ func (this *Agent) run(ctx context.Context) {
 }
 
 // Tick sends the status when it is due and the next batch of the change stream.
-func (this *Agent) Tick(ctx context.Context) error {
+func (this *Gateway) Tick(ctx context.Context) error {
 	this.mux.Lock()
 	statusDue := this.lastStatus.IsZero() || this.now().Sub(this.lastStatus) >= this.settings.StatusInterval
 	this.mux.Unlock()
@@ -175,36 +174,36 @@ func (this *Agent) Tick(ctx context.Context) error {
 }
 
 // Handle processes a message of the cloud.
-func (this *Agent) Handle(ctx context.Context, topic string, payload []byte) error {
-	_, kind, ok := protocol.KindOf(topic)
+func (this *Gateway) Handle(ctx context.Context, topic string, payload []byte) error {
+	_, kind, ok := KindOf(topic)
 	if !ok {
 		return nil
 	}
-	var envelope protocol.Envelope
+	var envelope Envelope
 	if err := json.Unmarshal(payload, &envelope); err != nil {
 		this.logger.Warn("unreadable message of the cloud", "topic", topic, "error", err)
 		return nil
 	}
-	if envelope.Protocol != protocol.Version {
-		this.logger.Error("message of the cloud with another protocol version, the engine of the gateway needs an update", "protocol", envelope.Protocol, "supported", protocol.Version)
+	if envelope.Protocol != Version {
+		this.logger.Error("message of the cloud with another protocol version, the engine of the gateway needs an update", "protocol", envelope.Protocol, "supported", Version)
 		return nil
 	}
 	switch kind {
-	case protocol.KindDesired:
-		var desired protocol.Desired
+	case KindDesired:
+		var desired Desired
 		if err := json.Unmarshal(payload, &desired); err != nil {
 			return nil
 		}
 		results := this.ApplyAll(ctx, desired.Resources)
-		return this.publish(ctx, protocol.KindDesiredAck, protocol.Applied{Envelope: this.envelope(), Results: results})
-	case protocol.KindRequest:
-		var request protocol.Request
+		return this.publish(ctx, KindDesiredAck, Applied{Envelope: this.envelope(), Results: results})
+	case KindRequest:
+		var request Request
 		if err := json.Unmarshal(payload, &request); err != nil {
 			return nil
 		}
 		return this.answer(ctx, request)
-	case protocol.KindUpAck:
-		var ack protocol.UpAck
+	case KindUpAck:
+		var ack UpAck
 		if err := json.Unmarshal(payload, &ack); err != nil {
 			return nil
 		}
@@ -215,7 +214,7 @@ func (this *Agent) Handle(ctx context.Context, topic string, payload []byte) err
 
 // acknowledged takes the position the cloud reports as taken; it may also go back, when the
 // cloud lost the state of the network, and the gateway then sends from there
-func (this *Agent) acknowledged(ctx context.Context, acked int64) error {
+func (this *Gateway) acknowledged(ctx context.Context, acked int64) error {
 	err := this.store.Tx(ctx, func(tx *store.Tx) error { return tx.SetSyncPosition(positionAcked, acked) })
 	if err != nil {
 		return err
@@ -234,7 +233,7 @@ func (this *Agent) acknowledged(ctx context.Context, acked int64) error {
 
 // SendChanges sends the next batch of the change stream after the acknowledged position, or
 // sends the batch in flight again after the resend time.
-func (this *Agent) SendChanges(ctx context.Context) error {
+func (this *Gateway) SendChanges(ctx context.Context) error {
 	this.mux.Lock()
 	inflight, at, resendAfter := this.inflightUpto, this.inflightAt, this.resendAfter
 	this.mux.Unlock()
@@ -242,7 +241,7 @@ func (this *Agent) SendChanges(ctx context.Context) error {
 	if inflight > 0 && now.Sub(at) < resendAfter {
 		return nil
 	}
-	var batch protocol.Changes
+	var batch Changes
 	var empty bool
 	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
 		batch, empty, err = this.nextBatch(tx)
@@ -259,12 +258,12 @@ func (this *Agent) SendChanges(ctx context.Context) error {
 	}
 	this.inflightUpto, this.inflightAt = batch.Upto, now
 	this.mux.Unlock()
-	return this.publish(ctx, protocol.KindChanges, batch)
+	return this.publish(ctx, KindChanges, batch)
 }
 
 // nextBatch reads the changes after the acknowledged position, folded per instance; a
 // position whose continuation is purged is answered with a snapshot (LONG-10)
-func (this *Agent) nextBatch(tx *store.Tx) (batch protocol.Changes, empty bool, err error) {
+func (this *Gateway) nextBatch(tx *store.Tx) (batch Changes, empty bool, err error) {
 	acked, err := tx.SyncPosition(positionAcked)
 	if err != nil {
 		return batch, false, err
@@ -306,8 +305,8 @@ func (this *Agent) nextBatch(tx *store.Tx) (batch protocol.Changes, empty bool, 
 	return batch, false, nil
 }
 
-func (this *Agent) snapshot(tx *store.Tx, acked int64, latest int64) (protocol.Changes, bool, error) {
-	batch := protocol.Changes{After: acked, Upto: latest, Snapshot: true}
+func (this *Gateway) snapshot(tx *store.Tx, acked int64, latest int64) (Changes, bool, error) {
+	batch := Changes{After: acked, Upto: latest, Snapshot: true}
 	ids, err := tx.InstanceIds()
 	if err != nil {
 		return batch, false, err
@@ -320,7 +319,7 @@ func (this *Agent) snapshot(tx *store.Tx, acked int64, latest int64) (protocol.C
 	return batch, false, nil
 }
 
-func (this *Agent) addInstance(tx *store.Tx, batch *protocol.Changes, id string) error {
+func (this *Gateway) addInstance(tx *store.Tx, batch *Changes, id string) error {
 	inst, err := tx.GetInstance(id, false)
 	if errors.Is(err, model.ErrNotFound) {
 		batch.DeletedInstances = append(batch.DeletedInstances, id)
@@ -333,13 +332,13 @@ func (this *Agent) addInstance(tx *store.Tx, batch *protocol.Changes, id string)
 	if err != nil {
 		return err
 	}
-	batch.Instances = append(batch.Instances, protocol.InstanceState{Instance: inst.Instance, Incidents: incidents.Items})
+	batch.Instances = append(batch.Instances, InstanceState{Instance: inst.Instance, Incidents: incidents.Items})
 	return nil
 }
 
 // SendStatus reports versions, positions, applied resources and storage (SYNC-12, LONG-14).
-func (this *Agent) SendStatus(ctx context.Context) error {
-	status := protocol.Status{Envelope: this.envelope(), StartedAt: this.started.UTC(), Storage: protocol.Storage{BudgetBytes: this.settings.StorageBudget, Rows: map[string]int64{}}}
+func (this *Gateway) SendStatus(ctx context.Context) error {
+	status := Status{Envelope: this.envelope(), StartedAt: this.started.UTC(), Storage: Storage{BudgetBytes: this.settings.StorageBudget, Rows: map[string]int64{}}}
 	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
 		if status.Latest, err = tx.LatestChangeSeq(); err != nil {
 			return err
@@ -355,7 +354,7 @@ func (this *Agent) SendStatus(ctx context.Context) error {
 			return err
 		}
 		for _, a := range applied {
-			status.Applied = append(status.Applied, protocol.Result{Kind: a.Kind, Id: a.Id, Version: a.Version, Error: a.Error, At: a.At})
+			status.Applied = append(status.Applied, Result{Kind: a.Kind, Id: a.Id, Version: a.Version, Error: a.Error, At: a.At})
 		}
 		if status.Storage.UsedBytes, err = tx.UsedBytes(); err != nil {
 			return err
@@ -372,12 +371,12 @@ func (this *Agent) SendStatus(ctx context.Context) error {
 	this.mux.Lock()
 	this.lastStatus = this.now()
 	this.mux.Unlock()
-	return this.publish(ctx, protocol.KindStatus, status)
+	return this.publish(ctx, KindStatus, status)
 }
 
 // ApplyAll applies desired resources in their order and returns a result for each.
-func (this *Agent) ApplyAll(ctx context.Context, resources []protocol.Resource) []protocol.Result {
-	results := make([]protocol.Result, 0, len(resources))
+func (this *Gateway) ApplyAll(ctx context.Context, resources []Resource) []Result {
+	results := make([]Result, 0, len(resources))
 	for _, r := range resources {
 		results = append(results, this.Apply(ctx, r))
 	}
@@ -386,7 +385,7 @@ func (this *Agent) ApplyAll(ctx context.Context, resources []protocol.Resource) 
 
 // Apply applies a desired resource unless the same or a newer version was applied already;
 // a failure is recorded with the version, so that the cloud shows it (SYNC-13).
-func (this *Agent) Apply(ctx context.Context, r protocol.Resource) protocol.Result {
+func (this *Gateway) Apply(ctx context.Context, r Resource) Result {
 	var previous store.Applied
 	var found bool
 	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
@@ -394,10 +393,10 @@ func (this *Agent) Apply(ctx context.Context, r protocol.Resource) protocol.Resu
 		return err
 	})
 	if err != nil {
-		return protocol.Result{Kind: r.Kind, Id: r.Id, Version: r.Version, Error: err.Error(), At: this.now().UTC()}
+		return Result{Kind: r.Kind, Id: r.Id, Version: r.Version, Error: err.Error(), At: this.now().UTC()}
 	}
 	if found && previous.Version >= r.Version {
-		return protocol.Result{Kind: previous.Kind, Id: previous.Id, Version: previous.Version, Error: previous.Error, At: previous.At}
+		return Result{Kind: previous.Kind, Id: previous.Id, Version: previous.Version, Error: previous.Error, At: previous.At}
 	}
 	applyErr := this.apply(ctx, r)
 	result := store.Applied{Kind: r.Kind, Id: r.Id, Version: r.Version, At: this.now().UTC()}
@@ -408,12 +407,12 @@ func (this *Agent) Apply(ctx context.Context, r protocol.Resource) protocol.Resu
 	if err = this.store.Tx(ctx, func(tx *store.Tx) error { return tx.SetApplied(result) }); err != nil {
 		result.Error = errors.Join(applyErr, err).Error()
 	}
-	return protocol.Result{Kind: result.Kind, Id: result.Id, Version: result.Version, Error: result.Error, At: result.At}
+	return Result{Kind: result.Kind, Id: result.Id, Version: result.Version, Error: result.Error, At: result.At}
 }
 
-func (this *Agent) apply(ctx context.Context, r protocol.Resource) error {
+func (this *Gateway) apply(ctx context.Context, r Resource) error {
 	switch r.Kind {
-	case protocol.ResourceNamespace:
+	case ResourceNamespace:
 		if r.Deleted || r.Namespace == nil {
 			// namespaces of a gateway stay; their resources go with them
 			return nil
@@ -422,7 +421,7 @@ func (this *Agent) apply(ctx context.Context, r protocol.Resource) error {
 		ns.Name = r.Id
 		_, _, err := this.namespaces.Put(ctx, ns)
 		return err
-	case protocol.ResourceDeployment:
+	case ResourceDeployment:
 		if r.Deleted {
 			return this.store.Tx(ctx, func(tx *store.Tx) error {
 				return ignoreNotFound(tx.DeleteDeployment(r.Id))
@@ -432,7 +431,7 @@ func (this *Agent) apply(ctx context.Context, r protocol.Resource) error {
 			return errors.New("deployment without content")
 		}
 		return this.applyDeployment(ctx, r.Id, *r.Deployment)
-	case protocol.ResourceInstance:
+	case ResourceInstance:
 		return this.applyInstance(ctx, r)
 	}
 	return fmt.Errorf("unknown kind of resource %v", r.Kind)
@@ -440,7 +439,7 @@ func (this *Agent) apply(ctx context.Context, r protocol.Resource) error {
 
 // applyDeployment takes over a deployment with id and version of the cloud; the event
 // descriptions come from the cloud, which reads the device repository (SYNC-06)
-func (this *Agent) applyDeployment(ctx context.Context, id string, spec protocol.DeploymentSpec) error {
+func (this *Gateway) applyDeployment(ctx context.Context, id string, spec DeploymentSpec) error {
 	d, v := spec.Deployment, spec.Version
 	// on the gateway the deployment is local
 	d.Id, d.NetworkId, v.DeploymentId = id, "", id
@@ -502,7 +501,7 @@ func (this *Agent) applyDeployment(ctx context.Context, id string, spec protocol
 
 // applyInstance starts, stops or deletes an instance; restarts after incidents are the
 // gateway's own and need no cloud (FOG-07)
-func (this *Agent) applyInstance(ctx context.Context, r protocol.Resource) error {
+func (this *Gateway) applyInstance(ctx context.Context, r Resource) error {
 	if r.Deleted {
 		return this.store.Tx(ctx, func(tx *store.Tx) error {
 			if _, err := tx.GetInstance(r.Id, true); err != nil {
@@ -541,9 +540,9 @@ func ignoreNotFound(err error) error {
 var gatewayAdmin = auth.UnsignedToken("gateway", "admin")
 
 // answer reads what the cloud asks for and sends it to the replica that asked
-func (this *Agent) answer(ctx context.Context, request protocol.Request) error {
+func (this *Gateway) answer(ctx context.Context, request Request) error {
 	respond := func(result any, err error, final bool) error {
-		response := protocol.Response{Envelope: this.envelope(), RequestId: request.Id, Final: final}
+		response := Response{Envelope: this.envelope(), RequestId: request.Id, Final: final}
 		if err != nil {
 			response.Error = model.AsError(err)
 		} else if result != nil {
@@ -553,7 +552,7 @@ func (this *Agent) answer(ctx context.Context, request protocol.Request) error {
 			}
 			response.Result = raw
 		}
-		return this.publish(ctx, protocol.KindResponse+"/"+request.ReplyTo, response)
+		return this.publish(ctx, KindResponse+"/"+request.ReplyTo, response)
 	}
 	if this.local == nil {
 		return respond(nil, model.Unavailable("the gateway answers no requests"), true)
@@ -568,37 +567,37 @@ func (this *Agent) answer(ctx context.Context, request protocol.Request) error {
 	var result any
 	var err error
 	switch request.Method {
-	case protocol.MethodDebugState:
+	case MethodDebugState:
 		var o model.DebugOptions
 		if err = options(&o); err == nil {
 			result, err = this.local.DebugState(ctx, gatewayAdmin, ns, id, o)
 		}
-	case protocol.MethodHistoryState:
+	case MethodHistoryState:
 		var o model.HistoryOptions
 		if err = options(&o); err == nil {
 			result, err = this.local.HistoryState(ctx, gatewayAdmin, ns, id, o)
 		}
-	case protocol.MethodListRuns:
+	case MethodListRuns:
 		result, err = this.local.ListRuns(ctx, gatewayAdmin, ns, id)
-	case protocol.MethodListActivities:
+	case MethodListActivities:
 		var o model.ActivityListOptions
 		if err = options(&o); err == nil {
 			result, err = this.local.ListActivities(ctx, gatewayAdmin, ns, id, o)
 		}
-	case protocol.MethodListElementStats:
+	case MethodListElementStats:
 		result, err = this.local.ListElementStats(ctx, gatewayAdmin, ns, id, args.Run)
-	case protocol.MethodGetVariables:
+	case MethodGetVariables:
 		result, err = this.local.GetVariables(ctx, gatewayAdmin, ns, id)
-	case protocol.MethodGetVariable:
+	case MethodGetVariable:
 		result, err = this.local.GetVariable(ctx, gatewayAdmin, ns, id, args.Name, args.ElementId)
-	case protocol.MethodHistoryVariable:
+	case MethodHistoryVariable:
 		var o model.HistoryOptions
 		if err = options(&o); err == nil {
 			result, err = this.local.HistoryVariable(ctx, gatewayAdmin, ns, id, args.Name, args.ElementId, o)
 		}
-	case protocol.MethodWatch:
+	case MethodWatch:
 		return this.watch(ctx, request, respond)
-	case protocol.MethodUnwatch:
+	case MethodUnwatch:
 		this.mux.Lock()
 		if w, ok := this.watches[request.Id]; ok {
 			w.cancel()
@@ -613,7 +612,7 @@ func (this *Agent) answer(ctx context.Context, request protocol.Request) error {
 }
 
 // watch streams the debug messages of an instance while the cloud renews the request (DBG-12)
-func (this *Agent) watch(ctx context.Context, request protocol.Request, respond func(any, error, bool) error) error {
+func (this *Gateway) watch(ctx context.Context, request Request, respond func(any, error, bool) error) error {
 	this.mux.Lock()
 	if w, ok := this.watches[request.Id]; ok {
 		w.renewed = this.now()
@@ -652,11 +651,11 @@ func (this *Agent) watch(ctx context.Context, request protocol.Request, respond 
 }
 
 // endExpiredWatches stops streams nobody renewed within the lease
-func (this *Agent) endExpiredWatches() {
+func (this *Gateway) endExpiredWatches() {
 	this.mux.Lock()
 	defer this.mux.Unlock()
 	for id, w := range this.watches {
-		if this.now().Sub(w.renewed) > protocol.WatchLease {
+		if this.now().Sub(w.renewed) > WatchLease {
 			w.cancel()
 			delete(this.watches, id)
 		}

@@ -32,8 +32,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/cloud"
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/gateway"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
 	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v3/lib/client"
@@ -88,9 +88,9 @@ type Server struct {
 	Broker mqtt.Broker
 	Events *events.Worker
 	// fog: the synchronisation with the cloud (SYNC-09)
-	Sync *gateway.Agent
+	Sync *fogsync.Gateway
 	// cloud: the synchronisation with gateways (SYNC-09)
-	Networks *cloud.Cloud
+	Networks *fogsync.Cloud
 	config   configuration.Config
 	logger   *slog.Logger
 }
@@ -329,7 +329,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		workerConfig.Local = true
 		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller), e, events.LocalConsumer(broker, 1, logger), logger)
 	}
-	var networks *cloud.Cloud
+	var networks *fogsync.Cloud
 	syncBroker := deps.SyncBroker
 	if syncBroker == nil && config.SyncMqttBroker != "" {
 		clientId := config.SyncMqttClientId
@@ -346,19 +346,19 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		syncBroker = client
 	}
 	if syncBroker != nil && !fog {
-		settings := cloud.DefaultSettings()
+		settings := fogsync.DefaultCloudSettings()
 		settings.EngineVersion, settings.Group, settings.ProtocolWindow = Version(), config.SyncShareGroup, config.SyncProtocolWindow
 		settings.ResendAfter, settings.OfflineAfter = configuration.Duration(config.SyncResendAfter), configuration.Duration(config.SyncOfflineAfter)
 		settings.CleanupMaxAge = configuration.Duration(config.NetworkCleanupMaxAge)
 		settings.CallTimeout = configuration.Duration(config.SyncCallTimeout)
-		networks = cloud.New(settings, s, syncBroker, logger)
+		networks = fogsync.NewCloud(settings, s, syncBroker, logger)
 		c.SetNetworks(networks)
 	}
-	var agent *gateway.Agent
+	var agent *fogsync.Gateway
 	if fog {
-		settings := gateway.DefaultSettings()
+		settings := fogsync.DefaultGatewaySettings()
 		settings.EngineVersion, settings.StorageBudget = Version(), config.StorageBudget
-		agent = gateway.New(settings, s, e, registry, broker, logger)
+		agent = fogsync.NewGateway(settings, s, e, registry, broker, logger)
 		agent.SetLocal(c)
 	}
 	apiSettings := api.Settings{VerifiesTokens: certs != nil, Gateway: fog}

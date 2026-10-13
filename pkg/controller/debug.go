@@ -20,8 +20,9 @@ import (
 	"context"
 	"errors"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
@@ -31,7 +32,7 @@ import (
 func (this *Controller) DebugState(ctx context.Context, token string, namespace string, id string, options model.DebugOptions) (result model.DebugState, err error) {
 	if networkId, inst, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
 		if err == nil {
-			err = this.networks.Call(ctx, networkId, protocol.MethodDebugState, namespace, id, requestOptions(options), &result)
+			err = this.networks.Call(ctx, networkId, fogsync.MethodDebugState, namespace, id, requestOptions(options), &result)
 			if errors.Is(err, model.ErrUnavailable) {
 				return offlineState(inst), nil
 			}
@@ -59,7 +60,7 @@ func (this *Controller) DebugState(ctx context.Context, token string, namespace 
 func (this *Controller) HistoryState(ctx context.Context, token string, namespace string, id string, options model.HistoryOptions) (result model.DebugState, err error) {
 	if networkId, inst, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
 		if err == nil {
-			err = this.networks.Call(ctx, networkId, protocol.MethodHistoryState, namespace, id, requestOptions(options), &result)
+			err = this.networks.Call(ctx, networkId, fogsync.MethodHistoryState, namespace, id, requestOptions(options), &result)
 			if errors.Is(err, model.ErrUnavailable) {
 				return offlineState(inst), nil
 			}
@@ -96,7 +97,7 @@ func (this *Controller) historyState(ctx context.Context, tx *store.Tx, token st
 func (this *Controller) HistoryVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string, options model.HistoryOptions) (result model.HistoryVariable, err error) {
 	if networkId, _, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
 		if err == nil {
-			err = this.networks.Call(ctx, networkId, protocol.MethodHistoryVariable, namespace, id, protocol.RequestArgs{Name: name, ElementId: elementId, Options: requestOptions(options).Options}, &result)
+			err = this.networks.Call(ctx, networkId, fogsync.MethodHistoryVariable, namespace, id, fogsync.RequestArgs{Name: name, ElementId: elementId, Options: requestOptions(options).Options}, &result)
 		}
 		return result, err
 	}
@@ -123,7 +124,7 @@ func (this *Controller) HistoryVariable(ctx context.Context, token string, names
 func (this *Controller) GetVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string) (result model.Variable, err error) {
 	if networkId, _, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
 		if err == nil {
-			err = this.networks.Call(ctx, networkId, protocol.MethodGetVariable, namespace, id, protocol.RequestArgs{Name: name, ElementId: elementId}, &result)
+			err = this.networks.Call(ctx, networkId, fogsync.MethodGetVariable, namespace, id, fogsync.RequestArgs{Name: name, ElementId: elementId}, &result)
 		}
 		return result, err
 	}

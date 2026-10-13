@@ -21,8 +21,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
@@ -278,7 +279,7 @@ func (this *Controller) RestartInstance(ctx context.Context, token string, names
 func (this *Controller) ListRuns(ctx context.Context, token string, namespace string, id string) (result []model.Run, err error) {
 	if networkId, _, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
 		if err == nil {
-			err = this.networks.Call(ctx, networkId, protocol.MethodListRuns, namespace, id, protocol.RequestArgs{}, &result)
+			err = this.networks.Call(ctx, networkId, fogsync.MethodListRuns, namespace, id, fogsync.RequestArgs{}, &result)
 		}
 		return result, err
 	}
@@ -295,7 +296,7 @@ func (this *Controller) ListRuns(ctx context.Context, token string, namespace st
 func (this *Controller) GetVariables(ctx context.Context, token string, namespace string, id string) (result []model.Variable, err error) {
 	if networkId, _, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
 		if err == nil {
-			err = this.networks.Call(ctx, networkId, protocol.MethodGetVariables, namespace, id, protocol.RequestArgs{}, &result)
+			err = this.networks.Call(ctx, networkId, fogsync.MethodGetVariables, namespace, id, fogsync.RequestArgs{}, &result)
 		}
 		return result, err
 	}
@@ -322,7 +323,7 @@ func (this *Controller) SetVariable(ctx context.Context, token string, namespace
 func (this *Controller) ListActivities(ctx context.Context, token string, namespace string, id string, options model.ActivityListOptions) (result model.ActivityPage, err error) {
 	if networkId, _, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
 		if err == nil {
-			err = this.networks.Call(ctx, networkId, protocol.MethodListActivities, namespace, id, requestOptions(options), &result)
+			err = this.networks.Call(ctx, networkId, fogsync.MethodListActivities, namespace, id, requestOptions(options), &result)
 		}
 		return result, err
 	}
@@ -342,7 +343,7 @@ func (this *Controller) ListActivities(ctx context.Context, token string, namesp
 func (this *Controller) ListElementStats(ctx context.Context, token string, namespace string, id string, run int) (result []model.ElementStats, err error) {
 	if networkId, _, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
 		if err == nil {
-			err = this.networks.Call(ctx, networkId, protocol.MethodListElementStats, namespace, id, protocol.RequestArgs{Run: run}, &result)
+			err = this.networks.Call(ctx, networkId, fogsync.MethodListElementStats, namespace, id, fogsync.RequestArgs{Run: run}, &result)
 		}
 		return result, err
 	}

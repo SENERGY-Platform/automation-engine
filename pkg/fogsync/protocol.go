@@ -14,7 +14,11 @@
  * limitations under the License.
  */
 
-// Package protocol is the synchronisation protocol between the engine in the cloud and the
+// Package fogsync synchronises the engine in the cloud with the engines on gateways: the
+// cloud side (cloud.go), the gateway side (gateway.go) and the protocol between them
+// (protocol.go).
+//
+// The protocol connects the engine in the cloud and the
 // engines on gateways (section 17). Both run the same engine, so the synchronisation replicates
 // between equal data models with the same ids.
 //
@@ -42,7 +46,7 @@
 //     applied resources and storage (SYNC-11, SYNC-12, SYNC-13, LONG-14).
 //
 // Every message carries the protocol version (SYNC-11).
-package protocol
+package fogsync
 
 import (
 	"encoding/json"

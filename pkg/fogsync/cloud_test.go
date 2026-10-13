@@ -14,30 +14,27 @@
  * limitations under the License.
  */
 
-package cloud_test
+package fogsync_test
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"testing"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/cloud"
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 )
 
-var ctx = context.Background()
-
-func newCloud(t *testing.T) (*cloud.Cloud, *store.Store, *mqtt.Memory, *time.Time) {
+func newCloud(t *testing.T) (*fogsync.Cloud, *store.Store, *mqtt.Memory, *time.Time) {
 	s := storetest.OpenSQLite(t)
 	broker := mqtt.NewMemory()
-	c := cloud.New(cloud.DefaultSettings(), s, broker, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := fogsync.NewCloud(fogsync.DefaultCloudSettings(), s, broker, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	now := time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)
 	c.SetClock(func() time.Time { return now })
 	return c, s, broker, &now
@@ -53,13 +50,13 @@ func message(t *testing.T, value any) []byte {
 
 func TestAGatewayOutsideTheProtocolWindowIsMarkedAndNotServed(t *testing.T) {
 	c, s, broker, _ := newCloud(t)
-	old := protocol.Status{Envelope: protocol.Envelope{Protocol: protocol.Version - 2, Engine: "old"}}
+	old := fogsync.Status{Envelope: fogsync.Envelope{Protocol: fogsync.Version - 2, Engine: "old"}}
 	if err := c.Handle(ctx, "processes/hub-1/state/engine/v1/status", message(t, old)); err != nil {
 		t.Fatal(err)
 	}
 	var network store.Network
 	_ = s.Tx(ctx, func(tx *store.Tx) (err error) { network, _, err = tx.GetNetwork("hub-1"); return err })
-	if network.Compatible || network.Protocol != protocol.Version-2 {
+	if network.Compatible || network.Protocol != fogsync.Version-2 {
 		t.Errorf("an incompatible gateway is marked, not served wrongly (SYNC-11): %+v", network)
 	}
 	if len(broker.Published("#")) != 0 {
@@ -71,15 +68,15 @@ func TestBatchesAreTakenOnlyInOrder(t *testing.T) {
 	c, s, broker, _ := newCloud(t)
 	acks := func() (result []int64) {
 		for _, p := range broker.Published("processes/hub-1/cmd/engine/v1/ack") {
-			var ack protocol.UpAck
+			var ack fogsync.UpAck
 			_ = json.Unmarshal(p.Payload, &ack)
 			result = append(result, ack.Acked)
 		}
 		return result
 	}
-	envelope := protocol.Envelope{Protocol: protocol.Version}
+	envelope := fogsync.Envelope{Protocol: fogsync.Version}
 	send := func(after, upto int64) {
-		if err := c.Handle(ctx, "processes/hub-1/state/engine/v1/changes", message(t, protocol.Changes{Envelope: envelope, After: after, Upto: upto})); err != nil {
+		if err := c.Handle(ctx, "processes/hub-1/state/engine/v1/changes", message(t, fogsync.Changes{Envelope: envelope, After: after, Upto: upto})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -99,8 +96,8 @@ func TestBatchesAreTakenOnlyInOrder(t *testing.T) {
 
 func TestNetworksWithoutContactAreRemoved(t *testing.T) {
 	c, s, _, now := newCloud(t)
-	envelope := protocol.Envelope{Protocol: protocol.Version}
-	if err := c.Handle(ctx, "processes/hub-1/state/engine/v1/status", message(t, protocol.Status{Envelope: envelope})); err != nil {
+	envelope := fogsync.Envelope{Protocol: fogsync.Version}
+	if err := c.Handle(ctx, "processes/hub-1/state/engine/v1/status", message(t, fogsync.Status{Envelope: envelope})); err != nil {
 		t.Fatal(err)
 	}
 	*now = now.Add(729 * time.Hour)
@@ -136,11 +133,11 @@ func seedNetworkInstance(t *testing.T, s *store.Store, id string, state model.In
 		if err := tx.InsertInstance(store.Instance{Instance: inst, ActivityMinSeq: 1}); err != nil {
 			return err
 		}
-		version, err := tx.Desire("hub-1", protocol.ResourceInstance, id, false, protocol.InstanceSpec{DeploymentId: "d1", Owner: "alice"}, now)
+		version, err := tx.Desire("hub-1", fogsync.ResourceInstance, id, false, fogsync.InstanceSpec{DeploymentId: "d1", Owner: "alice"}, now)
 		if err != nil || !applied {
 			return err
 		}
-		return tx.SetDesiredApplied("hub-1", protocol.ResourceInstance, id, version, "", now)
+		return tx.SetDesiredApplied("hub-1", fogsync.ResourceInstance, id, version, "", now)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -152,12 +149,12 @@ func seedNetworkInstance(t *testing.T, s *store.Store, id string, state model.In
 // pending instance is gone only if the gateway applied its start (LONG-10).
 func TestASnapshotKeepsEndedInstancesOfTheCloud(t *testing.T) {
 	c, s, _, _ := newCloud(t)
-	envelope := protocol.Envelope{Protocol: protocol.Version}
+	envelope := fogsync.Envelope{Protocol: fogsync.Version}
 	seedNetworkInstance(t, s, "ended", model.StateCompleted, true)
 	seedNetworkInstance(t, s, "running", model.StateRunning, true)
 	seedNetworkInstance(t, s, "applied", model.StatePending, true)
 	seedNetworkInstance(t, s, "new", model.StatePending, false)
-	snapshot := protocol.Changes{Envelope: envelope, After: 0, Upto: 7, Snapshot: true}
+	snapshot := fogsync.Changes{Envelope: envelope, After: 0, Upto: 7, Snapshot: true}
 	if err := c.Handle(ctx, "processes/hub-1/state/engine/v1/changes", message(t, snapshot)); err != nil {
 		t.Fatal(err)
 	}
@@ -174,10 +171,10 @@ func TestASnapshotKeepsEndedInstancesOfTheCloud(t *testing.T) {
 // that the desired state does not grow with every start.
 func TestAnEndedInstanceIsNoLongerDesired(t *testing.T) {
 	c, s, _, _ := newCloud(t)
-	envelope := protocol.Envelope{Protocol: protocol.Version}
+	envelope := fogsync.Envelope{Protocol: fogsync.Version}
 	seedNetworkInstance(t, s, "i1", model.StatePending, false)
 	ended := time.Date(2026, 10, 12, 9, 30, 0, 0, time.UTC)
-	report := protocol.Changes{Envelope: envelope, After: 0, Upto: 3, Instances: []protocol.InstanceState{{Instance: model.Instance{
+	report := fogsync.Changes{Envelope: envelope, After: 0, Upto: 3, Instances: []fogsync.InstanceState{{Instance: model.Instance{
 		Id: "i1", Namespace: "processes", Owner: "alice", DeploymentId: "d1", DeploymentVersion: 1, Run: 1, State: model.StateCompleted, EndedAt: &ended,
 	}}}}
 	if err := c.Handle(ctx, "processes/hub-1/state/engine/v1/changes", message(t, report)); err != nil {
@@ -185,7 +182,7 @@ func TestAnEndedInstanceIsNoLongerDesired(t *testing.T) {
 	}
 	var found bool
 	_ = s.Tx(ctx, func(tx *store.Tx) (err error) {
-		_, found, err = tx.GetDesired("hub-1", protocol.ResourceInstance, "i1")
+		_, found, err = tx.GetDesired("hub-1", fogsync.ResourceInstance, "i1")
 		return err
 	})
 	if found {
