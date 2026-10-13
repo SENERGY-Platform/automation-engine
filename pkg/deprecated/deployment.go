@@ -17,6 +17,7 @@
 package deprecated
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -403,14 +404,33 @@ func changed(value string, original string, known bool) bool {
 
 // deploymentInput turns a deployment of the old format into the input of the engine
 func (this *Handler) deploymentInput(r *http.Request, old models.Deployment) (model.DeploymentInput, error) {
+	return DeploymentInput(r.Context(), this.c, token(r), processes, old, r.URL.Query().Get("source"))
+}
+
+// Converter rewrites models of Camunda (MIG-04).
+type Converter interface {
+	Convert(ctx context.Context, token string, namespace string, xml string) (model.Conversion, error)
+}
+
+// DeploymentInput turns a deployment of process-deployment (format version 3) into the input
+// of the engine: the BPMN rewritten, device selections as selections, changed values as
+// parameters. The migration uses it as well (MIG-01).
+func DeploymentInput(ctx context.Context, c Converter, token string, namespace string, old models.Deployment, source string) (model.DeploymentInput, error) {
 	if old.Version != 3 {
 		return model.DeploymentInput{}, model.BadRequest("expected deployment version 3")
 	}
-	conversion, process, err := this.convert(r, processes, old.Diagram.XmlRaw)
+	conversion, err := c.Convert(ctx, token, namespace, old.Diagram.XmlRaw)
 	if err != nil {
 		return model.DeploymentInput{}, err
 	}
-	input := model.DeploymentInput{Name: old.Name, Description: old.Description, Xml: conversion.Xml, Svg: old.Diagram.Svg, Source: r.URL.Query().Get("source"),
+	if len(conversion.Unsupported) > 0 {
+		return model.DeploymentInput{}, model.ValidationFailed(conversion.Unsupported)
+	}
+	process, _, err := bpmn.Parse(conversion.Xml)
+	if err != nil {
+		return model.DeploymentInput{}, model.BadRequest("%v", err)
+	}
+	input := model.DeploymentInput{Name: old.Name, Description: old.Description, Xml: conversion.Xml, Svg: old.Diagram.Svg, Source: source,
 		Selections: map[string]model.Selection{}, Parameters: map[string]model.ElementParameters{}}
 	if old.IncidentHandling != nil {
 		input.IncidentHandling = &model.IncidentHandling{Restart: old.IncidentHandling.Restart, Notify: old.IncidentHandling.Notify}

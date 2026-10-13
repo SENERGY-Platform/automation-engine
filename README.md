@@ -97,11 +97,24 @@ Go-Client in `pkg/client`: `client.New(url)` für einen laufenden Server, `clien
 `POST /namespaces/{ns}/convert` schreibt ein Modell für Camunda 7 in das Format der Engine um, ohne etwas zu speichern (MIG-04). JUEL wird zu JavaScript (ein einzelner Ausdruck behält seinen Typ, Text mit Ausdrücken wird ein Template-Literal, in dem `null` leer ist wie in JUEL), Groovy mit `println` zu `log`, die Topics `pessimistic`, `optimistic`, `process_io` und die der Module zu Aufgabentypen, der `http-connector` zum Aufgabentyp `notification` (Ziel `notification` des alten process-deployment) bzw. `http`, Nachrichtennamen wie `${done_event}` zu `senergy:messageName`. Die Antwort nennt, was umgeschrieben wurde, was von Hand zu prüfen ist und was nicht unterstützt wird (`mail-send`, Bedingungen ohne Sprache), dazu die Befunde unter den Regeln des Namespace. Bekannte Abweichungen zu Camunda: Ein String `"false"` ist in JUEL bei `== false` ein Boolean, in JavaScript nicht; ganzzahlige Doubles erscheinen in Texten als `30` statt `30.0`.
 
 
+## Migration aus Camunda
+
+`automation-engine migrate` übernimmt die Daten der alten Dienste (MIG-01 bis MIG-09). Die Engine wird wie zum Betrieb konfiguriert (`-config`, Umgebung); sie braucht `permissions_v2_url` und `auth_endpoint`, weil das Werkzeug als Admin schreibt und Rechte überträgt. Die Quellen:
+
+- `MIGRATE_MONGO_URL`: die MongoDB der alten Dienste; Datenbanken nach den Namen der Plattform, änderbar mit `-db-*`.
+- `-camunda`: Basis-URLs der Camunda-Engines (alle Shards), jeweils bis `/engine-rest`; `-camunda-user` und `MIGRATE_CAMUNDA_PASSWORD` für die Basic-Auth.
+
+Ohne `-apply` ist es ein Trockenlauf. Ein Lauf legt nur an, was fehlt, behält IDs und leitet nötige neue IDs aus den alten ab; er lässt sich also wiederholen. Der Bericht nennt je Schritt, was übernommen, geplant, schon vorhanden, übersprungen, zu entscheiden oder fehlgeschlagen ist; Exit-Code 0 heißt vollständig, 1 offen oder teilweise, 2 nicht gelaufen. Zu entscheiden sind Ressourcen ohne gültigen Owner (`-owner alt=neu`), Modelle mit nicht unterstützten Teilen (z. B. `mail-send`) und Deployments, die nur in Camunda existieren (`-camunda-only <ids>`). `-no-restart` listet laufende Instanzen nur auf, statt sie neu zu starten; mit `-json` kommt der Bericht als JSON.
+
+Modelle bleiben im Format des alten Designers, Deployments werden umgeschrieben und behalten den Bezug zum Modell, wenn Owner und BPMN übereinstimmen. Laufende Instanzen starten neu, mit dem Business Key als ID, wo er eindeutig ist, und den aktuellen Werten der Variablen, die wie die Startfelder heißen. IO-Werte folgen ihrer Instanz in Schlüssel und Bindung; Werte beendeter Instanzen entfallen.
+
+## Tests
+
 ```sh
 go test ./...
 ```
 
-Store- und Engine-Tests laufen gegen SQLite und gegen Postgres in einem Container (testcontainers). Ohne Container-Runtime werden die Postgres-Varianten übersprungen; `AE_TEST_POSTGRES=off` schaltet sie ab. Der Vergleich der Umschreibung mit Camunda 7.24 (MIG-05) startet Camunda ebenfalls im Container; `AE_TEST_CAMUNDA=off` schaltet ihn ab. `AE_BPMN_EXPORT_DIR=<Verzeichnis>` prüft den Parser zusätzlich gegen exportierte Modelle.
+Store- und Engine-Tests laufen gegen SQLite und gegen Postgres in einem Container (testcontainers). Ohne Container-Runtime werden die Postgres-Varianten übersprungen; `AE_TEST_POSTGRES=off` schaltet sie ab. Der Vergleich der Umschreibung mit Camunda 7.24 (MIG-05) und die Leser der Migration starten Camunda und MongoDB ebenfalls im Container; `AE_TEST_CAMUNDA=off` und `AE_TEST_MONGO=off` schalten sie ab. `AE_BPMN_EXPORT_DIR=<Verzeichnis>` prüft Parser und Umschreibung zusätzlich gegen exportierte Modelle. Der Vergleich der Umschreibung mit Camunda 7.24 (MIG-05) und die Leser der Migration starten Camunda und MongoDB ebenfalls im Container; `AE_TEST_CAMUNDA=off` und `AE_TEST_MONGO=off` schalten sie ab.
 
 ### Dauertest (LONG-15)
 

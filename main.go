@@ -29,11 +29,16 @@ import (
 	_ "time/tzdata"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
+	"github.com/SENERGY-Platform/automation-engine/pkg/migrate"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 )
 
 func main() {
+	// automation-engine migrate [flags]: moves the data of the Camunda based services (MIG-01)
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		os.Exit(migrate.Main(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	configPath := flag.String("config", "config.json", "configuration file")
 	flag.Parse()
 
