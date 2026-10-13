@@ -31,8 +31,12 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
+	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
+	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
+	"github.com/SENERGY-Platform/go-service-base/config-hdl/types"
+	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
 )
 
 var ctx = context.Background()
@@ -53,17 +57,41 @@ type env struct {
 	srv *server.Server
 }
 
-func newEnv(t *testing.T) *env {
+// eachVariant runs a scenario against stand-ins in the process and, without -short, against
+// the real dependencies in containers
+func eachVariant(t *testing.T, scenario func(t *testing.T, e *env)) {
+	t.Run("fakes", func(t *testing.T) { scenario(t, newEnv(t, nil)) })
+	t.Run("containers", func(t *testing.T) { scenario(t, newEnv(t, containers(t))) })
+}
+
+// newEnv starts the engine; with a platform, it uses its database in Postgres and the real
+// permissions-v2 instead of the one in the process
+func newEnv(t *testing.T, platform *realPlatform) *env {
 	t.Helper()
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
-	srv, err := client.NewTestServer(ctx, nil)
+	srv, err := client.NewTestServer(ctx, func(config *configuration.Config, deps *server.Dependencies) {
+		if platform != nil {
+			usePlatform(t, platform, config, deps)
+		}
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	httpServer := httptest.NewServer(srv.Handler)
 	t.Cleanup(httpServer.Close)
 	return &env{t: t, c: client.New(httpServer.URL), url: httpServer.URL, srv: srv}
+}
+
+// usePlatform points the configuration of an engine at the real dependencies
+func usePlatform(t *testing.T, platform *realPlatform, config *configuration.Config, deps *server.Dependencies) {
+	t.Helper()
+	dsn, err := storetest.NewPostgresDatabase()
+	if err != nil {
+		t.Fatal("postgres:", err)
+	}
+	config.Database, config.PostgresDsn = "postgres", types.Secret(dsn)
+	deps.Permissions = permclient.New(platform.permissionsV2)
 }
 
 // call sends a request to a route of the deprecated layer and decodes the answer into result

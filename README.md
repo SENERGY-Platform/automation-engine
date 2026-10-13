@@ -120,12 +120,13 @@ Smart-Service-Designs werden Modelle im Namespace `smart-services`, die Releases
 ## Tests
 
 ```sh
-go test ./...
+go test ./...          # mit den Container-Varianten der Integrationstests
+go test -short ./...   # ohne sie, wie die CI
 ```
 
 Store- und Engine-Tests laufen gegen SQLite und gegen Postgres in einem Container (testcontainers). Ohne Container-Runtime werden die Postgres-Varianten übersprungen; `AE_TEST_POSTGRES=off` schaltet sie ab. Der Vergleich der Umschreibung mit Camunda 7.24 (MIG-05) und die Leser der Migration starten Camunda und MongoDB ebenfalls im Container; `AE_TEST_CAMUNDA=off` und `AE_TEST_MONGO=off` schalten sie ab. `AE_BPMN_EXPORT_DIR=<Verzeichnis>` prüft Parser und Umschreibung zusätzlich gegen exportierte Modelle.
 
-`pkg/integration` spielt die üblichen Abläufe von Nutzern über HTTP gegen einen vollständigen Server durch: Prozess vom Modell bis zum Abschluss, Zeitplan mit Aus- und Einschalten, Incident mit Reparatur über eine neue Version, Werte über process-io, der Weg des web-ui über die `deprecated/`-Routen, ein Smart Service vom Design bis zum Upgrade und ein Smart Service, der einen Prozess verwaltet. Die Event-Szenarien starten dazu eine eigene Event-Rolle auf derselben Datenbank, mit einem Kafka-Ersatz und einem Fake für device-repository, import-deploy, import-repository und Keycloak: ein wartender Prozess, den ein Gerät oder ein Import fortsetzt (mit Umrechnung Kelvin nach Celsius), und Starts durch die Geräte einer Gruppe, die beim ausgeschalteten Deployment ausbleiben. Die Tests der übrigen Pakete prüfen einzelne Funktionen.
+`pkg/integration` spielt die üblichen Abläufe von Nutzern über HTTP gegen einen vollständigen Server durch: Prozess vom Modell bis zum Abschluss, Zeitplan mit Aus- und Einschalten, Incident mit Reparatur über eine neue Version, Werte über process-io, der Weg des web-ui über die `deprecated/`-Routen, ein Smart Service vom Design bis zum Upgrade und ein Smart Service, der einen Prozess verwaltet. Die Event-Szenarien starten dazu eine eigene Event-Rolle auf derselben Datenbank: ein wartender Prozess, den ein Gerät oder ein Import fortsetzt (mit Umrechnung Kelvin nach Celsius), und Starts durch die Geräte einer Gruppe, die beim ausgeschalteten Deployment ausbleiben. Die Tests der übrigen Pakete prüfen einzelne Funktionen. Jedes Szenario läuft zweimal: `fakes` mit Stand-ins im Prozess (permissions-v2 im Prozess, SQLite, für die Events ein Kafka-Ersatz und ein Fake für device-repository, import-deploy, import-repository und Keycloak) und `containers` gegen die echten Abhängigkeiten in Testcontainers (Postgres, MongoDB, Kafka und die `:dev`-Images von permissions-v2, device-repository, import-repository und import-deploy; Keycloak und Rancher bleiben Stand-ins, weil die Dienste im Test keine Signaturen prüfen und import-deploy sonst Import-Container starten würde). Die Container starten einmal je Testlauf und werden geteilt; ohne Docker schlägt die Variante fehl statt sich zu überspringen. `go test -short ./...` überspringt die Container-Varianten; so läuft die CI.
 
 ### Dauertest (LONG-15)
 

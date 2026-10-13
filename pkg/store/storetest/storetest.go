@@ -76,22 +76,38 @@ func OpenPostgresDsn(t testing.TB) (*store.Store, string) {
 	if pg.err != nil {
 		t.Skip("postgres container not available:", pg.err)
 	}
-	name := "t_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	admin, err := sql.Open("pgx", pg.dsn)
+	dsn, err := NewPostgresDatabase()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close()
-	if _, err = admin.Exec("CREATE DATABASE " + name); err != nil {
-		t.Fatal(err)
-	}
-	dsn := strings.Replace(pg.dsn, "/postgres?", "/"+name+"?", 1)
 	s, err := store.Open(context.Background(), store.Postgres, dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
 	return s, dsn
+}
+
+// NewPostgresDatabase creates an empty database in the shared Postgres container and returns
+// its connection string, e.g. for a whole server. Unlike OpenPostgres, a container that cannot
+// start is an error.
+func NewPostgresDatabase() (string, error) {
+	pg.once.Do(func() {
+		pg.dsn, pg.err = startPostgres()
+	})
+	if pg.err != nil {
+		return "", pg.err
+	}
+	name := "t_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	admin, err := sql.Open("pgx", pg.dsn)
+	if err != nil {
+		return "", err
+	}
+	defer admin.Close()
+	if _, err = admin.Exec("CREATE DATABASE " + name); err != nil {
+		return "", err
+	}
+	return strings.Replace(pg.dsn, "/postgres?", "/"+name+"?", 1), nil
 }
 
 func startPostgres() (string, error) {
