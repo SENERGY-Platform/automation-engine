@@ -122,6 +122,8 @@ type Runtime struct {
 	now     func() time.Time
 	// the token of the engine, for resources the owner may no longer read
 	adminToken auth.TokenSource
+	// set by Register
+	engine *engine.Engine
 }
 
 // SetAdminToken sets the token of the engine for the check of used resources.
@@ -151,6 +153,7 @@ func (this *Runtime) add(name string, handler Handler) {
 // Register makes the module task types available to an engine whose services are configured,
 // so that a deploy reports a missing one instead of an incident later.
 func (this *Runtime) Register(e *engine.Engine, settings Settings) {
+	this.engine = e
 	configured := map[string]bool{
 		TypeInfo:                   true,
 		TypeProcessDeployment:      true,

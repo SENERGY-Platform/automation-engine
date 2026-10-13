@@ -31,7 +31,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
@@ -64,10 +63,11 @@ func (this *Runtime) RunResourceChecks(ctx context.Context, cycle time.Duration)
 	}
 }
 
-// versionToCheck is a deployment version that is current or still has instances
+// versionToCheck is a deployment version in use whose module tasks name resources
 type versionToCheck struct {
 	deployment model.Deployment
-	version    model.DeploymentVersion
+	version    int
+	deployed   time.Time
 	used       model.UsedResources
 	previous   store.ResourceCheck
 }
@@ -75,6 +75,9 @@ type versionToCheck struct {
 // CheckResources checks every deployment version that is current or still has instances and
 // names resources in its module tasks.
 func (this *Runtime) CheckResources(ctx context.Context) error {
+	if this.engine == nil {
+		return nil
+	}
 	var versions []versionToCheck
 	err := this.store.Tx(ctx, func(tx *store.Tx) error {
 		for after := ""; ; {
@@ -101,14 +104,14 @@ func (this *Runtime) CheckResources(ctx context.Context) error {
 	var errs []error
 	for _, v := range versions {
 		if err := this.checkVersion(ctx, v); err != nil {
-			errs = append(errs, fmt.Errorf("deployment %v version %v: %w", v.deployment.Id, v.version.Version, err))
+			errs = append(errs, fmt.Errorf("deployment %v version %v: %w", v.deployment.Id, v.version, err))
 		}
 	}
 	return errors.Join(errs...)
 }
 
 func (this *Runtime) versionsToCheck(tx *store.Tx, d model.Deployment) (result []versionToCheck, err error) {
-	counts, err := tx.InstancesPerVersion(d.Id)
+	versions, err := this.engine.VersionsInUse(tx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -116,27 +119,12 @@ func (this *Runtime) versionsToCheck(tx *store.Tx, d model.Deployment) (result [
 	if err != nil {
 		return nil, err
 	}
-	for version := 1; version <= d.Version; version++ {
-		if version != d.Version && counts[version] == 0 {
-			continue
-		}
-		v, err := tx.GetDeploymentVersion(d.Id, version)
-		if errors.Is(err, model.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		process, _, err := bpmn.Parse(v.Xml)
-		if err != nil {
-			continue
-		}
-		bpmn.ApplyParameters(process, v.Parameters)
-		used := UsedResources(process)
+	for _, v := range versions {
+		used := UsedResources(v.Process)
 		if len(used.ProcessModels)+len(used.Flows)+len(used.ImportTypes) == 0 {
 			continue
 		}
-		result = append(result, versionToCheck{deployment: d, version: v, used: used, previous: checks[version]})
+		result = append(result, versionToCheck{deployment: d, version: v.Version, deployed: v.CreatedAt, used: used, previous: checks[v.Version]})
 	}
 	return result, nil
 }
@@ -149,7 +137,7 @@ type observation struct {
 }
 
 func (this *Runtime) checkVersion(ctx context.Context, v versionToCheck) error {
-	deployed := v.version.CreatedAt
+	deployed := v.deployed
 	now := this.now().Unix()
 	previous := map[string]model.ChangedResource{}
 	for _, c := range v.previous.Changed {
@@ -223,7 +211,7 @@ func (this *Runtime) checkVersion(ctx context.Context, v versionToCheck) error {
 		return errors.Join(errs...)
 	}
 	err := this.store.Tx(ctx, func(tx *store.Tx) error {
-		return tx.SetResourceCheck(store.ResourceCheck{DeploymentId: v.deployment.Id, Version: v.version.Version, Changed: changed, Hashes: hashes, CheckedAt: this.now()})
+		return tx.SetResourceCheck(store.ResourceCheck{DeploymentId: v.deployment.Id, Version: v.version, Changed: changed, Hashes: hashes, CheckedAt: this.now()})
 	})
 	return errors.Join(append(errs, err)...)
 }

@@ -18,6 +18,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -359,4 +360,41 @@ func (this *Engine) ActivityValueLimit() int {
 // Process returns the parsed BPMN of a deployment version from the cache.
 func (this *Engine) Process(tx *store.Tx, deploymentId string, version int) (*bpmn.Process, error) {
 	return this.process(tx, deploymentId, version)
+}
+
+// VersionInUse is a version of a deployment that is current or still has instances.
+type VersionInUse struct {
+	Version   int
+	CreatedAt time.Time
+	Instances int
+	Process   *bpmn.Process
+}
+
+// VersionsInUse lists the versions of a deployment that are current or still have instances,
+// as smart-service-repository counted its releases (SMS-15); a version that no longer parses
+// is left out.
+func (this *Engine) VersionsInUse(tx *store.Tx, d model.Deployment) ([]VersionInUse, error) {
+	counts, err := tx.InstancesPerVersion(d.Id)
+	if err != nil {
+		return nil, err
+	}
+	var result []VersionInUse
+	for version := 1; version <= d.Version; version++ {
+		if version != d.Version && counts[version] == 0 {
+			continue
+		}
+		created, err := tx.DeploymentVersionCreated(d.Id, version)
+		if errors.Is(err, model.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		process, err := this.process(tx, d.Id, version)
+		if err != nil {
+			continue
+		}
+		result = append(result, VersionInUse{Version: version, CreatedAt: created, Instances: counts[version], Process: process})
+	}
+	return result, nil
 }

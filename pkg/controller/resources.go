@@ -54,9 +54,8 @@ type usage struct {
 	instances  int
 }
 
-// usagesOf finds, over all users, the deployment versions of a namespace whose module tasks
-// name a resource and that are current or still have instances, as smart-service-repository
-// counts its releases
+// usagesOf finds, over all users, the deployment versions of a namespace in use whose module
+// tasks name a resource
 func (this *Controller) usagesOf(tx *store.Tx, namespace string, kind string, id string) ([]usage, error) {
 	var result []usage
 	for offset := 0; ; offset += 1000 {
@@ -65,20 +64,13 @@ func (this *Controller) usagesOf(tx *store.Tx, namespace string, kind string, id
 			return nil, err
 		}
 		for _, d := range page.Items {
-			counts, err := tx.InstancesPerVersion(d.Id)
+			versions, err := this.engine.VersionsInUse(tx, d)
 			if err != nil {
 				return nil, err
 			}
-			for version := 1; version <= d.Version; version++ {
-				if version != d.Version && counts[version] == 0 {
-					continue
-				}
-				process, err := this.engine.Process(tx, d.Id, version)
-				if err != nil {
-					continue
-				}
-				if slices.Contains(modules.UsedResources(process).Of(kind), id) {
-					result = append(result, usage{deployment: d, version: version, instances: counts[version]})
+			for _, v := range versions {
+				if slices.Contains(modules.UsedResources(v.Process).Of(kind), id) {
+					result = append(result, usage{deployment: d, version: v.Version, instances: v.Instances})
 				}
 			}
 		}
