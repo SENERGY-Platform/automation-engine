@@ -49,6 +49,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/live"
 	"github.com/SENERGY-Platform/automation-engine/pkg/messaging"
 	"github.com/SENERGY-Platform/automation-engine/pkg/metrics"
+	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/legacyio"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules"
 	"github.com/SENERGY-Platform/automation-engine/pkg/namespaces"
@@ -514,6 +515,21 @@ func Version() string {
 	return "unknown"
 }
 
+// importLegacyIo takes the values of the old process module once; a failure is retried at the
+// next start (MIG-06)
+func (this *Server) importLegacyIo(ctx context.Context) {
+	if this.config.Mode != "fog" || this.config.LegacyIoPostgres.Value() == "" {
+		return
+	}
+	result, done, err := legacyio.Import(ctx, this.Store, this.config.LegacyIoPostgres.Value(), this.config.LegacyIoOwner)
+	switch {
+	case err != nil:
+		this.logger.Warn("unable to take over the values of process-io; retried at the next start", "error", err)
+	case done:
+		this.logger.Info("values of process-io taken over", "imported", result.Imported, "existing", result.Existing, "instance_values_left_out", result.Skipped)
+	}
+}
+
 // startLocal reads answers of device connectors and device events from the broker of a gateway
 func (this *Server) startLocal(ctx context.Context) error {
 	if this.Broker == nil {
@@ -588,6 +604,7 @@ func (this *Server) Start(ctx context.Context) {
 			this.logger.Error("unable to subscribe to the gateways", "error", err)
 		}
 	}
+	this.importLegacyIo(ctx)
 	if err := this.startLocal(ctx); err != nil {
 		this.logger.Error("unable to subscribe at the broker of the gateway", "error", err)
 	}

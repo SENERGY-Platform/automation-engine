@@ -174,6 +174,11 @@ type Config struct {
 	SyncProtocolWindow int `json:"sync_protocol_window" env_var:"SYNC_PROTOCOL_WINDOW"`
 	// upper bound of the database in bytes; 0 is unlimited, in fog 1 GiB, negative unlimited (LONG-07)
 	StorageBudget int64 `json:"storage_budget" env_var:"STORAGE_BUDGET"`
+	// fog: the Postgres of process-io-worker of the old process module; its values are taken
+	// over once at the first start (MIG-06)
+	LegacyIoPostgres types.Secret `json:"legacy_io_postgres" env_var:"LEGACY_IO_POSTGRES"`
+	// fog: the owner of the taken over values; empty keeps the users of process-io
+	LegacyIoOwner string `json:"legacy_io_owner" env_var:"LEGACY_IO_OWNER"`
 	// limits of the process-io store per user (LONG-11)
 	MaxIoValuesPerUser int `json:"max_io_values_per_user" env_var:"MAX_IO_VALUES_PER_USER"`
 	MaxIoValueBytes    int `json:"max_io_value_bytes" env_var:"MAX_IO_VALUE_BYTES"`

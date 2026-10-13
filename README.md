@@ -75,6 +75,7 @@ Mit `MODE=fog` läuft dasselbe Binary auf einem Gateway, als einziger Container 
 - `NOTIFIER_URL` zeigt auf den cloud-proxy (`http://{gateway}/notifications-v2/notifications`).
 - `STORAGE_BUDGET` begrenzt die Datenbank in Bytes (Vorgabe im Fog 1 GiB, negativ heißt unbegrenzt). Ab 80 % wird der Verlauf über die Aufbewahrung hinaus gekürzt, älteste Einträge zuerst, bis 70 %, mit einer Warnung je Tag. Ist der Datenträger voll, hält die Ausführung an und `/health` meldet einen Fehler, bis Schreiben wieder gelingt.
 - Die API ist lokal nur lesend und braucht kein Token; Deployments, Starts und Stopps kommen über die Synchronisation aus der Cloud.
+- `LEGACY_IO_POSTGRES` (DSN der Postgres von process-io-worker des alten Prozessmoduls) übernimmt beim ersten Start einmalig deren Werte; Werte von Instanzen entfallen, weil die Instanzen aus Camunda nicht weiterlaufen. `LEGACY_IO_OWNER` setzt den Owner der Werte, weil das Camunda des Gateways keine Nutzer der Plattform kannte. Deployments und Starts des Gateways kommen aus der Cloud, die sie bei der Migration aus process-sync übernimmt.
 
 Images gibt es für `linux/amd64` und `linux/arm64`, nicht für `arm/v7`. Das Dockerfile kompiliert auf der Plattform des Build-Hosts für die Zielplattform, arm64 braucht deshalb keine Emulation.
 
