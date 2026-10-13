@@ -73,7 +73,7 @@ func (this *Controller) CreateSchedule(ctx context.Context, token string, namesp
 		}
 		now := time.Now().UTC()
 		result = model.Schedule{Id: uuid.NewString(), Namespace: namespace, DeploymentId: input.DeploymentId, Owner: user.GetUserId(),
-			Cron: input.Cron, Alias: input.Alias, Disabled: input.Disabled, CreatedAt: now, UpdatedAt: now}
+			Cron: input.Cron, Alias: input.Alias, Disabled: input.Disabled, CreatedBy: input.CreatedBy, CreatedAt: now, UpdatedAt: now}
 		if result.NextDue, err = this.engine.NextScheduleDue(model.Schedule{Cron: input.Cron}, this.engine.Now()); err != nil {
 			return err
 		}
@@ -97,7 +97,7 @@ func (this *Controller) UpdateSchedule(ctx context.Context, token string, namesp
 			}
 			result.DeploymentId = input.DeploymentId
 		}
-		result.Cron, result.Alias, result.Disabled = input.Cron, input.Alias, input.Disabled
+		result.Cron, result.Alias, result.Disabled, result.CreatedBy = input.Cron, input.Alias, input.Disabled, input.CreatedBy
 		result.UpdatedAt = time.Now().UTC()
 		if result.NextDue, err = this.engine.NextScheduleDue(model.Schedule{Cron: input.Cron}, this.engine.Now()); err != nil {
 			return err

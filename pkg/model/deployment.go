@@ -128,9 +128,11 @@ type Schedule struct {
 	DeploymentId string `json:"deployment_id"`
 	Owner        string `json:"owner"`
 	// cron with 5 or 6 fields (optional seconds first) or a descriptor such as @daily
-	Cron      string     `json:"cron"`
-	Alias     string     `json:"alias,omitempty"`
-	Disabled  bool       `json:"disabled"`
+	Cron     string `json:"cron"`
+	Alias    string `json:"alias,omitempty"`
+	Disabled bool   `json:"disabled"`
+	// free reference of the client that created the schedule, e.g. a dashboard widget
+	CreatedBy string     `json:"created_by,omitempty"`
 	NextDue   *time.Time `json:"next_due,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
@@ -141,10 +143,12 @@ type ScheduleInput struct {
 	Cron         string `json:"cron"`
 	Alias        string `json:"alias,omitempty"`
 	Disabled     bool   `json:"disabled"`
+	CreatedBy    string `json:"created_by,omitempty"`
 }
 
 type ScheduleListOptions struct {
 	PageOptions
 	DeploymentId string `json:"deployment_id,omitempty"`
 	Owner        string `json:"owner,omitempty"`
+	CreatedBy    string `json:"created_by,omitempty"`
 }

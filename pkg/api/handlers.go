@@ -112,12 +112,13 @@ func (h *handlers) convert(w http.ResponseWriter, r *http.Request) {
 //	@Param		sort	query		string	false	"name, created_at or updated_at, with .asc or .desc"
 //	@Param		ids		query		string	false	"comma separated ids"
 //	@Param		owner	query		string	false	"owner"
+//	@Param		not_owner	query		string	false	"models of other owners"
 //	@Success	200		{object}	model.Page[model.Model]
 //	@Failure	400		{object}	model.Error
 //	@Router		/namespaces/{ns}/models [get]
 func (h *handlers) listModels(w http.ResponseWriter, r *http.Request) {
 	q := newQuery(r)
-	options := model.ModelListOptions{PageOptions: q.page(), Search: q.str("search"), Sort: q.str("sort"), Ids: q.list("ids"), Owner: q.str("owner")}
+	options := model.ModelListOptions{PageOptions: q.page(), Search: q.str("search"), Sort: q.str("sort"), Ids: q.list("ids"), Owner: q.str("owner"), NotOwner: q.str("not_owner")}
 	if q.err != nil {
 		writeError(w, q.err)
 		return

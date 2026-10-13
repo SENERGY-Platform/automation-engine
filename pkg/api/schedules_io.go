@@ -30,13 +30,14 @@ import (
 //	@Produce	json
 //	@Param		ns				path		string	true	"namespace"
 //	@Param		deployment_id	query		string	false	"deployment id"
+//	@Param		created_by		query		string	false	"client reference given at creation"
 //	@Param		limit			query		int		false	"page size"
 //	@Param		offset			query		int		false	"offset"
 //	@Success	200				{object}	model.Page[model.Schedule]
 //	@Router		/namespaces/{ns}/schedules [get]
 func (h *handlers) listSchedules(w http.ResponseWriter, r *http.Request) {
 	q := newQuery(r)
-	options := model.ScheduleListOptions{PageOptions: q.page(), DeploymentId: q.str("deployment_id"), Owner: q.str("owner")}
+	options := model.ScheduleListOptions{PageOptions: q.page(), DeploymentId: q.str("deployment_id"), Owner: q.str("owner"), CreatedBy: q.str("created_by")}
 	if q.err != nil {
 		writeError(w, q.err)
 		return

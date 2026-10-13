@@ -5,6 +5,238 @@ definitions:
       xml:
         type: string
     type: object
+  deprecated.CamundaDeployment:
+    properties:
+      deploymentTime:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      source:
+        type: string
+      tenantId:
+        type: string
+    type: object
+  deprecated.Count:
+    properties:
+      count:
+        type: integer
+    type: object
+  deprecated.ExtendedDeployment:
+    properties:
+      definition_id:
+        type: string
+      deploymentTime:
+        type: string
+      diagram:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      source:
+        type: string
+      tenantId:
+        type: string
+    type: object
+  deprecated.HistoricProcessInstance:
+    properties:
+      businessKey:
+        type: string
+      caseInstanceId:
+        type: string
+      deleteReason:
+        type: string
+      durationInMillis:
+        type: number
+      endTime:
+        type: string
+      id:
+        type: string
+      processDefinitionId:
+        type: string
+      processDefinitionKey:
+        type: string
+      processDefinitionName:
+        type: string
+      processDefinitionVersion:
+        type: number
+      startActivityId:
+        type: string
+      startTime:
+        type: string
+      startUserId:
+        type: string
+      state:
+        type: string
+      superCaseInstanceId:
+        type: string
+      superProcessInstanceId:
+        type: string
+      tenantId:
+        type: string
+    type: object
+  deprecated.Incident:
+    properties:
+      business_key:
+        type: string
+      deployment_name:
+        type: string
+      error_message:
+        type: string
+      external_task_id:
+        type: string
+      id:
+        type: string
+      msg_version:
+        type: integer
+      process_definition_id:
+        type: string
+      process_instance_id:
+        type: string
+      tenant_id:
+        type: string
+      time:
+        type: string
+      worker_id:
+        type: string
+    type: object
+  deprecated.IoBulkRequest:
+    properties:
+      get:
+        items:
+          type: string
+        type: array
+      set:
+        items:
+          $ref: '#/definitions/deprecated.IoVariable'
+        type: array
+    type: object
+  deprecated.IoVariable:
+    properties:
+      key:
+        type: string
+      process_definition_id:
+        type: string
+      process_instance_id:
+        type: string
+      value: {}
+    type: object
+  deprecated.IoVariableWithUnixTimestamp:
+    properties:
+      key:
+        type: string
+      process_definition_id:
+        type: string
+      process_instance_id:
+        type: string
+      unix_timestamp_in_s:
+        type: integer
+      value: {}
+    type: object
+  deprecated.Process:
+    properties:
+      _id:
+        type: string
+      bpmn_xml:
+        type: string
+      date:
+        type: integer
+      description:
+        type: string
+      last_updated_unix:
+        type: integer
+      name:
+        type: string
+      owner:
+        type: string
+      publish:
+        type: boolean
+      publish_date:
+        type: string
+      svgXML:
+        type: string
+    type: object
+  deprecated.ProcessDefinition:
+    properties:
+      Version:
+        type: integer
+      category:
+        type: string
+      deploymentId:
+        type: string
+      description:
+        type: string
+      diagram:
+        type: string
+      historyTimeToLive:
+        type: integer
+      id:
+        type: string
+      key:
+        type: string
+      name:
+        type: string
+      resource:
+        type: string
+      suspended:
+        type: boolean
+      tenantId:
+        type: string
+      versionTag:
+        type: string
+    type: object
+  deprecated.ProcessInstance:
+    properties:
+      businessKey:
+        type: string
+      caseInstanceId:
+        type: string
+      definitionId:
+        type: string
+      ended:
+        type: boolean
+      id:
+        type: string
+      suspended:
+        type: boolean
+      tenantId:
+        type: string
+    type: object
+  deprecated.PublicCommand:
+    properties:
+      description:
+        type: string
+      publish:
+        type: boolean
+    type: object
+  deprecated.ScheduleEntry:
+    properties:
+      created_by:
+        type: string
+      cron:
+        type: string
+      disabled:
+        type: boolean
+      id:
+        type: string
+      process_alias:
+        type: string
+      process_deployment_id:
+        type: string
+    type: object
+  deprecated.Variable:
+    properties:
+      type:
+        type: string
+      value: {}
+      valueInfo:
+        additionalProperties: {}
+        type: object
+    type: object
   model.ActiveElement:
     properties:
       element_id:
@@ -1487,6 +1719,10 @@ definitions:
         type: string
       created_at:
         type: string
+      created_by:
+        description: free reference of the client that created the schedule, e.g.
+          a dashboard widget
+        type: string
       cron:
         description: cron with 5 or 6 fields (optional seconds first) or a descriptor
           such as @daily
@@ -1509,6 +1745,8 @@ definitions:
   model.ScheduleInput:
     properties:
       alias:
+        type: string
+      created_by:
         type: string
       cron:
         type: string
@@ -1764,6 +2002,1576 @@ info:
   title: Automation-Engine API
   version: "0.1"
 paths:
+  /deprecated/engine/deployment:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size
+        in: query
+        name: maxResults
+        type: integer
+      - description: offset
+        in: query
+        name: firstResult
+        type: integer
+      - description: name or deploymentTime
+        in: query
+        name: sortBy
+        type: string
+      - description: asc or desc
+        in: query
+        name: sortOrder
+        type: string
+      - description: part of the name
+        in: query
+        name: nameLike
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.ExtendedDeployment'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: deployments of the engine wrapper
+      tags:
+      - deprecated-engine
+  /deprecated/engine/deployment/{id}/start:
+    get:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: instance id
+        in: query
+        name: business_key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.ProcessInstance'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: start a deployment; business_key becomes the instance id, other query
+        parameters variables
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/deployments:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size
+        in: query
+        name: maxResults
+        type: integer
+      - description: offset
+        in: query
+        name: firstResult
+        type: integer
+      - description: name or deploymentTime
+        in: query
+        name: sortBy
+        type: string
+      - description: asc or desc
+        in: query
+        name: sortOrder
+        type: string
+      - description: part of the name
+        in: query
+        name: nameLike
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.ExtendedDeployment'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: deployments of the engine wrapper
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/deployments/{id}:
+    get:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.CamundaDeployment'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: deployment of the engine wrapper
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/deployments/{id}/definition:
+    get:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.ProcessDefinition'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: process definition of a deployment
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/deployments/{id}/exists:
+    get:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: boolean
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: whether a deployment exists
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/deployments/{id}/instances:
+    get:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.ProcessInstance'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: running instances of a deployment
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/deployments/{id}/parameter:
+    get:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/deprecated.Variable'
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: start parameters as Camunda form variables
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/deployments/{id}/start:
+    get:
+      deprecated: true
+      parameters:
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: instance id
+        in: query
+        name: business_key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.ProcessInstance'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: start a deployment; business_key becomes the instance id, other query
+        parameters variables
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/history/process-instances:
+    delete:
+      deprecated: true
+      parameters:
+      - description: instance ids
+        in: body
+        name: ids
+        required: true
+        schema:
+          items:
+            type: string
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete instances with their history
+      tags:
+      - deprecated-engine
+    get:
+      deprecated: true
+      parameters:
+      - description: page size
+        in: query
+        name: maxResults
+        type: integer
+      - description: offset
+        in: query
+        name: firstResult
+        type: integer
+      - description: startTime, endTime or processDefinitionName
+        in: query
+        name: sortBy
+        type: string
+      - description: asc or desc
+        in: query
+        name: sortOrder
+        type: string
+      - description: ended instances
+        in: query
+        name: finished
+        type: boolean
+      - description: running instances
+        in: query
+        name: unfinished
+        type: boolean
+      - description: business key
+        in: query
+        name: processInstanceBusinessKey
+        type: string
+      - description: process definition id
+        in: query
+        name: processDefinitionId
+        type: string
+      - description: part of the deployment name
+        in: query
+        name: processDefinitionNameLike
+        type: string
+      - description: answer {total, data}
+        in: query
+        name: with_total
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.HistoricProcessInstance'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: instances with the filters of the Camunda history
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/history/process-instances/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete an instance with its history
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/process-definitions/{id}:
+    get:
+      deprecated: true
+      parameters:
+      - description: process definition id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.ProcessDefinition'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: process definition
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/process-definitions/{id}/diagram:
+    get:
+      deprecated: true
+      parameters:
+      - description: process definition id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: SVG of a process definition
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/process-definitions/{id}/start:
+    get:
+      deprecated: true
+      parameters:
+      - description: process definition id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: instance id
+        in: query
+        name: business_key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: start a process definition; answers []
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/process-definitions/{id}/start/id:
+    get:
+      deprecated: true
+      parameters:
+      - description: process definition id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: instance id
+        in: query
+        name: business_key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.ProcessInstance'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: start a process definition
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/process-instances:
+    delete:
+      deprecated: true
+      parameters:
+      - description: instance ids
+        in: body
+        name: ids
+        required: true
+        schema:
+          items:
+            type: string
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: stop running instances
+      tags:
+      - deprecated-engine
+    get:
+      deprecated: true
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.ProcessInstance'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: running instances
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/process-instances-by-business-key/{business_key}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: 'business key, with or without wardened:'
+        in: path
+        name: business_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: stop the instance of a business key
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/process-instances/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: stop a running instance
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/process-instances/{id}/variables/{variable_name}:
+    put:
+      deprecated: true
+      parameters:
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: name
+        in: path
+        name: variable_name
+        required: true
+        type: string
+      - description: JSON value
+        in: body
+        name: value
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: set a variable of an instance
+      tags:
+      - deprecated-engine
+  /deprecated/engine/v2/process-instances/count:
+    get:
+      deprecated: true
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.Count'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: number of running instances
+      tags:
+      - deprecated-engine
+  /deprecated/incidents/incidents:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size, default 100
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: time with .asc or .desc
+        in: query
+        name: sort
+        type: string
+      - description: instance
+        in: query
+        name: process_instance_id
+        type: string
+      - description: process definition or deployment
+        in: query
+        name: process_definition_id
+        type: string
+      - description: element
+        in: query
+        name: external_task_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.Incident'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: incidents of process-incident-api
+      tags:
+      - deprecated-incidents
+  /deprecated/io/bulk:
+    post:
+      deprecated: true
+      parameters:
+      - description: requests
+        in: body
+        name: bulk
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.IoBulkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.IoVariableWithUnixTimestamp'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: set, then read process-io values
+      tags:
+      - deprecated-io
+  /deprecated/io/count/variables:
+    get:
+      deprecated: true
+      parameters:
+      - description: regular expression on the key
+        in: query
+        name: key_regex
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.Count'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: number of process-io values
+      tags:
+      - deprecated-io
+  /deprecated/io/values/{key}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete a process-io value
+      tags:
+      - deprecated-io
+    get:
+      deprecated: true
+      parameters:
+      - description: key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: raw process-io value
+      tags:
+      - deprecated-io
+    put:
+      deprecated: true
+      parameters:
+      - description: key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: JSON value
+        in: body
+        name: value
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: set a raw process-io value
+      tags:
+      - deprecated-io
+  /deprecated/io/variables:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size, 0 is all
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: key or unix_timestamp_in_s with .asc or .desc
+        in: query
+        name: sort
+        type: string
+      - description: regular expression on the key
+        in: query
+        name: key_regex
+        type: string
+      - description: instance
+        in: query
+        name: process_instance_id
+        type: string
+      - description: process definition or deployment
+        in: query
+        name: process_definition_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.IoVariableWithUnixTimestamp'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: process-io values
+      tags:
+      - deprecated-io
+  /deprecated/io/variables/{key}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete a process-io value
+      tags:
+      - deprecated-io
+    get:
+      deprecated: true
+      parameters:
+      - description: key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.IoVariableWithUnixTimestamp'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: process-io value; a missing key is null
+      tags:
+      - deprecated-io
+    put:
+      deprecated: true
+      parameters:
+      - description: key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: value
+        in: body
+        name: variable
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.IoVariable'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: set a process-io value
+      tags:
+      - deprecated-io
+  /deprecated/repository/processes:
+    post:
+      deprecated: true
+      parameters:
+      - description: model
+        in: body
+        name: process
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.Process'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.Process'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: create a model
+      tags:
+      - deprecated-repository
+  /deprecated/repository/processes/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: model id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete a model
+      tags:
+      - deprecated-repository
+    get:
+      deprecated: true
+      parameters:
+      - description: model id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.Process'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: model
+      tags:
+      - deprecated-repository
+    put:
+      deprecated: true
+      parameters:
+      - description: model id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: model
+        in: body
+        name: process
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.Process'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.Process'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: update a model
+      tags:
+      - deprecated-repository
+  /deprecated/repository/processes/{id}/publish:
+    post:
+      deprecated: true
+      parameters:
+      - description: model id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: publish
+        in: body
+        name: command
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.PublicCommand'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.Process'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: publish a model
+      tags:
+      - deprecated-repository
+  /deprecated/repository/v2/processes:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size, default 100
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: part of the name
+        in: query
+        name: search
+        type: string
+      - description: name, date or last_updated_unix with .asc or .desc
+        in: query
+        name: sort
+        type: string
+      - description: comma separated ids
+        in: query
+        name: ids
+        type: string
+      - description: owner
+        in: query
+        name: owner
+        type: string
+      - description: other owners
+        in: query
+        name: not-owner
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.Process'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: models of process-model-repository
+      tags:
+      - deprecated-repository
+  /deprecated/scheduler/schedules:
+    get:
+      deprecated: true
+      parameters:
+      - description: client reference
+        in: query
+        name: created_by
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.ScheduleEntry'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: schedules of process-scheduler
+      tags:
+      - deprecated-scheduler
+    post:
+      deprecated: true
+      parameters:
+      - description: schedule
+        in: body
+        name: entry
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.ScheduleEntry'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.ScheduleEntry'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: create a schedule
+      tags:
+      - deprecated-scheduler
+  /deprecated/scheduler/schedules/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: schedule id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete a schedule; an unknown id is no error
+      tags:
+      - deprecated-scheduler
+    put:
+      deprecated: true
+      parameters:
+      - description: schedule id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: schedule
+        in: body
+        name: entry
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.ScheduleEntry'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.ScheduleEntry'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: update a schedule
+      tags:
+      - deprecated-scheduler
   /health:
     get:
       responses:
@@ -3646,6 +5454,10 @@ paths:
         in: query
         name: owner
         type: string
+      - description: models of other owners
+        in: query
+        name: not_owner
+        type: string
       produces:
       - application/json
       responses:
@@ -4063,6 +5875,10 @@ paths:
       - description: deployment id
         in: query
         name: deployment_id
+        type: string
+      - description: client reference given at creation
+        in: query
+        name: created_by
         type: string
       - description: page size
         in: query

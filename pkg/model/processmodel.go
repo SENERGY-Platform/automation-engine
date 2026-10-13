@@ -64,4 +64,6 @@ type ModelListOptions struct {
 	Sort   string   `json:"sort,omitempty"`
 	Ids    []string `json:"ids,omitempty"`
 	Owner  string   `json:"owner,omitempty"`
+	// models of other owners, e.g. those shared with the user
+	NotOwner string `json:"not_owner,omitempty"`
 }

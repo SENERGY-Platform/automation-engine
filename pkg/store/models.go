@@ -75,6 +75,9 @@ func (this *Tx) ListModels(namespace string, options model.ModelListOptions, acc
 	if options.Owner != "" {
 		w.add("owner = ?", options.Owner)
 	}
+	if options.NotOwner != "" {
+		w.add("owner <> ?", options.NotOwner)
+	}
 	order, err := orderBy(options.Sort, map[string]string{"name": "LOWER(name)", "created_at": "created_at", "updated_at": "updated_at"}, "LOWER(name) ASC, id ASC")
 	if err != nil {
 		return result, err

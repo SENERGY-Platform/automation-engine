@@ -42,6 +42,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/controller"
+	"github.com/SENERGY-Platform/automation-engine/pkg/deprecated"
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
@@ -358,12 +359,17 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		agent = gateway.New(settings, s, e, registry, broker, logger)
 		agent.SetLocal(c)
 	}
+	apiSettings := api.Settings{VerifiesTokens: certs != nil, Gateway: fog}
+	if !fog {
+		// the old APIs exist only in the cloud; Kong rewrites their paths (API-08)
+		apiSettings.Deprecated = deprecated.New(c, m)
+	}
 	hub := live.New(s, dsn, logger)
 	liveSettings := controller.DefaultLiveSettings()
 	liveSettings.MaxPerUser = config.MaxLiveConnectionsPerUser
 	c.SetLive(hub, liveSettings)
 	return &Server{
-		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, api.Settings{VerifiesTokens: certs != nil, Gateway: fog}), Namespaces: registry, Permissions: service, Metrics: m,
+		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, apiSettings), Namespaces: registry, Permissions: service, Metrics: m,
 		Live: hub, ModuleRemover: modules.NewRemover(s, userToken, logger), Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, Sync: agent, Networks: networks, config: config, logger: logger,
 	}, nil
 }

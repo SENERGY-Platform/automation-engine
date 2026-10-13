@@ -58,6 +58,9 @@ func New(controller Controller, pinger Pinger, logger *slog.Logger, settings Set
 	for _, route := range h.routes() {
 		mux.HandleFunc(route.pattern, route.handler)
 	}
+	if settings.Deprecated != nil {
+		mux.Handle("/deprecated/", settings.Deprecated)
+	}
 	var handler http.Handler = mux
 	if settings.Gateway {
 		handler = gatewayOnly(mux)
@@ -91,6 +94,8 @@ type Settings struct {
 	VerifiesTokens bool
 	// the engine runs on a gateway: the API is read-only and needs no token (FOG, M6)
 	Gateway bool
+	// serves the old APIs below /deprecated/ (API-02); nil serves none
+	Deprecated http.Handler
 }
 
 type handlers struct {

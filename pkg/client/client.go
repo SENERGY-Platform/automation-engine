@@ -189,6 +189,7 @@ func (this *ClientImpl) ListModels(ctx context.Context, token string, namespace 
 	set(q, "sort", options.Sort)
 	setList(q, "ids", options.Ids)
 	set(q, "owner", options.Owner)
+	set(q, "not_owner", options.NotOwner)
 	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "models"), q, nil, &result)
 	return result, err
 }
@@ -509,6 +510,7 @@ func (this *ClientImpl) ListSchedules(ctx context.Context, token string, namespa
 	q := pageQuery(options.PageOptions)
 	set(q, "deployment_id", options.DeploymentId)
 	set(q, "owner", options.Owner)
+	set(q, "created_by", options.CreatedBy)
 	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "schedules"), q, nil, &result)
 	return result, err
 }

@@ -44,6 +44,7 @@ type Metrics struct {
 	taskDuration   *prometheus.HistogramVec
 	timerDelay     prometheus.Histogram
 	storageRows    *prometheus.GaugeVec
+	deprecated     *prometheus.CounterVec
 	databaseBytes  prometheus.Gauge
 	stalled        *prometheus.GaugeVec
 	topActivities  *prometheus.GaugeVec
@@ -95,12 +96,19 @@ func New(stalledAfter time.Duration) *Metrics {
 			[]string{"instance_id", "user_id", "process_definition_id"}),
 		marshallingLatency: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "external_task_worker_task_marshalling_latency", Help: "latency of marshaller calls",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5}}, []string{"instance_id", "user_id", "endpoint", "service_id", "function_id"}),
+		deprecated: prometheus.NewCounterVec(prometheus.CounterOpts{Name: prefix + "deprecated_requests_total", Help: "requests to the routes of the old APIs under deprecated/; none for a while means the layer can go (API-03)"},
+			[]string{"route"}),
 	}
 	m.instanceId, _ = os.Hostname()
 	m.registry.MustRegister(m.started, m.ended, m.incidents, m.restarts, m.correlations, m.tasks, m.taskDuration, m.timerDelay,
-		m.storageRows, m.databaseBytes, m.stalled, m.topActivities, m.networkContact, m.networkBacklog, m.commandSent, m.marshallingLatency,
+		m.storageRows, m.databaseBytes, m.stalled, m.topActivities, m.networkContact, m.networkBacklog, m.commandSent, m.marshallingLatency, m.deprecated,
 		prometheus.NewGoCollector(), prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
 	return m
+}
+
+// DeprecatedRequest counts a request to a route of the deprecated/ layer (API-03).
+func (this *Metrics) DeprecatedRequest(route string) {
+	this.deprecated.WithLabelValues(route).Inc()
 }
 
 func (this *Metrics) Handler() http.Handler {

@@ -110,13 +110,13 @@ func (this *Tx) CountIoValues(userId string) (int, error) {
 	return this.count("SELECT COUNT(*) FROM io_values WHERE user_id = ? AND instance_id IS NULL", userId)
 }
 
-const scheduleColumns = "id, namespace, deployment_id, owner, cron, alias, disabled, next_due, created_at, updated_at"
+const scheduleColumns = "id, namespace, deployment_id, owner, cron, alias, disabled, next_due, created_at, updated_at, created_by"
 
 func scanSchedule(row interface{ Scan(...any) error }) (s model.Schedule, err error) {
 	var disabled int
 	var due sql.NullInt64
 	var created, updated int64
-	err = row.Scan(&s.Id, &s.Namespace, &s.DeploymentId, &s.Owner, &s.Cron, &s.Alias, &disabled, &due, &created, &updated)
+	err = row.Scan(&s.Id, &s.Namespace, &s.DeploymentId, &s.Owner, &s.Cron, &s.Alias, &disabled, &due, &created, &updated, &s.CreatedBy)
 	s.Disabled = disabled == 1
 	s.NextDue = fromNullMillis(due)
 	s.CreatedAt, s.UpdatedAt = fromMillis(created), fromMillis(updated)
@@ -124,9 +124,9 @@ func scanSchedule(row interface{ Scan(...any) error }) (s model.Schedule, err er
 }
 
 func (this *Tx) SaveSchedule(s model.Schedule) error {
-	_, err := this.exec("INSERT INTO schedules ("+scheduleColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "+
-		"ON CONFLICT (id) DO UPDATE SET deployment_id = excluded.deployment_id, cron = excluded.cron, alias = excluded.alias, disabled = excluded.disabled, next_due = excluded.next_due, updated_at = excluded.updated_at",
-		s.Id, s.Namespace, s.DeploymentId, s.Owner, s.Cron, s.Alias, boolInt(s.Disabled), nullMillis(s.NextDue), millis(s.CreatedAt), millis(s.UpdatedAt))
+	_, err := this.exec("INSERT INTO schedules ("+scheduleColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "+
+		"ON CONFLICT (id) DO UPDATE SET deployment_id = excluded.deployment_id, cron = excluded.cron, alias = excluded.alias, disabled = excluded.disabled, next_due = excluded.next_due, updated_at = excluded.updated_at, created_by = excluded.created_by",
+		s.Id, s.Namespace, s.DeploymentId, s.Owner, s.Cron, s.Alias, boolInt(s.Disabled), nullMillis(s.NextDue), millis(s.CreatedAt), millis(s.UpdatedAt), s.CreatedBy)
 	return err
 }
 
@@ -149,6 +149,9 @@ func (this *Tx) ListSchedules(namespace string, options model.ScheduleListOption
 	}
 	if options.Owner != "" {
 		w.add("owner = ?", options.Owner)
+	}
+	if options.CreatedBy != "" {
+		w.add("created_by = ?", options.CreatedBy)
 	}
 	if result.Total, err = this.count("SELECT COUNT(*) FROM schedules"+w.String(), w.args...); err != nil {
 		return result, err
