@@ -17,13 +17,13 @@
 package controller
 
 import (
-	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"context"
 	"maps"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
 

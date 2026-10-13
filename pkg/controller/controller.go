@@ -22,11 +22,10 @@ import (
 	"regexp"
 	"sync"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
-
 	"github.com/SENERGY-Platform/automation-engine/pkg/api"
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"

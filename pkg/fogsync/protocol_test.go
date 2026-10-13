@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
-
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 )
 

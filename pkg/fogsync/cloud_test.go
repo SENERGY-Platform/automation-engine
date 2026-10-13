@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
-
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"

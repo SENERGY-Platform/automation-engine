@@ -21,9 +21,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
-
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"

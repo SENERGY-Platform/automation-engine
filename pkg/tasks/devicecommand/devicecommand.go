@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
-
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/google/uuid"

@@ -22,12 +22,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
-
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )

@@ -20,9 +20,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
-
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
