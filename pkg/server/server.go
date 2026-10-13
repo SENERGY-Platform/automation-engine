@@ -47,7 +47,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
-	"github.com/SENERGY-Platform/automation-engine/pkg/messaging"
 	"github.com/SENERGY-Platform/automation-engine/pkg/metrics"
 	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/legacyio"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -107,7 +106,7 @@ type Dependencies struct {
 	AspectNodes      *devices.AspectNodes
 	Marshaller       devicecommand.Marshaller
 	Timescale        devicecommand.Timescale
-	Producer         messaging.Producer
+	Producer         devicecommand.Producer
 	// event debugging: stored device messages and their unmarshalling (EVT-10, DBG-18)
 	EventSeries       events.Series
 	EventUnmarshaller events.Unmarshaller
@@ -407,7 +406,7 @@ func deviceCommands(ctx context.Context, config configuration.Config, deps Depen
 		ts = devicecommand.NewTimescale(config.TimescaleWrapperUrl)
 	}
 	if producer == nil {
-		producer = messaging.New(ctx, config.KafkaUrl)
+		producer = devicecommand.NewTransport(ctx, config.KafkaUrl)
 	}
 	return devicecommand.New(devicecommand.Config{
 		GroupScheduler: config.GroupScheduler, ResponseTo: config.MetadataResponseTo, ErrorTo: config.MetadataErrorTo, LocalCommandPrefix: prefix,

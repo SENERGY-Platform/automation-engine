@@ -32,7 +32,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
-	"github.com/SENERGY-Platform/automation-engine/pkg/messaging"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/google/uuid"
 )
@@ -80,7 +79,7 @@ type Type struct {
 	marshaller Marshaller
 	// nil: values of event services cannot be read
 	timescale Timescale
-	producer  messaging.Producer
+	producer  Producer
 	completer Completer
 	metrics   Metrics
 	logger    *slog.Logger
@@ -88,7 +87,7 @@ type Type struct {
 	now       func() time.Time
 }
 
-func New(config Config, s *store.Store, repo devices.Repository, aspects *devices.AspectNodes, m Marshaller, ts Timescale, producer messaging.Producer, metrics Metrics, logger *slog.Logger) *Type {
+func New(config Config, s *store.Store, repo devices.Repository, aspects *devices.AspectNodes, m Marshaller, ts Timescale, producer Producer, metrics Metrics, logger *slog.Logger) *Type {
 	if config.GroupScheduler == "" {
 		config.GroupScheduler = Sequential
 	}

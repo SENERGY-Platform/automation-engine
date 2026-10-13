@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-// Package messaging sends messages to Kafka topics or, for handlers given as URL, by HTTP.
-package messaging
+package devicecommand
 
 import (
 	"bytes"
@@ -36,7 +35,9 @@ type Producer interface {
 	Produce(ctx context.Context, topic string, key string, payload []byte) error
 }
 
-type Switch struct {
+// Transport sends commands to Kafka topics or, for protocol handlers given as URL, by HTTP;
+// LocalTransport is its counterpart on a gateway.
+type Transport struct {
 	kafkaUrl string
 	ctx      context.Context
 	http     *http.Client
@@ -44,12 +45,12 @@ type Switch struct {
 	writers  map[string]*kafka.Producer
 }
 
-// New creates a producer; without kafkaUrl only HTTP handlers can be reached.
-func New(ctx context.Context, kafkaUrl string) *Switch {
-	return &Switch{kafkaUrl: kafkaUrl, ctx: ctx, http: &http.Client{Timeout: 30 * time.Second}, writers: map[string]*kafka.Producer{}}
+// NewTransport creates a transport; without kafkaUrl only HTTP handlers can be reached.
+func NewTransport(ctx context.Context, kafkaUrl string) *Transport {
+	return &Transport{kafkaUrl: kafkaUrl, ctx: ctx, http: &http.Client{Timeout: 30 * time.Second}, writers: map[string]*kafka.Producer{}}
 }
 
-func (this *Switch) Produce(ctx context.Context, topic string, key string, payload []byte) error {
+func (this *Transport) Produce(ctx context.Context, topic string, key string, payload []byte) error {
 	if strings.HasPrefix(topic, "http://") || strings.HasPrefix(topic, "https://") {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, topic, bytes.NewReader(payload))
 		if err != nil {
@@ -79,7 +80,7 @@ func (this *Switch) Produce(ctx context.Context, topic string, key string, paylo
 	return writer.Produce(key, payload)
 }
 
-func (this *Switch) writer(topic string) (*kafka.Producer, error) {
+func (this *Transport) writer(topic string) (*kafka.Producer, error) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
 	if w, ok := this.writers[topic]; ok {
