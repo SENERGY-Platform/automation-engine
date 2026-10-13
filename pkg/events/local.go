@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/SENERGY-Platform/marshaller/lib/marshaller/serialization"
 	"github.com/SENERGY-Platform/models/go/models"
@@ -267,13 +266,4 @@ func defaultValue(value any, variable models.ContentVariable) (any, error) {
 		return v, nil
 	}
 	return value, nil
-}
-
-// localTopicIds splits event/{device}/{service}
-func localTopicIds(topic string) (deviceId string, serviceId string, ok bool) {
-	parts := strings.Split(topic, "/")
-	if len(parts) != 3 || parts[0]+"/" != LocalEventPrefix {
-		return "", "", false
-	}
-	return parts[1], parts[2], true
 }
