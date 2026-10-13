@@ -226,7 +226,7 @@ func (this *Tx) RetryModuleRemoval(moduleId string, next time.Time, message stri
 
 // ModulesToCheck lists modules of a type whose last health check is older than before (SMS-11).
 func (this *Tx) ModulesToCheck(moduleType string, before time.Time, limit int) ([]model.Module, error) {
-	rows, err := this.query("SELECT "+moduleColumns+" FROM modules m WHERE m.module_type = ? AND m.checked_at < ? ORDER BY m.checked_at LIMIT ?", moduleType, millis(before), limit)
+	rows, err := this.query("SELECT "+moduleColumns+" FROM modules m WHERE m.module_type = ? AND m.checked_at <= ? ORDER BY m.checked_at LIMIT ?", moduleType, millis(before), limit)
 	if err != nil {
 		return nil, err
 	}

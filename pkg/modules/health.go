@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -56,8 +57,10 @@ func (this *Runtime) RunHealthChecks(ctx context.Context, interval time.Duration
 
 // CheckModules checks the modules whose last check is older than interval.
 func (this *Runtime) CheckModules(ctx context.Context, interval time.Duration) error {
-	// fixed for the pass, so that modules checked in it do not become due again
+	// fixed for the pass; a module checked in the same millisecond as the cutoff is due again
+	// by its time, so the pass also remembers what it checked
 	cutoff := this.now().Add(-interval)
+	checked := map[string]bool{}
 	for moduleType, check := range this.checks {
 		for {
 			var due []model.Module
@@ -68,10 +71,12 @@ func (this *Runtime) CheckModules(ctx context.Context, interval time.Duration) e
 			if err != nil {
 				return err
 			}
+			due = slices.DeleteFunc(due, func(m model.Module) bool { return checked[m.Id] })
 			if len(due) == 0 {
 				break
 			}
 			for _, m := range due {
+				checked[m.Id] = true
 				problem, err := check(ctx, m)
 				if err != nil {
 					this.logger.WarnContext(ctx, "unable to check module", "module_id", m.Id, "module_type", m.ModuleType, "error", err)

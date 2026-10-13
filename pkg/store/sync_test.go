@@ -147,3 +147,29 @@ func TestRemovalsAreNotQueuedWithoutPermissions(t *testing.T) {
 		}
 	})
 }
+
+// A health check with interval 0 checks every module again, also one checked in the same
+// millisecond; otherwise a fast second check skips it.
+func TestModuleCheckedAtTheCutoffIsDue(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		tx(t, s, func(tx *store.Tx) error {
+			if err := seedInstance(tx, "d1", "i1"); err != nil {
+				return err
+			}
+			if err := tx.UpsertModule(model.Module{Id: "m1", Namespace: "processes", InstanceId: "i1", Owner: "alice", ModuleType: "analytics", CreatedAt: t0, UpdatedAt: t0}); err != nil {
+				return err
+			}
+			if err := tx.SetModuleCheck("m1", "not running", t0); err != nil {
+				return err
+			}
+			due, err := tx.ModulesToCheck("analytics", t0, 10)
+			if err != nil {
+				return err
+			}
+			if len(due) != 1 {
+				return fmt.Errorf("a module checked at the cutoff is due: %v", due)
+			}
+			return nil
+		})
+	})
+}
