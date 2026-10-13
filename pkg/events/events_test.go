@@ -41,6 +41,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 	"github.com/SENERGY-Platform/models/go/models"
+	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 )
 
 var ctx = context.Background()
@@ -464,7 +465,8 @@ func TestReconstructionShowsEvaluationsNextToCorrelations(t *testing.T) {
 	if len(result.Hints) != 1 || !strings.Contains(result.Hints[0], "would have triggered") {
 		t.Fatalf("the missed value is a deviation (EVT-11): %v", result.Hints)
 	}
-	if e.series.tokens[0] != auth.UnsignedToken("alice") {
+	// tokens of the same user differ in their expiry, which counts in seconds
+	if parsed, err := jwt.Parse(e.series.tokens[0]); err != nil || parsed.GetUserId() != "alice" {
 		t.Fatalf("the time series is read with the token of the owner: %v", e.series.tokens[0])
 	}
 	var paged []any

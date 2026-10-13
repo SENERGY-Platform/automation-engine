@@ -25,7 +25,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -45,7 +44,7 @@ func (this *serving) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var body map[string]any
 	_ = json.Unmarshal(raw, &body)
 	this.mux.Lock()
-	this.requests = append(this.requests, r.Method+" "+r.URL.Path+" "+r.Header.Get("Authorization")+" "+r.Header.Get("X-UserId"))
+	this.requests = append(this.requests, r.Method+" "+r.URL.Path+" "+tokenOf(r.Header.Get("Authorization"))+" "+r.Header.Get("X-UserId"))
 	this.bodies = append(this.bodies, body)
 	this.mux.Unlock()
 	if r.Method == http.MethodPost {
@@ -89,7 +88,7 @@ func TestExportCreatesTheExportWithTheOwnersTokenAndRemovesItWithTheInstance(t *
 		return current.Status == model.StatusReady
 	})
 	requests, bodies := fake.all()
-	if len(requests) != 1 || requests[0] != "POST /instance "+auth.UnsignedToken("alice")+" alice" {
+	if len(requests) != 1 || requests[0] != "POST /instance "+"token of alice"+" alice" {
 		t.Fatalf("serving is asked with the owner's token and user id: %v", requests)
 	}
 	values, _ := bodies[0]["Values"].([]any)
@@ -116,7 +115,7 @@ func TestExportCreatesTheExportWithTheOwnersTokenAndRemovesItWithTheInstance(t *
 	if err = srv.ModuleRemover.Process(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if requests, _ = fake.all(); len(requests) != 2 || !strings.HasPrefix(requests[1], "DELETE /instance/"+exportId+" "+auth.UnsignedToken("alice")) {
+	if requests, _ = fake.all(); len(requests) != 2 || !strings.HasPrefix(requests[1], "DELETE /instance/"+exportId+" "+"token of alice") {
 		t.Fatalf("deleting the instance removes the export: %v", requests)
 	}
 }

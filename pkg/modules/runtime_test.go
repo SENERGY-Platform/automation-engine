@@ -18,6 +18,7 @@ package modules_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -49,6 +50,26 @@ func keycloak(t *testing.T) *httptest.Server {
 	return server
 }
 
+// subject reads the user of an unsigned test token
+func subject(token string) string {
+	parts := strings.Split(strings.TrimPrefix(token, "Bearer "), ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	raw, _ := base64.RawURLEncoding.DecodeString(parts[1])
+	var claims struct {
+		Sub string `json:"sub"`
+	}
+	_ = json.Unmarshal(raw, &claims)
+	return claims.Sub
+}
+
+// tokenOf names the user of a token in recorded requests: tokens of the same user differ in
+// their expiry, which counts in seconds
+func tokenOf(header string) string {
+	return "token of " + subject(header)
+}
+
 // recorder is a fake service that remembers its requests
 type recorder struct {
 	mux      sync.Mutex
@@ -62,7 +83,7 @@ func (this *recorder) server(t *testing.T) *httptest.Server {
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		this.mux.Lock()
-		this.requests = append(this.requests, r.Method+" "+r.URL.Path+" "+r.Header.Get("Authorization"))
+		this.requests = append(this.requests, r.Method+" "+r.URL.Path+" "+tokenOf(r.Header.Get("Authorization")))
 		this.bodies = append(this.bodies, body)
 		this.mux.Unlock()
 		if this.answer != nil {
@@ -142,7 +163,7 @@ func TestModuleHandlersRunWithTemplatesScriptsAndOwnerTokens(t *testing.T) {
 	if values["greeting"] != "hello kitchen" || values["import_id"] != "imp-1" {
 		t.Fatalf("prescripts write instance variables, outputs map back: %v", values)
 	}
-	if requests := importDeploy.all(); len(requests) != 1 || requests[0] != "POST /instances "+auth.UnsignedToken("alice") || importDeploy.bodies[0]["name"] != "kitchen import" {
+	if requests := importDeploy.all(); len(requests) != 1 || requests[0] != "POST /instances "+"token of alice" || importDeploy.bodies[0]["name"] != "kitchen import" {
 		t.Fatalf("the import is created from the rendered template with the owner's token (TASK-28): %v %v", requests, importDeploy.bodies)
 	}
 	modules, err := c.ListModules(ctx, alice, "smart-services", model.ModuleListOptions{InstanceId: inst.Id})
@@ -166,7 +187,7 @@ func TestModuleHandlersRunWithTemplatesScriptsAndOwnerTokens(t *testing.T) {
 	if err = srv.ModuleRemover.Process(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if requests := importDeploy.all(); len(requests) != 2 || requests[1] != "DELETE /instances/imp-1 "+auth.UnsignedToken("alice") {
+	if requests := importDeploy.all(); len(requests) != 2 || requests[1] != "DELETE /instances/imp-1 "+"token of alice" {
 		t.Fatalf("deleting the instance removes the import with the owner's token (SMS-06): %v", requests)
 	}
 }
@@ -202,7 +223,7 @@ func TestHealthChecksMarkStoppedPipelinesInTheStatus(t *testing.T) {
 	if current := status(); current.Status != model.StatusError || !strings.Contains(current.StatusMessage, "analytics: pipeline p1 is not running") {
 		t.Fatalf("a stopped pipeline shows as module error in the status (SMS-11): %+v", current)
 	}
-	if requests := flowEngine.all(); len(requests) != 1 || requests[0] != "GET /pipeline/p1 "+auth.UnsignedToken("alice") {
+	if requests := flowEngine.all(); len(requests) != 1 || requests[0] != "GET /pipeline/p1 "+"token of alice" {
 		t.Fatalf("the check asks with the owner's token: %v", requests)
 	}
 	running.Store(true)
@@ -325,7 +346,7 @@ func TestWatcherStartsTheMaintenanceProcedureOnChange(t *testing.T) {
 	deviceSelection := &recorder{}
 	selection := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		deviceSelection.mux.Lock()
-		deviceSelection.requests = append(deviceSelection.requests, r.Method+" "+r.URL.String()+" "+r.Header.Get("Authorization"))
+		deviceSelection.requests = append(deviceSelection.requests, r.Method+" "+r.URL.String()+" "+tokenOf(r.Header.Get("Authorization")))
 		deviceSelection.mux.Unlock()
 		_, _ = w.Write([]byte(devices.Load().(string)))
 	}))
@@ -370,7 +391,7 @@ func TestWatcherStartsTheMaintenanceProcedureOnChange(t *testing.T) {
 		}
 	}
 	check()
-	if requests := deviceSelection.all(); len(requests) != 1 || !strings.HasPrefix(requests[0], "POST /v2/query/selectables?include_devices=true ") || !strings.HasSuffix(requests[0], auth.UnsignedToken("alice")) {
+	if requests := deviceSelection.all(); len(requests) != 1 || !strings.HasPrefix(requests[0], "POST /v2/query/selectables?include_devices=true ") || !strings.HasSuffix(requests[0], "token of alice") {
 		t.Fatalf("the watch asks device-selection with the owner's token: %v", requests)
 	}
 	check()

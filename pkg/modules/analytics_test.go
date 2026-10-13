@@ -85,6 +85,9 @@ func (this *analyticsServices) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		var request struct{ Name, Description string }
 		_ = json.Unmarshal(body, &request)
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": analyticsPipelineId, "name": request.Name, "description": request.Description})
+	case path == "/pipeline/"+analyticsPipelineId && r.Method == http.MethodGet:
+		// the health check of the module may run while the test does
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": analyticsPipelineId, "running": true})
 	case strings.HasPrefix(path, "/flow/getinputs/"):
 		_, _ = w.Write(this.cells)
 	case path == "/v2/query/device-type-selectables" && r.Method == http.MethodPost:

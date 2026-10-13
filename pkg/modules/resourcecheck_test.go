@@ -17,7 +17,6 @@
 package modules_test
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -77,20 +76,6 @@ func (this *repository) server(t *testing.T, prefix string) string {
 	}))
 	t.Cleanup(server.Close)
 	return server.URL
-}
-
-// subject reads the user of an unsigned test token
-func subject(token string) string {
-	parts := strings.Split(strings.TrimPrefix(token, "Bearer "), ".")
-	if len(parts) != 3 {
-		return ""
-	}
-	raw, _ := base64.RawURLEncoding.DecodeString(parts[1])
-	var claims struct {
-		Sub string `json:"sub"`
-	}
-	_ = json.Unmarshal(raw, &claims)
-	return claims.Sub
 }
 
 // resourceServer runs the engine with the module services a smart service with process
