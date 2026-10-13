@@ -19,8 +19,6 @@ package modules_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,7 +33,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
-	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 )
 
 var ctx = context.Background()
@@ -86,21 +83,15 @@ func newServer(t *testing.T, configure func(*configuration.Config)) *server.Serv
 	t.Helper()
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
-	config := configuration.Default()
-	config.SqlitePath = storetest.MemoryDsn()
-	config.PollInterval = "20ms"
-	config.AuthEndpoint = keycloak(t).URL
-	config.AuthClientId = "engine"
-	configure(&config)
-	deps, err := client.TestDependencies(ctx)
+	keycloakUrl := keycloak(t).URL
+	srv, err := client.NewTestServer(ctx, func(config *configuration.Config, _ *server.Dependencies) {
+		config.AuthEndpoint = keycloakUrl
+		config.AuthClientId = "engine"
+		configure(config)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := server.New(ctx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), deps)
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv.Start(ctx)
 	return srv
 }
 

@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,11 +29,9 @@ import (
 
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
-	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
-	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 )
 
 var ctx = context.Background()
@@ -50,18 +47,10 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
-	config := configuration.Default()
-	config.SqlitePath = storetest.MemoryDsn()
-	config.PollInterval = "20ms"
-	deps, err := client.TestDependencies(ctx)
+	srv, err := client.NewTestServer(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := server.New(ctx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), deps)
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv.Start(ctx)
 	httpServer := httptest.NewServer(srv.Handler)
 	t.Cleanup(httpServer.Close)
 	return &env{t: t, srv: srv, url: httpServer.URL}

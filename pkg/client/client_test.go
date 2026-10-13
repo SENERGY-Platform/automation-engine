@@ -19,8 +19,6 @@ package client_test
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -32,7 +30,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
-	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
 )
 
@@ -59,18 +56,11 @@ func (this env) sync(t *testing.T) {
 
 func newServer(t *testing.T, ctx context.Context) (*server.Server, server.Dependencies) {
 	t.Helper()
-	config := configuration.Default()
-	config.SqlitePath = storetest.MemoryDsn()
-	config.PollInterval = "50ms"
-	deps, err := client.TestDependencies(ctx)
+	var deps server.Dependencies
+	srv, err := client.NewTestServer(ctx, func(_ *configuration.Config, d *server.Dependencies) { deps = *d })
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := server.New(ctx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), deps)
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv.Start(ctx)
 	return srv, deps
 }
 
@@ -100,18 +90,10 @@ func eachEnv(t *testing.T, fn func(t *testing.T, e env)) {
 func clients(t *testing.T) map[string]client.Client {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	config := configuration.Default()
-	config.SqlitePath = storetest.MemoryDsn()
-	config.PollInterval = "50ms"
-	deps, err := client.TestDependencies(ctx)
+	srv, err := client.NewTestServer(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := server.New(ctx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), deps)
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv.Start(ctx)
 	httpServer := httptest.NewServer(srv.Handler)
 	t.Cleanup(httpServer.Close)
 	testClient, err := client.NewTestClient(ctx)

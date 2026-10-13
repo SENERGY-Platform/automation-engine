@@ -19,8 +19,6 @@ package migrate_test
 import (
 	"bytes"
 	"context"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +32,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
-	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 	"github.com/SENERGY-Platform/models/go/models"
 	permmodel "github.com/SENERGY-Platform/permissions-v2/pkg/model"
 )
@@ -103,20 +100,15 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
-	config := configuration.Default()
-	config.SqlitePath = storetest.MemoryDsn()
-	config.PollInterval = "20ms"
-	deps, err := client.TestDependencies(ctx)
+	var deps server.Dependencies
+	srv, err := client.NewTestServer(ctx, func(_ *configuration.Config, d *server.Dependencies) {
+		// deployments to gateways need the synchronisation; no gateway answers here
+		d.SyncBroker = mqtt.NewMemory()
+		deps = *d
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// deployments to gateways need the synchronisation; no gateway answers here
-	deps.SyncBroker = mqtt.NewMemory()
-	srv, err := server.New(ctx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), deps)
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv.Start(ctx)
 	admin := auth.UnsignedToken("migration", "admin")
 	rights := migrate.PermissionsV2{Client: deps.Permissions, Token: func() (string, error) { return admin, nil }}
 	if _, err, _ = deps.Permissions.SetTopic(admin, permmodel.Topic{Id: "processmodel"}); err != nil {

@@ -52,13 +52,27 @@ var _ Client = (*TestClient)(nil)
 
 // NewTestClient starts the engine; it stops when ctx is done.
 func NewTestClient(ctx context.Context) (*TestClient, error) {
+	srv, err := NewTestServer(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &TestClient{Controller: srv.Controller, Engine: srv.Engine, server: srv}, nil
+}
+
+// NewTestServer starts the engine of NewTestClient and returns the server, e.g. to serve its
+// Handler over HTTP or to run a background job at once. configure, if given, changes the
+// configuration and the dependencies before the start. The server stops when ctx is done.
+func NewTestServer(ctx context.Context, configure func(config *configuration.Config, deps *server.Dependencies)) (*server.Server, error) {
 	config := configuration.Default()
 	config.Database = "sqlite"
 	config.SqlitePath = "file:" + uuid.NewString() + "?mode=memory&cache=shared"
-	config.PollInterval = "100ms"
+	config.PollInterval = "20ms"
 	deps, err := TestDependencies(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if configure != nil {
+		configure(&config, &deps)
 	}
 	srv, err := server.New(ctx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), deps)
 	if err != nil {
@@ -71,7 +85,7 @@ func NewTestClient(ctx context.Context) (*TestClient, error) {
 		time.Sleep(100 * time.Millisecond)
 		srv.Close()
 	}()
-	return &TestClient{Controller: srv.Controller, Engine: srv.Engine, server: srv}, nil
+	return srv, nil
 }
 
 // TestDependencies run permissions-v2 in the process with an admin token it accepts, and with
