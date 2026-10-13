@@ -1,0 +1,69 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  gates:
+    name: Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Format
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt reports deviations in:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # the OpenAPI and the documentation of the script environments are committed; they have
+      # to match the code. git diff does not see files that generation creates, hence the
+      # second check.
+      - name: Generated files
+        run: |
+          go generate ./...
+          git diff --exit-code -- docs
+          untracked="$(git ls-files --others --exclude-standard docs)"
+          if [ -n "$untracked" ]; then
+            echo "generation created files that are not committed:"
+            echo "$untracked"
+            exit 1
+          fi
+
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Test
+        timeout-minutes: 45
+        run: go test -timeout 40m ./...

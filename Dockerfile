@@ -1,4 +1,8 @@
-FROM golang:1.27 AS builder
+# the builder runs on the platform of the build host and cross-compiles, so that the arm64 image
+# needs no emulation (FOG-02)
+FROM --platform=$BUILDPLATFORM golang:1.27 AS builder
+ARG TARGETOS=linux
+ARG TARGETARCH
 
 COPY . /go/src/app
 WORKDIR /go/src/app
@@ -6,7 +10,7 @@ WORKDIR /go/src/app
 ENV GO111MODULE=on
 
 RUN go generate ./...
-RUN CGO_ENABLED=0 GOOS=linux go build -o app
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o app
 
 RUN git log -1 --oneline > version.txt
 
