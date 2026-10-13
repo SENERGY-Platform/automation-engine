@@ -82,16 +82,35 @@ func (this *Controller) startInstance(ctx context.Context, token string, namespa
 		return model.Instance{}, err
 	}
 	if deployment.NetworkId != "" {
-		return this.startOnNetwork(ctx, user, deployment, id, instanceOwner, variables)
+		return this.startOnNetwork(ctx, user, deployment, id, instanceOwner, variables, input.Name, input.Description)
 	}
 	result, _, err := this.engine.StartInstance(ctx, engine.StartRequest{
 		DeploymentId: input.DeploymentId, DeploymentVersion: input.DeploymentVersion, InstanceId: id, Owner: instanceOwner, Variables: variables,
+		Name: input.Name, Description: input.Description,
 	})
 	if err == nil {
 		// marks the span of the request with the new instance; its later work carries the id
 		// in spans of its own
 		tracing.WithBaggage(ctx, tracing.KeyInstanceId, result.Id)
 	}
+	return result, err
+}
+
+// UpdateInstanceInfo changes name and description of an instance; they are no part of the run,
+// so instances of a gateway take them in the cloud.
+func (this *Controller) UpdateInstanceInfo(ctx context.Context, token string, namespace string, id string, input model.InstanceInfoInput) (result model.Instance, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		inst, err := this.readInstance(ctx, tx, token, namespace, id, Write)
+		if err != nil {
+			return err
+		}
+		if err = tx.SetInstanceInfo(id, inst.Namespace, input.Name, input.Description); err != nil {
+			return err
+		}
+		result = inst.Instance
+		result.Name, result.Description = input.Name, input.Description
+		return nil
+	})
 	return result, err
 }
 

@@ -88,8 +88,8 @@ func withOptions(r *http.Request) bool {
 }
 
 // convert rewrites BPMN of the old designer; what the engine cannot run rejects the request
-func (this *Handler) convert(r *http.Request, xml string) (model.Conversion, *bpmn.Process, error) {
-	conversion, err := this.c.Convert(r.Context(), token(r), processes, xml)
+func (this *Handler) convert(r *http.Request, namespace string, xml string) (model.Conversion, *bpmn.Process, error) {
+	conversion, err := this.c.Convert(r.Context(), token(r), namespace, xml)
 	if err != nil {
 		return conversion, nil, err
 	}
@@ -291,7 +291,7 @@ func oldStartParameters(process *bpmn.Process) []models.ProcessStartParameter {
 
 // prepared answers a deployment that is yet to be made, as process-deployment did
 func (this *Handler) prepared(r *http.Request, name string, xml string, svg string) (models.Deployment, error) {
-	conversion, process, err := this.convert(r, xml)
+	conversion, process, err := this.convert(r, processes, xml)
 	if err != nil {
 		return models.Deployment{}, err
 	}
@@ -339,12 +339,12 @@ func (this *Handler) prepareXml(w http.ResponseWriter, r *http.Request) {
 }
 
 // latestModel reads a model with the content of its latest version
-func (this *Handler) latestModel(r *http.Request, id string) (model.Model, model.ModelVersion, error) {
-	m, err := this.c.GetModel(r.Context(), token(r), processes, id)
+func (this *Handler) latestModel(r *http.Request, namespace string, id string) (model.Model, model.ModelVersion, error) {
+	m, err := this.c.GetModel(r.Context(), token(r), namespace, id)
 	if err != nil {
 		return m, model.ModelVersion{}, err
 	}
-	version, err := this.c.GetModelVersion(r.Context(), token(r), processes, id, m.Version)
+	version, err := this.c.GetModelVersion(r.Context(), token(r), namespace, id, m.Version)
 	return m, version, err
 }
 
@@ -361,7 +361,7 @@ func (this *Handler) latestModel(r *http.Request, id string) (model.Model, model
 //	@Failure	400,403,404	{string}	string
 //	@Router		/deprecated/deployment/v3/prepared-deployments/{modelId} [get]
 func (this *Handler) prepareModel(w http.ResponseWriter, r *http.Request) {
-	m, version, err := this.latestModel(r, r.PathValue("modelId"))
+	m, version, err := this.latestModel(r, processes, r.PathValue("modelId"))
 	if err != nil {
 		writeError(w, err)
 		return
@@ -382,12 +382,12 @@ func (this *Handler) prepareModel(w http.ResponseWriter, r *http.Request) {
 //	@Failure	400,403,404	{string}	string
 //	@Router		/deprecated/deployment/v3/start-parameters/{modelId} [get]
 func (this *Handler) modelStartParameters(w http.ResponseWriter, r *http.Request) {
-	_, version, err := this.latestModel(r, r.PathValue("modelId"))
+	_, version, err := this.latestModel(r, processes, r.PathValue("modelId"))
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	_, process, err := this.convert(r, version.Xml)
+	_, process, err := this.convert(r, processes, version.Xml)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -406,7 +406,7 @@ func (this *Handler) deploymentInput(r *http.Request, old models.Deployment) (mo
 	if old.Version != 3 {
 		return model.DeploymentInput{}, model.BadRequest("expected deployment version 3")
 	}
-	conversion, process, err := this.convert(r, old.Diagram.XmlRaw)
+	conversion, process, err := this.convert(r, processes, old.Diagram.XmlRaw)
 	if err != nil {
 		return model.DeploymentInput{}, err
 	}

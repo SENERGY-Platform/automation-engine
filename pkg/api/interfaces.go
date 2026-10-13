@@ -70,6 +70,8 @@ type Controller interface {
 	// PutInstance starts an instance with the given id idempotently (RUN-01)
 	PutInstance(ctx context.Context, token string, namespace string, id string, input model.StartInstanceInput) (model.Instance, error)
 	GetInstance(ctx context.Context, token string, namespace string, id string) (model.Instance, error)
+	// UpdateInstanceInfo changes name and description of an instance
+	UpdateInstanceInfo(ctx context.Context, token string, namespace string, id string, input model.InstanceInfoInput) (model.Instance, error)
 	ListInstances(ctx context.Context, token string, namespace string, options model.InstanceListOptions) (model.Page[model.Instance], error)
 	// DeleteInstances removes instances with their history (HIST-03)
 	DeleteInstances(ctx context.Context, token string, namespace string, ids []string) error

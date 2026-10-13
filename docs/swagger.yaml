@@ -5,6 +5,15 @@ definitions:
       xml:
         type: string
     type: object
+  deprecated.AnalyticsInfo:
+    properties:
+      desc:
+        type: string
+      flow_id:
+        type: string
+      name:
+        type: string
+    type: object
   deprecated.BpmnResource:
     properties:
       id:
@@ -177,6 +186,44 @@ definitions:
         type: integer
       value: {}
     type: object
+  deprecated.MaintenanceProcedure:
+    properties:
+      bpmn_id:
+        type: string
+      internal_event_id:
+        type: string
+      message_ref:
+        type: string
+      parameter_descriptions:
+        items:
+          $ref: '#/definitions/deprecated.ReleaseParameter'
+        type: array
+      public_event_id:
+        type: string
+    type: object
+  deprecated.ModuleDeleteInfo:
+    properties:
+      url:
+        type: string
+      user_id:
+        type: string
+    type: object
+  deprecated.ModuleInfo:
+    properties:
+      analytics:
+        items:
+          $ref: '#/definitions/deprecated.AnalyticsInfo'
+        type: array
+    type: object
+  deprecated.PermissionsInfo:
+    properties:
+      permissions:
+        additionalProperties:
+          type: boolean
+        type: object
+      shared:
+        type: boolean
+    type: object
   deprecated.PrepareRequest:
     properties:
       svg:
@@ -260,6 +307,44 @@ definitions:
       publish:
         type: boolean
     type: object
+  deprecated.ReleaseInfo:
+    properties:
+      maintenance_procedures:
+        items:
+          $ref: '#/definitions/deprecated.MaintenanceProcedure'
+        type: array
+      module_info:
+        $ref: '#/definitions/deprecated.ModuleInfo'
+      parameter_descriptions:
+        items:
+          $ref: '#/definitions/deprecated.ReleaseParameter'
+        type: array
+    type: object
+  deprecated.ReleaseParameter:
+    properties:
+      auto_select_all:
+        type: boolean
+      characteristic_id:
+        type: string
+      default_value: {}
+      description:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      multiple:
+        type: boolean
+      optional:
+        type: boolean
+      options:
+        additionalProperties: {}
+        type: object
+      order:
+        type: integer
+      type:
+        type: string
+    type: object
   deprecated.ScheduleEntry:
     properties:
       created_by:
@@ -274,6 +359,192 @@ definitions:
         type: string
       process_deployment_id:
         type: string
+    type: object
+  deprecated.SmartServiceDesign:
+    properties:
+      bpmn_xml:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      svg_xml:
+        type: string
+      updated_at:
+        type: integer
+      user_id:
+        type: string
+    type: object
+  deprecated.SmartServiceExtendedParameter:
+    properties:
+      characteristic: {}
+      characteristic_id:
+        type: string
+      default_value: {}
+      description:
+        type: string
+      has_no_valid_option:
+        type: boolean
+      id:
+        type: string
+      label:
+        type: string
+      multiple:
+        type: boolean
+      optional:
+        type: boolean
+      options:
+        items:
+          $ref: '#/definitions/model.ParameterOption'
+        type: array
+      order:
+        type: integer
+      type:
+        type: string
+      value: {}
+      value_label:
+        type: string
+    type: object
+  deprecated.SmartServiceInstance:
+    properties:
+      created_at:
+        type: integer
+      deleting:
+        type: boolean
+      description:
+        type: string
+      design_id:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      new_release_id:
+        type: string
+      parameters:
+        items:
+          $ref: '#/definitions/deprecated.SmartServiceParameter'
+        type: array
+      permissions_info:
+        $ref: '#/definitions/deprecated.PermissionsInfo'
+      ready:
+        type: boolean
+      release_id:
+        type: string
+      running_maintenance_ids:
+        items:
+          type: string
+        type: array
+      updated_at:
+        type: integer
+      user_id:
+        type: string
+    type: object
+  deprecated.SmartServiceInstanceInfo:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  deprecated.SmartServiceInstanceInit:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      parameters:
+        items:
+          $ref: '#/definitions/deprecated.SmartServiceParameter'
+        type: array
+    type: object
+  deprecated.SmartServiceModule:
+    properties:
+      delete_info:
+        $ref: '#/definitions/deprecated.ModuleDeleteInfo'
+      design_id:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      instance_id:
+        type: string
+      keys:
+        items:
+          type: string
+        type: array
+      last_update:
+        type: integer
+      module_data:
+        additionalProperties: {}
+        type: object
+      module_type:
+        type: string
+      release_id:
+        type: string
+      user_id:
+        type: string
+    type: object
+  deprecated.SmartServiceParameter:
+    properties:
+      id:
+        type: string
+      label:
+        type: string
+      value: {}
+      value_label:
+        type: string
+    type: object
+  deprecated.SmartServiceRelease:
+    properties:
+      created_at:
+        type: integer
+      creator:
+        type: string
+      description:
+        type: string
+      design_id:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      new_release_id:
+        type: string
+      usable:
+        type: boolean
+    type: object
+  deprecated.SmartServiceReleaseExtended:
+    properties:
+      bpmn_xml:
+        type: string
+      created_at:
+        type: integer
+      creator:
+        type: string
+      description:
+        type: string
+      design_id:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      new_release_id:
+        type: string
+      parsed_info:
+        $ref: '#/definitions/deprecated.ReleaseInfo'
+      permissions_info:
+        $ref: '#/definitions/deprecated.PermissionsInfo'
+      svg_xml:
+        type: string
+      usable:
+        type: boolean
     type: object
   deprecated.Variable:
     properties:
@@ -953,6 +1224,8 @@ definitions:
         type: string
       deployment_version:
         type: integer
+      description:
+        type: string
       end_reason:
         type: string
       ended_at:
@@ -966,6 +1239,9 @@ definitions:
         type: string
       model_version:
         type: integer
+      name:
+        description: set by users, e.g. for smart-service instances
+        type: string
       namespace:
         type: string
       network_id:
@@ -994,6 +1270,13 @@ definitions:
         - $ref: '#/definitions/model.InstanceStatus'
         description: summary for users, derived on read (SMS-11)
       status_message:
+        type: string
+    type: object
+  model.InstanceInfoInput:
+    properties:
+      description:
+        type: string
+      name:
         type: string
     type: object
   model.InstanceState:
@@ -1878,6 +2161,10 @@ definitions:
       deployment_version:
         description: 0 selects the current version
         type: integer
+      description:
+        type: string
+      name:
+        type: string
       owner:
         type: string
       variables:
@@ -4369,6 +4656,744 @@ paths:
       summary: update a schedule
       tags:
       - deprecated-scheduler
+  /deprecated/smart-services/designs:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: name or updated_at with .asc or .desc
+        in: query
+        name: sort
+        type: string
+      - description: part of the name
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.SmartServiceDesign'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: designs of smart-service-repository
+      tags:
+      - deprecated-smart-services
+    post:
+      deprecated: true
+      parameters:
+      - description: design
+        in: body
+        name: design
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.SmartServiceDesign'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceDesign'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: create a design
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/designs/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: design id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete a design
+      tags:
+      - deprecated-smart-services
+    get:
+      deprecated: true
+      parameters:
+      - description: design id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceDesign'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: design
+      tags:
+      - deprecated-smart-services
+    put:
+      deprecated: true
+      parameters:
+      - description: design id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: design
+        in: body
+        name: design
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.SmartServiceDesign'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceDesign'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: update a design
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/extended-releases:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: part of the name
+        in: query
+        name: search
+        type: string
+      - description: comma separated release ids
+        in: query
+        name: ids
+        type: string
+      - description: current versions only
+        in: query
+        name: latest
+        type: boolean
+      - description: whether every parameter has an option
+        in: query
+        name: add-usable-flag
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.SmartServiceReleaseExtended'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: releases with BPMN, parameters and permissions
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/extended-releases/{id}:
+    get:
+      deprecated: true
+      parameters:
+      - description: release id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceReleaseExtended'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: release with BPMN, parameters and permissions
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/instances:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: name or created_at with .asc or .desc
+        in: query
+        name: sort
+        type: string
+      - description: release id
+        in: query
+        name: release-id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.SmartServiceInstance'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: smart-service instances
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/instances/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete an instance with its modules
+      tags:
+      - deprecated-smart-services
+    get:
+      deprecated: true
+      parameters:
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceInstance'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: smart-service instance
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/instances/{id}/info:
+    put:
+      deprecated: true
+      parameters:
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: name and description
+        in: body
+        name: info
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.SmartServiceInstanceInfo'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceInstance'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: change name and description of an instance
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/instances/{id}/parameters:
+    put:
+      deprecated: true
+      parameters:
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: release id
+        in: query
+        name: release_id
+        type: string
+      - description: parameters
+        in: body
+        name: parameters
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/deprecated.SmartServiceParameter'
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceInstance'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: change the parameters of an instance; release_id moves it to that release
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/modules:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: instance id
+        in: query
+        name: instance_id
+        type: string
+      - description: comma separated instance ids
+        in: query
+        name: instance_ids
+        type: string
+      - description: module type
+        in: query
+        name: module_type
+        type: string
+      - description: key
+        in: query
+        name: key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.SmartServiceModule'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: modules of smart-service instances
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/releases:
+    get:
+      deprecated: true
+      parameters:
+      - description: page size
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: part of the name
+        in: query
+        name: search
+        type: string
+      - description: name or created_at with .asc or .desc
+        in: query
+        name: sort
+        type: string
+      - description: current versions only
+        in: query
+        name: latest
+        type: boolean
+      - description: whether every parameter has an option
+        in: query
+        name: add-usable-flag
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.SmartServiceRelease'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: releases
+      tags:
+      - deprecated-smart-services
+    post:
+      deprecated: true
+      parameters:
+      - description: design_id, optional name and description
+        in: body
+        name: release
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.SmartServiceRelease'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceRelease'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: 'release a design: a new deployment or a new version of it'
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/releases/{id}:
+    delete:
+      deprecated: true
+      parameters:
+      - description: release id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: delete a release without instances
+      tags:
+      - deprecated-smart-services
+    get:
+      deprecated: true
+      parameters:
+      - description: release id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceRelease'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: release
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/releases/{id}/instances:
+    post:
+      deprecated: true
+      parameters:
+      - description: release id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: name and parameters
+        in: body
+        name: instance
+        required: true
+        schema:
+          $ref: '#/definitions/deprecated.SmartServiceInstanceInit'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceInstance'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: create an instance of a release
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/releases/{id}/parameters:
+    get:
+      deprecated: true
+      parameters:
+      - description: release id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/deprecated.SmartServiceExtendedParameter'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: start parameters of a release with options
+      tags:
+      - deprecated-smart-services
   /health:
     get:
       responses:
@@ -5735,6 +6760,43 @@ paths:
       summary: complete value of a variable at a step of the history
       tags:
       - debugging
+  /namespaces/{ns}/instances/{id}/info:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: name and description
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.InstanceInfoInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Instance'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: change name and description of an instance
+      tags:
+      - instances
   /namespaces/{ns}/instances/{id}/live:
     get:
       description: 'Upgrades to a WebSocket and sends model.DebugMessage values as

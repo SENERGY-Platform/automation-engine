@@ -17,3 +17,7 @@
 -- the widget that created a schedule; the web-ui finds the schedules of a widget by it
 ALTER TABLE schedules ADD COLUMN created_by TEXT NOT NULL DEFAULT '';
 CREATE INDEX schedules_created_by ON schedules (namespace, created_by);
+
+-- names of instances, as smart-service instances have them; set by users, not by the run
+ALTER TABLE instances ADD COLUMN name TEXT NOT NULL DEFAULT '';
+ALTER TABLE instances ADD COLUMN description TEXT NOT NULL DEFAULT '';

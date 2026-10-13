@@ -51,6 +51,8 @@ type StartRequest struct {
 	Locals map[string]any
 	// the instance a maintenance procedure belongs to (SMS-13)
 	ParentId string
+	// set by users, e.g. for smart-service instances
+	Name, Description string
 }
 
 // StartInstance creates an instance and runs it until all tokens wait or end. With a given
@@ -119,7 +121,7 @@ func (this *Engine) startInstance(tx *store.Tx, request StartRequest, cause mode
 		Instance: model.Instance{
 			Id: id, Namespace: deployment.Namespace, Owner: request.Owner, DeploymentId: deployment.Id, DeploymentName: deployment.Name,
 			DeploymentVersion: version, ModelId: deployment.ModelId, ModelVersion: deployment.ModelVersion, Run: 0, State: model.StateRunning,
-			StartVariables: variables, CreatedAt: now, StartedAt: now, LastActivityAt: now, ParentId: request.ParentId,
+			StartVariables: variables, CreatedAt: now, StartedAt: now, LastActivityAt: now, ParentId: request.ParentId, Name: request.Name, Description: request.Description,
 		},
 		ActivityMinSeq: 1,
 	}

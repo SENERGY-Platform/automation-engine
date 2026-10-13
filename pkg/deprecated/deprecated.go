@@ -61,6 +61,7 @@ func New(c api.Controller, counter Counter) *Handler {
 	this := &Handler{c: c, counter: counter, mux: http.NewServeMux()}
 	this.engine()
 	this.deployments()
+	this.smartServices()
 	this.repository()
 	this.io()
 	this.incidents()

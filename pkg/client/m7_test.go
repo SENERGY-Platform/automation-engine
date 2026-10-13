@@ -62,3 +62,83 @@ func TestCamundaModelIsConvertedAndDeploys(t *testing.T) {
 		}
 	})
 }
+
+// Instances carry a name and a description users set, as smart-service instances did.
+func TestInstancesHaveNameAndDescription(t *testing.T) {
+	each(t, func(t *testing.T, c client.Client) {
+		d, err := c.CreateDeployment(ctx, alice, ns, model.DeploymentInput{Xml: waitingModel()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inst, err := c.StartInstance(ctx, alice, ns, model.StartInstanceInput{DeploymentId: d.Id, Name: "Kitchen", Description: "lights"})
+		if err != nil || inst.Name != "Kitchen" || inst.Description != "lights" {
+			t.Fatalf("%+v %v", inst, err)
+		}
+		if inst, err = c.UpdateInstanceInfo(ctx, alice, ns, inst.Id, model.InstanceInfoInput{Name: "Hall"}); err != nil || inst.Name != "Hall" || inst.Description != "" {
+			t.Fatalf("%+v %v", inst, err)
+		}
+		if inst, err = c.GetInstance(ctx, alice, ns, inst.Id); err != nil || inst.Name != "Hall" {
+			t.Fatalf("%+v %v", inst, err)
+		}
+		if _, err = c.UpdateInstanceInfo(ctx, bob, ns, inst.Id, model.InstanceInfoInput{Name: "x"}); err == nil {
+			t.Error("only who may write the instance changes its name")
+		}
+	})
+}
+
+// A deployment may take the content of a model in another form, e.g. rewritten for this
+// engine, and keeps its reference to the model (MIG-04).
+func TestDeploymentOfAModelWithRewrittenContent(t *testing.T) {
+	each(t, func(t *testing.T, c client.Client) {
+		m, err := c.CreateModel(ctx, alice, ns, model.ModelInput{Xml: waitingModel(), Svg: "<svg>model</svg>"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		other := strings.Replace(waitingModel(), `id="end"`, `id="done"`, 1)
+		other = strings.Replace(other, `targetRef="end"`, `targetRef="done"`, 1)
+		d, err := c.CreateDeployment(ctx, alice, ns, model.DeploymentInput{ModelId: m.Id, Xml: other})
+		if err != nil || d.ModelId != m.Id || d.ModelVersion != 1 {
+			t.Fatalf("%+v %v", d, err)
+		}
+		v, err := c.GetDeploymentVersion(ctx, alice, ns, d.Id, 1)
+		if err != nil || !strings.Contains(v.Xml, `id="done"`) || v.Svg != "<svg>model</svg>" {
+			t.Fatalf("the given BPMN replaces the content, the SVG of the model stays: %v", err)
+		}
+	})
+}
+
+func TestSchedulesKeepTheirCreatorReference(t *testing.T) {
+	each(t, func(t *testing.T, c client.Client) {
+		d, err := c.CreateDeployment(ctx, alice, ns, model.DeploymentInput{Xml: waitingModel()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, err := c.CreateSchedule(ctx, alice, ns, model.ScheduleInput{DeploymentId: d.Id, Cron: "@daily", CreatedBy: "widget-1", Disabled: true})
+		if err != nil || s.CreatedBy != "widget-1" {
+			t.Fatalf("%+v %v", s, err)
+		}
+		if _, err = c.CreateSchedule(ctx, alice, ns, model.ScheduleInput{DeploymentId: d.Id, Cron: "@daily", Disabled: true}); err != nil {
+			t.Fatal(err)
+		}
+		page, err := c.ListSchedules(ctx, alice, ns, model.ScheduleListOptions{CreatedBy: "widget-1"})
+		if err != nil || page.Total != 1 || page.Items[0].Id != s.Id {
+			t.Fatalf("%+v %v", page, err)
+		}
+	})
+}
+
+func TestModelsOfOtherOwners(t *testing.T) {
+	each(t, func(t *testing.T, c client.Client) {
+		if _, err := c.CreateModel(ctx, alice, ns, model.ModelInput{Xml: waitingModel()}); err != nil {
+			t.Fatal(err)
+		}
+		mine, err := c.ListModels(ctx, alice, ns, model.ModelListOptions{NotOwner: "bob"})
+		if err != nil || mine.Total != 1 {
+			t.Fatalf("%+v %v", mine, err)
+		}
+		others, err := c.ListModels(ctx, alice, ns, model.ModelListOptions{NotOwner: "alice"})
+		if err != nil || others.Total != 0 {
+			t.Fatalf("%+v %v", others, err)
+		}
+	})
+}

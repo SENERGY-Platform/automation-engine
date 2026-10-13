@@ -151,6 +151,7 @@ func (h *handlers) routes() []route {
 		{"DELETE /namespaces/{ns}/instances", h.deleteInstances},
 		{"POST /namespaces/{ns}/instances/stop", h.stopInstances},
 		{"GET /namespaces/{ns}/instances/{id}", h.getInstance},
+		{"PUT /namespaces/{ns}/instances/{id}/info", h.updateInstanceInfo},
 		{"PUT /namespaces/{ns}/instances/{id}", h.putInstance},
 		{"DELETE /namespaces/{ns}/instances/{id}", h.deleteInstance},
 		{"POST /namespaces/{ns}/instances/{id}/stop", h.stopInstance},

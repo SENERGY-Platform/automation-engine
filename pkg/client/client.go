@@ -270,6 +270,11 @@ func (this *ClientImpl) PutInstance(ctx context.Context, token string, namespace
 	return result, err
 }
 
+func (this *ClientImpl) UpdateInstanceInfo(ctx context.Context, token string, namespace string, id string, input model.InstanceInfoInput) (result model.Instance, err error) {
+	err = this.do(ctx, token, http.MethodPut, path("namespaces", namespace, "instances", id, "info"), nil, input, &result)
+	return result, err
+}
+
 func (this *ClientImpl) GetInstance(ctx context.Context, token string, namespace string, id string) (result model.Instance, err error) {
 	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "instances", id), nil, nil, &result)
 	return result, err

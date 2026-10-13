@@ -45,7 +45,10 @@ const (
 // Instance has a stable id, chosen by the caller or generated, and one or more runs (RUN-01, RUN-11).
 // State, timestamps and deployment version describe the current run.
 type Instance struct {
-	Id                string         `json:"id"`
+	Id string `json:"id"`
+	// set by users, e.g. for smart-service instances
+	Name              string         `json:"name,omitempty"`
+	Description       string         `json:"description,omitempty"`
 	Namespace         string         `json:"namespace"`
 	Owner             string         `json:"owner"`
 	DeploymentId      string         `json:"deployment_id"`
@@ -90,6 +93,14 @@ type StartInstanceInput struct {
 	DeploymentVersion int            `json:"deployment_version,omitempty"`
 	Variables         map[string]any `json:"variables,omitempty"`
 	Owner             string         `json:"owner,omitempty"`
+	Name              string         `json:"name,omitempty"`
+	Description       string         `json:"description,omitempty"`
+}
+
+// InstanceInfoInput changes name and description of an instance.
+type InstanceInfoInput struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 type RestartInput struct {

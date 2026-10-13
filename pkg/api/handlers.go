@@ -537,6 +537,28 @@ func (h *handlers) putInstance(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, result, err)
 }
 
+// updateInstanceInfo godoc
+//
+//	@Summary	change name and description of an instance
+//	@Tags		instances
+//	@Security	Bearer
+//	@Accept		json
+//	@Produce	json
+//	@Param		ns		path		string					true	"namespace"
+//	@Param		id		path		string					true	"instance id"
+//	@Param		body	body		model.InstanceInfoInput	true	"name and description"
+//	@Success	200		{object}	model.Instance
+//	@Failure	404		{object}	model.Error
+//	@Router		/namespaces/{ns}/instances/{id}/info [put]
+func (h *handlers) updateInstanceInfo(w http.ResponseWriter, r *http.Request) {
+	input, ok := decode[model.InstanceInfoInput](w, r)
+	if !ok {
+		return
+	}
+	result, err := h.c.UpdateInstanceInfo(r.Context(), token(r), r.PathValue("ns"), r.PathValue("id"), input)
+	respond(w, http.StatusOK, result, err)
+}
+
 // getInstance godoc
 //
 //	@Summary	get an instance

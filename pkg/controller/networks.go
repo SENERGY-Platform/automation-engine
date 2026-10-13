@@ -155,7 +155,7 @@ func (this *Controller) desireDeletedDeployment(tx *store.Tx, d model.Deployment
 
 // startOnNetwork records an instance the gateway shall start; it is pending until the gateway
 // reports it. A repeated start with the id returns the instance (RUN-01).
-func (this *Controller) startOnNetwork(ctx context.Context, user jwt.Token, d model.Deployment, id string, owner string, variables map[string]any) (result model.Instance, err error) {
+func (this *Controller) startOnNetwork(ctx context.Context, user jwt.Token, d model.Deployment, id string, owner string, variables map[string]any, name string, description string) (result model.Instance, err error) {
 	if err = this.checkNetwork(ctx, user, d.NetworkId, Execute); err != nil {
 		return result, err
 	}
@@ -176,7 +176,8 @@ func (this *Controller) startOnNetwork(ctx context.Context, user jwt.Token, d mo
 		}
 		now := time.Now().UTC()
 		result = model.Instance{Id: id, Namespace: d.Namespace, Owner: owner, DeploymentId: d.Id, DeploymentName: d.Name, DeploymentVersion: d.Version,
-			ModelId: d.ModelId, ModelVersion: d.ModelVersion, State: model.StatePending, StartVariables: variables, CreatedAt: now, StartedAt: now, LastActivityAt: now, NetworkId: d.NetworkId}
+			ModelId: d.ModelId, ModelVersion: d.ModelVersion, State: model.StatePending, StartVariables: variables, CreatedAt: now, StartedAt: now, LastActivityAt: now, NetworkId: d.NetworkId,
+			Name: name, Description: description}
 		if err = tx.InsertInstance(store.Instance{Instance: result, ActivityMinSeq: 1}); err != nil {
 			return err
 		}

@@ -62,8 +62,6 @@ func (this *Controller) resolve(ctx context.Context, tx *store.Tx, user jwt.Toke
 func (this *Controller) source(ctx context.Context, tx *store.Tx, user jwt.Token, ns model.Namespace, modelId string, modelVersion int, xml string, svg string) (result resolvedDeployment, err error) {
 	input := model.DeploymentInput{ModelId: modelId, ModelVersion: modelVersion, Xml: xml, Svg: svg}
 	switch {
-	case input.ModelId != "" && input.Xml != "":
-		return result, model.BadRequest("either model_id or xml, not both")
 	case input.ModelId != "":
 		m, err := tx.GetModel(input.ModelId, false)
 		if err != nil {
@@ -85,6 +83,14 @@ func (this *Controller) source(ctx context.Context, tx *store.Tx, user jwt.Token
 			return result, err
 		}
 		result = resolvedDeployment{xml: v.Xml, svg: v.Svg, name: m.Name, modelId: m.Id, modelVersion: v.Version}
+		if input.Xml != "" {
+			// the content of the model in another form, e.g. rewritten for this engine (MIG-04);
+			// the deployment keeps its reference to the model
+			result.xml = input.Xml
+			if input.Svg != "" {
+				result.svg = input.Svg
+			}
+		}
 	case input.Xml != "":
 		result = resolvedDeployment{xml: input.Xml, svg: input.Svg}
 	default:

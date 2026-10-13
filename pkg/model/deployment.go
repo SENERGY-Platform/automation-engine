@@ -74,7 +74,8 @@ type DeploymentVersion struct {
 	CreatedAt  time.Time                    `json:"created_at"`
 }
 
-// DeploymentInput creates or updates a deployment, either from a model (version) or from own BPMN.
+// DeploymentInput creates or updates a deployment from a model (version), from own BPMN, or from
+// a model with BPMN that replaces its content, e.g. the model rewritten for this engine (MIG-04).
 type DeploymentInput struct {
 	Name         string `json:"name"`
 	Description  string `json:"description"`

@@ -34,13 +34,13 @@ type Instance struct {
 	SnapshotAt  time.Time
 }
 
-const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at, parent_id, network_id"
+const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at, parent_id, network_id, name, description"
 
 func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 	var state, startVariables string
 	var created, started, lastActivity, snapshotAt int64
 	var ended, restartAt sql.NullInt64
-	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt, &i.ParentId, &i.NetworkId)
+	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt, &i.ParentId, &i.NetworkId, &i.Name, &i.Description)
 	if snapshotAt > 0 {
 		i.SnapshotAt = fromMillis(snapshotAt)
 	}
@@ -55,9 +55,10 @@ func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 }
 
 func (this *Tx) InsertInstance(i Instance) error {
-	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		i.Id, i.Namespace, i.Owner, i.DeploymentId, i.DeploymentName, i.DeploymentVersion, i.ModelId, i.ModelVersion, i.Run, string(i.State), i.EndReason, toJson(i.StartVariables),
-		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.SnapshotSeq, snapshotMillis(i.SnapshotAt), i.ParentId, i.NetworkId)
+		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.SnapshotSeq, snapshotMillis(i.SnapshotAt), i.ParentId, i.NetworkId,
+		i.Name, i.Description)
 	if err != nil {
 		return err
 	}
@@ -78,6 +79,14 @@ func (this *Tx) UpdateInstance(i Instance) error {
 		return err
 	}
 	return this.changed(i.Id, i.Namespace, i.ActivitySeq, false)
+}
+
+// SetInstanceInfo changes name and description of an instance.
+func (this *Tx) SetInstanceInfo(id string, namespace string, name string, description string) error {
+	if _, err := this.exec("UPDATE instances SET name = ?, description = ? WHERE id = ?", name, description, id); err != nil {
+		return err
+	}
+	return this.changed(id, namespace, 0, false)
 }
 
 // GetInstance reads an instance; with lock, the row stays locked until the transaction ends,
@@ -152,6 +161,7 @@ func (this *Tx) ListInstances(namespace string, options model.InstanceListOption
 		"created_at":      "created_at",
 		"deployment_name": "LOWER(deployment_name)",
 		"state":           "state",
+		"name":            "LOWER(name)",
 	}, "started_at DESC, id ASC")
 	if err != nil {
 		return result, err
