@@ -85,7 +85,7 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 
 ### web-ui und Prozess-Designer
 
-- [ ] **Aufgabe:** Fog-Deployments über dieselbe API mit `network_id` statt über process-fog-deployment und process-sync; Netzübersicht über `GET /networks` und `GET /networks/{id}` mit Soll- und Ist-Zustand je Ressource; Instanzen eines Gateways sind bis zur ersten Meldung `pending` (DEP-09, SYNC-12, SYNC-13, M6). Instanzen eines Gateways lassen sich aus der Cloud starten, stoppen und löschen, nicht neu starten oder in Variablen und Parametern ändern.
+- [ ] **Aufgabe:** Fog-Deployments über dieselbe API mit `network_id` statt über process-fog-deployment und process-sync; Netzübersicht über `GET /networks` und `GET /networks/{id}` mit Soll- und Ist-Zustand je Ressource; Instanzen eines Gateways sind bis zur ersten Meldung `pending` (DEP-09, SYNC-12, SYNC-13, M6). Instanzen eines Gateways lassen sich aus der Cloud starten, stoppen und löschen, nicht neu starten oder in Variablen und Parametern ändern. Versionen in `GET /networks/{id}` sind große Zahlen (sie beginnen bei der Zeit in Millisekunden) und taugen nur zum Vergleich von Soll und Ist; der Start einer beendeten Instanz erscheint dort nicht mehr.
 - [ ] **Aufgabe:** Debug-Ansicht einer Gateway-Instanz: `offline: true` im Debug-Zustand heißt zuletzt gemeldeter Stand, das Gateway ist nicht erreichbar; Variablen, Durchläufe und Verlauf sind dann nicht abrufbar (503) (DBG-15, M6).
 
 - [ ] **Aufgabe:** Umstellung auf die neue API anhand der OpenAPI in `docs/swagger.json` (API-04, API-07), mit Namespaces (NS-09), Update-Dialog mit Strategie (DEP-04), Modellversionen (MOD-05) und Aufbewahrungseinstellungen (HIST-04).
@@ -118,6 +118,9 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 - [ ] **Aufgabe:** ArgoCD-Apps `process-engine-prod` und `smart-service-engine-prod` ablösen.
 
 ## Gateway (M6)
+
+- [ ] **Aufgabe (Abnahme):** Dauertest auf einem arm64-Gateway mit `pkg/soak` über mindestens 72 h, Bericht (CSV) ablegen (LONG-15). Lokal lief er auf amd64 30 min lang; ob Flash-Speicher, langsamere CPU und der echte Broker etwas ändern, zeigt erst das Gateway.
+- [ ] **Aufgabe (Betrieb):** Workflow für Prod-Images (`prod.yml` mit Tag-Vergabe wie in den übrigen Repos) anlegen, sobald die Engine veröffentlicht werden soll; bis dahin gibt es nur `dev.yml`. Secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` und `CR_PAT` müssen für das Repo verfügbar sein (FOG-02).
 
 ### VerneMQ und senergy-platform-connector (`lib/handler/process`)
 

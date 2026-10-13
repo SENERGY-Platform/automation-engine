@@ -29,6 +29,8 @@ type Memory struct {
 	published     []Published
 	// FailPublish makes publishing fail, as with a lost connection
 	FailPublish bool
+	// Discard keeps no record of published messages, for long runs
+	Discard bool
 }
 
 type Published struct {
@@ -47,7 +49,9 @@ func (this *Memory) Publish(_ context.Context, topic string, qos byte, payload [
 		this.mux.Unlock()
 		return errNotConnected
 	}
-	this.published = append(this.published, Published{Topic: topic, Qos: qos, Payload: append([]byte{}, payload...)})
+	if !this.Discard {
+		this.published = append(this.published, Published{Topic: topic, Qos: qos, Payload: append([]byte{}, payload...)})
+	}
 	handlers := []Handler{}
 	for filter, s := range this.subscriptions {
 		if Matches(filter, topic) {

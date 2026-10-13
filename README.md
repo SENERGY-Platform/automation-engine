@@ -76,6 +76,8 @@ Mit `MODE=fog` läuft dasselbe Binary auf einem Gateway, als einziger Container 
 - `STORAGE_BUDGET` begrenzt die Datenbank in Bytes (Vorgabe im Fog 1 GiB, negativ heißt unbegrenzt). Ab 80 % wird der Verlauf über die Aufbewahrung hinaus gekürzt, älteste Einträge zuerst, bis 70 %, mit einer Warnung je Tag. Ist der Datenträger voll, hält die Ausführung an und `/health` meldet einen Fehler, bis Schreiben wieder gelingt.
 - Die API ist lokal nur lesend und braucht kein Token; Deployments, Starts und Stopps kommen über die Synchronisation aus der Cloud.
 
+Images gibt es für `linux/amd64` und `linux/arm64`, nicht für `arm/v7`. Das Dockerfile kompiliert auf der Plattform des Build-Hosts für die Zielplattform, arm64 braucht deshalb keine Emulation.
+
 ## Synchronisation mit Gateways
 
 In der Cloud verbindet `SYNC_MQTT_BROKER` die Engine mit dem Broker, den die Gateways über mgw-device-cloud-connector erreichen. Deployments für ein Gateway entstehen über dieselbe API mit `network_id` (die Hub-ID) und laufen dort, nicht in der Cloud; Instanzen eines Gateways startet, stoppt und löscht die Cloud, ihren Zustand meldet das Gateway. Die Replicas teilen die Nachrichten der Gateways (`SYNC_SHARE_GROUP`); das Protokoll bestätigt und sendet selbst erneut (`SYNC_RESEND_AFTER`), Gateways ohne Kontakt seit `SYNC_OFFLINE_AFTER` gelten als offline, nach `NETWORK_CLEANUP_MAX_AGE` werden ihre Daten entfernt. `GET /networks` zeigt Kontakt, Versionen und Rückstand je Gateway, `GET /networks/{id}` Soll- und Ist-Zustand je Ressource. Rechte auf Gateways prüft permissions-v2 (Topic `hubs`: `rx` zum Lesen und Starten, `a` zum Deployen). Das Protokoll ist in `pkg/fogsync/protocol` beschrieben.
@@ -97,3 +99,19 @@ go test ./...
 ```
 
 Store- und Engine-Tests laufen gegen SQLite und gegen Postgres in einem Container (testcontainers). Ohne Container-Runtime werden die Postgres-Varianten übersprungen; `AE_TEST_POSTGRES=off` schaltet sie ab. `AE_BPMN_EXPORT_DIR=<Verzeichnis>` prüft den Parser zusätzlich gegen exportierte Modelle.
+
+### Dauertest (LONG-15)
+
+`pkg/soak` lässt eine Gateway-Engine mit einer Cloud-Engine im selben Prozess unter gleichmäßiger Last laufen: Die Cloud startet Instanzen eines Prozesses, der auf ein Geräteevent wartet, ein Gerät abfragt, eine Sekunde wartet und eine Variable von etwa 1 KiB schreibt; simulierte Geräte antworten über den Broker des Gateways und senden Events. Die Verbindung zur Cloud fällt zeitweise aus. In festen Abständen landen Größe der Datenbank, belegter Platz, Heap, Goroutinen, offene Dateien, Instanzen und Rückstand der Synchronisation in einer CSV.
+
+Ohne `SOAK_DURATION` läuft er 5 s lang in der normalen Suite und prüft nur, dass alle gestarteten Instanzen abschließen. Ab 30 min prüft er zusätzlich, dass die Ressourcen nach dem Einschwingen nicht weiter wachsen: Datenbankdatei, Heap, Goroutinen und offene Dateien im letzten Viertel gegen das zweite. Der belegte Platz muss im Median des letzten Viertels unter dem Budget liegen; Spitzen darüber sind erlaubt, weil das Budget nur je Aufräumrunde durchgesetzt wird und Instanzen nach einer Offline-Phase bleiben, bis die Cloud ihr Ende kennt.
+
+Auf einem arm64-Gateway als vorab übersetztes Testbinary:
+
+```sh
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c -o soak.test ./pkg/soak
+# auf dem Gateway
+SOAK_DURATION=72h SOAK_DIR=/data/soak ./soak.test -test.run TestSoak -test.timeout 0 -test.v
+```
+
+Variablen: `SOAK_DURATION`, `SOAK_DIR` (Datenbanken und Bericht, Vorgabe ein temporäres Verzeichnis), `SOAK_REPORT` (CSV, Vorgabe `SOAK_DIR/soak.csv`), `SOAK_SAMPLE_INTERVAL`, `SOAK_STARTS_PER_SECOND` (Vorgabe 2), `SOAK_EVENT_INTERVAL` (Vorgabe 500 ms), `SOAK_STORAGE_BUDGET` (Vorgabe 32 MiB; Änderungsstrom und Empfangsbelege werden erst nach 1 h und 24 h aufgeräumt, ein zu kleines Budget lässt keinen Verlauf übrig), `SOAK_OFFLINE_EVERY` und `SOAK_OFFLINE_FOR` (Vorgabe ein Viertel und ein Vierzigstel der Dauer). `SOAK_MQTT_BROKER` mit `SOAK_MQTT_USER` und `SOAK_MQTT_PASSWORD` nutzt einen echten Broker statt eines im Prozess; die Synchronisation läuft dann über dessen Topics `processes/cmd/...` und `processes/state/...`, deshalb auf einem Gateway ohne laufenden mgw-device-cloud-connector, sonst erreichen die Nachrichten die echte Cloud. Marshaller und Geräte-Repository sind im Test nachgebildet; gemessen wird das Verhalten der Engine über die Zeit, nicht die Umrechnung von Werten.
