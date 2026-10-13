@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
-	"github.com/SENERGY-Platform/automation-engine/pkg/live"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
@@ -45,7 +44,7 @@ func DefaultLiveSettings() LiveSettings {
 }
 
 // SetLive enables live debug streams.
-func (this *Controller) SetLive(hub *live.Hub, settings LiveSettings) {
+func (this *Controller) SetLive(hub *debug.Hub, settings LiveSettings) {
 	this.live = hub
 	this.liveSettings = settings
 	this.liveCount = map[string]int{}

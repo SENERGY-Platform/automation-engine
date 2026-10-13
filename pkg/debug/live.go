@@ -15,7 +15,8 @@
  */
 
 // Package debug builds the state of an instance for the debugger (DBG-02), reconstructs it at a
-// step of the history (DBG-13) and derives the deltas of the live stream (DBG-03).
+// step of the history (DBG-13), derives the deltas of the live stream (DBG-03) and wakes the
+// live streams of a replica when their instance changed (Hub, DBG-09).
 package debug
 
 import (

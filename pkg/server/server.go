@@ -27,10 +27,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"runtime/debug"
+	runtimedebug "runtime/debug"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
 
@@ -46,7 +48,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
-	"github.com/SENERGY-Platform/automation-engine/pkg/live"
 	"github.com/SENERGY-Platform/automation-engine/pkg/messaging"
 	"github.com/SENERGY-Platform/automation-engine/pkg/metrics"
 	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/legacyio"
@@ -77,7 +78,7 @@ type Server struct {
 	Namespaces  *namespaces.Registry
 	Permissions *permissions.Service
 	Metrics     *metrics.Metrics
-	Live        *live.Hub
+	Live        *debug.Hub
 	// removes the resources of deleted modules (SMS-06)
 	ModuleRemover *modules.Remover
 	// module task types and health checks (TASK-20 to TASK-29)
@@ -366,7 +367,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		// the old APIs exist only in the cloud; Kong rewrites their paths (API-08)
 		apiSettings.Deprecated = deprecated.New(c, m)
 	}
-	hub := live.New(s, dsn, logger)
+	hub := debug.NewHub(s, dsn, logger)
 	liveSettings := controller.DefaultLiveSettings()
 	liveSettings.MaxPerUser = config.MaxLiveConnectionsPerUser
 	c.SetLive(hub, liveSettings)
@@ -501,7 +502,7 @@ func (this *Server) startKafka(ctx context.Context) error {
 // Version is the version of the engine from the build: the module version of a release, else
 // the revision of the source.
 func Version() string {
-	info, ok := debug.ReadBuildInfo()
+	info, ok := runtimedebug.ReadBuildInfo()
 	if !ok {
 		return "unknown"
 	}

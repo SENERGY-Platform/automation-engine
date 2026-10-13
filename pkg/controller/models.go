@@ -18,11 +18,11 @@ package controller
 
 import (
 	"context"
-	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/rewrite"
 	"strings"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/rewrite"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/google/uuid"

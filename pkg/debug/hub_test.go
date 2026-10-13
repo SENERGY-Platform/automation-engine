@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package live
+package debug
 
 import (
 	"context"
@@ -56,7 +56,7 @@ func TestPostgresNotifiesWithoutPolling(t *testing.T) {
 	s, dsn := storetest.OpenPostgresDsn(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	hub := New(s, dsn, logger)
+	hub := NewHub(s, dsn, logger)
 	hub.pollInterval = time.Hour
 	signal, unsubscribe := hub.Subscribe("watched")
 	defer unsubscribe()
@@ -68,7 +68,7 @@ func TestPollingWakesWatchersOfChangedInstancesOnly(t *testing.T) {
 	storetest.Run(t, func(t *testing.T, s *store.Store) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		hub := New(s, "", logger)
+		hub := NewHub(s, "", logger)
 		hub.pollInterval = 20 * time.Millisecond
 		signal, unsubscribe := hub.Subscribe("watched")
 		other, unsubscribeOther := hub.Subscribe("other")

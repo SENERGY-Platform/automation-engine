@@ -22,12 +22,13 @@ import (
 	"regexp"
 	"sync"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/api"
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
-	"github.com/SENERGY-Platform/automation-engine/pkg/live"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/parameters"
 	"github.com/SENERGY-Platform/automation-engine/pkg/permissions"
@@ -83,7 +84,7 @@ type Controller struct {
 	io              *processio.Service
 	describer       *events.Describer
 	// live debug streams (DBG-01) and their number per user (DBG-10)
-	live         *live.Hub
+	live         *debug.Hub
 	liveSettings LiveSettings
 	liveMux      sync.Mutex
 	liveCount    map[string]int

@@ -14,11 +14,7 @@
  * limitations under the License.
  */
 
-// Package live tells live debug streams of a replica when their instance changed (DBG-09). The
-// source is the change stream (SYNC-03): Postgres announces changes on commit through
-// LISTEN/NOTIFY, and the outbox is polled as fallback and for SQLite. A wake-up is only a hint;
-// the stream reads the state itself, lost or repeated wake-ups do no harm.
-package live
+package debug
 
 import (
 	"context"
@@ -30,6 +26,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// Hub tells live debug streams of a replica when their instance changed (DBG-09). The
+// source is the change stream (SYNC-03): Postgres announces changes on commit through
+// LISTEN/NOTIFY, and the outbox is polled as fallback and for SQLite. A wake-up is only a hint;
+// the stream reads the state itself, lost or repeated wake-ups do no harm.
 type Hub struct {
 	store  *store.Store
 	logger *slog.Logger
@@ -40,8 +40,8 @@ type Hub struct {
 	watchers     map[string]map[chan struct{}]struct{}
 }
 
-// New creates a hub; dsn is the Postgres connection string, empty for SQLite.
-func New(s *store.Store, dsn string, logger *slog.Logger) *Hub {
+// NewHub creates a hub; dsn is the Postgres connection string, empty for SQLite.
+func NewHub(s *store.Store, dsn string, logger *slog.Logger) *Hub {
 	interval := 250 * time.Millisecond
 	if dsn != "" {
 		// LISTEN delivers changes at once; polling only covers a lost listener connection
