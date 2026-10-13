@@ -221,7 +221,8 @@ func main() {
 		log.Fatal(g.err)
 	}
 
-	// operation ids as AsyncAPI 3.0.0 allows them: the reflector names them action:channel
+	// operation ids in the style of the channel ids, sendLocalCommand instead of the
+	// send:localCommand of the reflector
 	operations := map[string]spec.OperationOrRef{}
 	for id, op := range doc.Operations {
 		action, channel, _ := strings.Cut(id, ":")
