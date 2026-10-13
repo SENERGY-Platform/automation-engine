@@ -198,3 +198,88 @@ func TestCamundaReaderReadsDeploymentsAndRunningInstances(t *testing.T) {
 		t.Errorf("instance: %+v %v", i, fmt.Sprintf("%s", data))
 	}
 }
+
+// as process-sync (master) wrote its metadata: Metadata and SyncInfo embedded without inline
+type DeploymentWithEventDesc struct {
+	models.Deployment `bson:",inline"`
+	DeviceIdToLocalId map[string]string
+}
+
+type Metadata struct {
+	CamundaDeploymentId string
+	DeploymentModel     DeploymentWithEventDesc
+}
+
+type SyncInfo struct {
+	NetworkId       string
+	MarkedForDelete bool
+	SyncDate        time.Time
+}
+
+type oldDeploymentMetadata struct {
+	Metadata
+	SyncInfo
+}
+
+func TestMongoReaderReadsSmartServicesAndProcessSync(t *testing.T) {
+	endpoint := container(t, "AE_TEST_MONGO", testcontainers.ContainerRequest{Image: "mongo:7", ExposedPorts: []string{"27017/tcp"},
+		WaitingFor: wait.ForLog("Waiting for connections").WithStartupTimeout(2 * time.Minute)}, "27017/tcp")
+	url := "mongodb://" + endpoint
+	client, err := mongo.Connect(options.Client().ApplyURI(url))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Disconnect(ctx)
+	insert := func(db string, collection string, docs ...any) {
+		if _, err := client.Database(db).Collection(collection).InsertMany(ctx, docs); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("smart_service_repository", "designs", map[string]any{"id": "ds1", "user_id": "alice", "name": "Room", "description": "d", "bpmn_xml": "<x/>", "svg_xml": "<svg/>", "updated_at": int64(5)})
+	insert("smart_service_repository", "releases",
+		map[string]any{"id": "r1", "design_id": "ds1", "name": "Room", "created_at": int64(7), "creator": "alice", "newreleaseid": "", "bpmn_xml": "<x/>", "svg_xml": "<svg/>", "marked_as_deleted": false},
+		map[string]any{"id": "r-deleted", "design_id": "ds1", "marked_as_deleted": true})
+	insert("smart_service_repository", "instances", map[string]any{"id": "si1", "user_id": "alice", "release_id": "r1", "name": "Kitchen", "description": "",
+		"parameters": []map[string]any{{"id": "room", "value": "kitchen", "label": "Room", "valuelabel": "Kitchen"}}, "ready": true, "created_at": int64(9)})
+	insert("smart_service_repository", "modules", map[string]any{"id": "pid.task", "user_id": "alice", "instance_id": "si1", "module_type": "export",
+		"module_data": map[string]any{"n": int32(1)}, "keys": []string{"k"}, "delete_info": map[string]any{"url": "http://serving/instance/1", "user_id": "alice"}})
+	insert("smart_service_repository", "variables", map[string]any{"instance_id": "si1", "user_id": "alice", "name": "counter", "value": int64(3)})
+	insert("process_sync", "deployment_metadata",
+		oldDeploymentMetadata{Metadata: Metadata{CamundaDeploymentId: "cam-1", DeploymentModel: DeploymentWithEventDesc{Deployment: models.Deployment{Version: 3, Id: "fd1", Name: "Fog", Diagram: models.Diagram{XmlRaw: "<raw/>"}}}}, SyncInfo: SyncInfo{NetworkId: "hub-1"}},
+		oldDeploymentMetadata{Metadata: Metadata{CamundaDeploymentId: "cam-2", DeploymentModel: DeploymentWithEventDesc{Deployment: models.Deployment{Id: "fd2"}}}, SyncInfo: SyncInfo{NetworkId: "hub-1", MarkedForDelete: true}})
+	insert("process_sync", "warden", map[string]any{"network_id": "hub-1", "business_key": "wardened:fk1", "process_deployment_id": "cam-1", "start_parameters": map[string]any{"level": "4"}})
+
+	reader, err := migrate.OpenMongo(ctx, url, migrate.DefaultMongoDatabases())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close(ctx)
+	designs, err := reader.Designs(ctx)
+	if err != nil || len(designs) != 1 || designs[0].UserId != "alice" || designs[0].UpdatedAt != 5 {
+		t.Errorf("designs: %+v %v", designs, err)
+	}
+	releases, err := reader.Releases(ctx)
+	if err != nil || len(releases) != 1 || releases[0].Creator != "alice" || releases[0].CreatedAt != 7 {
+		t.Errorf("releases without deleted ones: %+v %v", releases, err)
+	}
+	instances, err := reader.SmartServiceInstances(ctx)
+	if err != nil || len(instances) != 1 || !instances[0].Ready || len(instances[0].Parameters) != 1 || instances[0].Parameters[0].Value != "kitchen" {
+		t.Errorf("instances: %+v %v", instances, err)
+	}
+	modules, err := reader.Modules(ctx)
+	if err != nil || len(modules) != 1 || modules[0].DeleteUrl != "http://serving/instance/1" || modules[0].Data["n"] != 1.0 || modules[0].Keys[0] != "k" {
+		t.Errorf("modules: %+v %v", modules, err)
+	}
+	variables, err := reader.SmartServiceVariables(ctx)
+	if err != nil || len(variables) != 1 || variables[0].Value != 3.0 {
+		t.Errorf("variables: %+v %v", variables, err)
+	}
+	fog, err := reader.FogDeployments(ctx)
+	if err != nil || len(fog) != 1 || fog[0].NetworkId != "hub-1" || fog[0].CamundaDeploymentId != "cam-1" || fog[0].Deployment.Id != "fd1" || fog[0].Deployment.Diagram.XmlRaw != "<raw/>" {
+		t.Errorf("fog deployments from the nested metadata, without those marked for delete: %+v %v", fog, err)
+	}
+	starts, err := reader.FogStarts(ctx)
+	if err != nil || len(starts) != 1 || starts[0].BusinessKey != "wardened:fk1" || starts[0].Parameters["level"] != "4" {
+		t.Errorf("starts: %+v %v", starts, err)
+	}
+}

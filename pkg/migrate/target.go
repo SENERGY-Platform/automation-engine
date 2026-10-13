@@ -104,9 +104,9 @@ func merge(into permmodel.ResourcePermissions, from permmodel.ResourcePermission
 }
 
 // copyRights takes the rights of a resource from a topic of the old services into the topic of
-// a namespace level, with all rights for the owner (MIG-08, SEC-10). Users with an empty id,
+// a namespace level, possibly under another id, with all rights for the owner (MIG-08, SEC-10). Users with an empty id,
 // which a release creator can have, are dropped.
-func (this *migration) copyRights(ctx context.Context, from string, namespace string, kind model.Kind, id string, owner string) error {
+func (this *migration) copyRights(ctx context.Context, from string, fromId string, namespace string, kind model.Kind, id string, owner string) error {
 	if this.target.Rights == nil || !this.options.Apply {
 		return nil
 	}
@@ -114,7 +114,7 @@ func (this *migration) copyRights(ctx context.Context, from string, namespace st
 	if !ok || !ns.Level(kind).Registered() {
 		return nil
 	}
-	old, found, err := this.sources.Rights(ctx, from, id)
+	old, found, err := this.sources.Rights(ctx, from, fromId)
 	if err != nil || !found {
 		return err
 	}

@@ -31,6 +31,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/migrate"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
@@ -50,6 +51,29 @@ type sources struct {
 	running     map[string][]migrate.CamundaInstance
 	schedules   []migrate.Schedule
 	io          []migrate.IoValue
+	designs     []migrate.Design
+	releases    []migrate.Release
+	instances   []migrate.SmartServiceInstance
+	modules     []migrate.Module
+	variables   []migrate.InstanceVariable
+	fog         []migrate.FogDeployment
+	fogStarts   []migrate.FogStart
+}
+
+func (this *sources) Designs(context.Context) ([]migrate.Design, error)   { return this.designs, nil }
+func (this *sources) Releases(context.Context) ([]migrate.Release, error) { return this.releases, nil }
+func (this *sources) SmartServiceInstances(context.Context) ([]migrate.SmartServiceInstance, error) {
+	return this.instances, nil
+}
+func (this *sources) Modules(context.Context) ([]migrate.Module, error) { return this.modules, nil }
+func (this *sources) SmartServiceVariables(context.Context) ([]migrate.InstanceVariable, error) {
+	return this.variables, nil
+}
+func (this *sources) FogDeployments(context.Context) ([]migrate.FogDeployment, error) {
+	return this.fog, nil
+}
+func (this *sources) FogStarts(context.Context) ([]migrate.FogStart, error) {
+	return this.fogStarts, nil
 }
 
 func (this *sources) ProcessModels(context.Context) ([]migrate.ProcessModel, error) {
@@ -86,6 +110,8 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// deployments to gateways need the synchronisation; no gateway answers here
+	deps.SyncBroker = mqtt.NewMemory()
 	srv, err := server.New(ctx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), deps)
 	if err != nil {
 		t.Fatal(err)

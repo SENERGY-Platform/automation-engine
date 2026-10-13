@@ -121,7 +121,7 @@ func (this *migration) processModels(ctx context.Context) error {
 				return tx.InsertModelVersion(model.ModelVersion{ModelId: pm.Id, Version: 1, Xml: pm.BpmnXml, Svg: pm.SvgXml, CreatedAt: updated, Issues: issues})
 			})
 			if err == nil {
-				err = this.copyRights(ctx, processModelTopic, processes, model.KindModel, pm.Id, owner)
+				err = this.copyRights(ctx, processModelTopic, pm.Id, processes, model.KindModel, pm.Id, owner)
 			}
 			if err != nil {
 				this.result(step, "model", pm.Id, owner, Failed, "%v", err)

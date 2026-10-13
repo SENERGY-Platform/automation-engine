@@ -35,11 +35,14 @@ type MongoDatabases struct {
 	Scheduler           string
 	SchedulerCollection string
 	Io                  string
+	SmartServices       string
+	ProcessSync         string
 }
 
 func DefaultMongoDatabases() MongoDatabases {
 	return MongoDatabases{ProcessModels: "process_repository", ProcessDeployments: "process_deployment", Scheduler: "process_scheduler",
-		SchedulerCollection: "process_schedule", Io: "process_io"}
+		SchedulerCollection: "process_schedule", Io: "process_io",
+		SmartServices: "smart_service_repository", ProcessSync: "process_sync"}
 }
 
 // Mongo reads the collections of the old services. The services wrote with the default codec

@@ -114,6 +114,7 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 
 - [ ] **Aufgabe (Betrieb):** Die Migration als einmaligen Job im Cluster laufen lassen: zuerst als Trockenlauf, Bericht prüfen, Entscheidungen treffen (`-owner`, `-camunda-only`), Betroffene laufender Instanzen informieren (MIG-02), dann mit `-apply`. Braucht Lesezugriff auf die MongoDB der alten Dienste (`MIGRATE_MONGO_URL`), die REST-API aller Camunda-Shards mit Basic-Auth (`MIGRATE_CAMUNDA_PASSWORD`) und den Client der Engine mit Admin-Rolle.
 - [ ] **Frage:** Wo speichert camunda-engine-wrapper v1.1.0 den Zustand „deaktiviert“ je Deployment (`PUT /v2/deployments/{id}/disabled`)? Er liegt lokal nicht vor und wird bisher nicht übernommen; deaktivierte Deployments laufen nach der Migration wieder.
+- [ ] **Hinweis:** Module des alten Watchers behalten ihre URL; die Beobachtungen selbst übernimmt die Migration nicht, sie liegen in der Datenbank des Watchers. Smart-Service-Instanzen, deren Einrichtung bei der Migration noch lief, starten neu; schon angelegte Module können dann doppelt existieren (der Bericht nennt sie).
 - [ ] **Frage:** Wie heißt die Collection von process-scheduler in Prod (`process_scheduler` als Datenbank ist bekannt, lokal heißt die Collection `process_schedule`)? Änderbar mit `-collection-scheduler`.
 
 ## Stilllegungen

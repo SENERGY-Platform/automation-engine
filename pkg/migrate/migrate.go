@@ -139,7 +139,7 @@ func (this *Report) Write(w io.Writer) {
 // Run migrates step by step; a step that cannot read its source fails as a whole, the next
 // steps run nevertheless.
 func Run(ctx context.Context, options Options, sources Sources, target *Target) *Report {
-	m := &migration{options: options, sources: sources, target: target, report: &Report{}, instanceIds: map[string]string{}, planned: map[string]string{}}
+	m := &migration{options: options, sources: sources, target: target, report: &Report{}, instanceIds: map[string]string{}, planned: map[string]string{}, networkOwners: map[string]string{}}
 	steps := []struct {
 		name string
 		run  func(context.Context) error
@@ -150,6 +150,13 @@ func Run(ctx context.Context, options Options, sources Sources, target *Target) 
 		{"running-instances", m.runningInstances},
 		{"schedules", m.schedules},
 		{"process-io", m.ioValues},
+		{"smart-service-designs", m.designs},
+		{"smart-service-releases", m.releases},
+		{"smart-service-instances", m.smartServiceInstances},
+		{"smart-service-modules", m.modules},
+		{"smart-service-variables", m.smartServiceVariables},
+		{"fog-deployments", m.fogDeployments},
+		{"fog-instances", m.fogStarts},
 	}
 	for _, step := range steps {
 		if err := step.run(ctx); err != nil {
@@ -172,6 +179,16 @@ type migration struct {
 	camunda []CamundaDeployment
 	// BPMN of the deployments a dry run would create, so that later steps judge as with apply
 	planned map[string]string
+	// designs that became models
+	migratedDesigns map[string]bool
+	// release id -> deployment and version
+	releaseRefs map[string]releaseRef
+	// migrated smart-service instances and their owners
+	smartInstances map[string]string
+	// ids of fog deployments, platform and Camunda id -> deployment id
+	fogIds map[string]string
+	// owners of networks
+	networkOwners map[string]string
 	// Camunda process instance id -> instance id in the engine, for IO values
 	instanceIds map[string]string
 }

@@ -90,8 +90,94 @@ type IoValue struct {
 	Timestamp    int64
 }
 
+// Design is a design of smart-service-repository.
+type Design struct {
+	Id          string
+	UserId      string
+	Name        string
+	Description string
+	BpmnXml     string
+	SvgXml      string
+	UpdatedAt   int64
+}
+
+// Release is a release of smart-service-repository with the BPMN of its design.
+type Release struct {
+	Id          string
+	DesignId    string
+	Name        string
+	Description string
+	Creator     string
+	BpmnXml     string
+	SvgXml      string
+	CreatedAt   int64
+}
+
+type Parameter struct {
+	Id    string
+	Value any
+}
+
+// SmartServiceInstance is an instance of smart-service-repository; ready means its setup
+// process ended in Camunda.
+type SmartServiceInstance struct {
+	Id          string
+	UserId      string
+	ReleaseId   string
+	Name        string
+	Description string
+	Parameters  []Parameter
+	Ready       bool
+	Error       string
+	CreatedAt   int64
+	UpdatedAt   int64
+}
+
+type Module struct {
+	Id         string
+	UserId     string
+	InstanceId string
+	Type       string
+	Data       map[string]any
+	Keys       []string
+	DeleteUrl  string
+	DeleteUser string
+	Error      string
+	LastUpdate int64
+}
+
+type InstanceVariable struct {
+	InstanceId string
+	Name       string
+	Value      any
+}
+
+// FogDeployment is a deployment of a gateway as process-sync keeps its metadata; the id of
+// the deployment model is the platform id.
+type FogDeployment struct {
+	NetworkId           string
+	CamundaDeploymentId string
+	Deployment          models.Deployment
+}
+
+// FogStart is a start process-sync watches over (warden); the deployment id may be the
+// platform id or the Camunda id of the gateway.
+type FogStart struct {
+	NetworkId    string
+	BusinessKey  string
+	DeploymentId string
+	Parameters   map[string]any
+}
+
 // Sources are the databases of the old services.
 type Sources interface {
+	Designs(ctx context.Context) ([]Design, error)
+	Releases(ctx context.Context) ([]Release, error)
+	SmartServiceInstances(ctx context.Context) ([]SmartServiceInstance, error)
+	Modules(ctx context.Context) ([]Module, error)
+	SmartServiceVariables(ctx context.Context) ([]InstanceVariable, error)
+	FogDeployments(ctx context.Context) ([]FogDeployment, error)
+	FogStarts(ctx context.Context) ([]FogStart, error)
 	ProcessModels(ctx context.Context) ([]ProcessModel, error)
 	ProcessDeployments(ctx context.Context) ([]ProcessDeployment, error)
 	Schedules(ctx context.Context) ([]Schedule, error)

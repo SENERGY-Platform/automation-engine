@@ -108,6 +108,8 @@ Ohne `-apply` ist es ein Trockenlauf. Ein Lauf legt nur an, was fehlt, behält I
 
 Modelle bleiben im Format des alten Designers, Deployments werden umgeschrieben und behalten den Bezug zum Modell, wenn Owner und BPMN übereinstimmen. Laufende Instanzen starten neu, mit dem Business Key als ID, wo er eindeutig ist, und den aktuellen Werten der Variablen, die wie die Startfelder heißen. IO-Werte folgen ihrer Instanz in Schlüssel und Bindung; Werte beendeter Instanzen entfallen.
 
+Smart-Service-Designs werden Modelle im Namespace `smart-services`, die Releases eines Designs die Versionen eines Deployments mit der ID des neuesten Releases. Instanzen, deren Einrichtung beendet ist, werden mit ihren Modulen und Variablen übernommen und nicht erneut ausgeführt, weil das jedes Modul ein zweites Mal anlegen würde; eine Instanz in der Einrichtung startet neu. Löschverweise von Modulen auf process-deployment und process-sync werden zu Deployments und Instanzen der Engine, andere URLs bleiben. Was process-sync für Gateways hält, wird Deployment und Start des Netzes und läuft, sobald das Gateway die Engine hat; Owner ist der eine Administrator des Hubs oder der mit `-owner network:<id>=<user>` genannte.
+
 ## Tests
 
 ```sh
