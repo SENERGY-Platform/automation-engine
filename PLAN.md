@@ -325,3 +325,18 @@ Geprüft wurden die Quell-Repos auf Änderungen seit ihrer Auswertung. Nachgezog
 - **Nicht nachzuziehen:** `f9a0c2f` (Zielrelease vor dem Abbau der Instanz prüfen). `PUT .../parameters` prüft Zielversion und Parameter in derselben Transaktion, bevor ein Lauf endet; der Fehler bestand in der Engine nicht. Der Neustart prüft jetzt zusätzlich den Deaktiviert-Zustand vor dem Ende des Laufs.
 
 Verworfen: ein Index der genutzten Ressourcen je Version wie in smart-service-repository. Die Engine liest sie aus dem gespeicherten Prozess, wenn gefragt wird; die Abfrage ist selten (vor einem Löschen), und ein Index müsste bei jeder Parameteränderung nachgeführt werden.
+
+## Nach M7: Aufräumen (2026-10-13)
+
+Zusammengelegt wurden Pakete, die nur einen Nutzer hatten oder dieselbe Aufgabe teilten; ältere Einträge oben nennen noch die alten Pfade.
+
+- `pkg/fogsync/{cloud,gateway,protocol}` → `pkg/fogsync` (`cloud.go`, `gateway.go`, `protocol.go`; `cloud.New` heißt `NewCloud`, `gateway.Agent` heißt `Gateway`). Die Dateien behalten die Trennung der beiden Seiten und des Protokolls.
+- `pkg/live` → `pkg/debug` (`Hub`): weckt nur die Live-Ströme des Debuggers.
+- `pkg/parameters` → `pkg/prepare` (`Describer`): beide beschreiben, was ein Nutzer vor Deploy oder Start wählt, über device-selection.
+- `pkg/messaging` → `pkg/tasks/devicecommand` (`Transport`, neben `LocalTransport`): einziger Nutzer waren die Gerätekommandos.
+- `pkg/tasks/notify` → `pkg/notification` (`Task`): der Aufgabentyp übergibt nur an den Notifier.
+- `pkg/metrics` → `pkg/server` (`Metrics`): nur der Server verdrahtet sie; Engine und Gerätekommandos sprechen sie über eigene Interfaces an.
+- Die Versionen eines Deployments, die in Gebrauch sind, bestimmt `engine.VersionsInUse` einmal für Ressourcennutzung und Ressourcenprüfung, mit dem Prozess-Cache der Engine.
+- Testserver startet `client.NewTestServer`; fünf Testpakete hatten die Einrichtung kopiert.
+
+Bewusst eigene Pakete bleiben: `auth`, `tracing`, `script`, `mqtt`, `timer`, `devices` (von vielen Paketen genutzt; zusammengelegt entstünden Zyklen oder Sammelpakete), `namespaces` (eigene Regeln, von Controller und Gateway über Interfaces genutzt), `migrate/legacyio` (läuft im Server; `migrate` importiert den Server), `migrate/rewrite` (auch vom Controller genutzt, ohne die Abhängigkeiten der Migration), `tasks/httpcall` und `tasks/processio` (je ein Aufgabentyp, `processio` zugleich Speicher hinter der IO-API), `scriptdoc/generate` (Programm für `go generate`), `bpmn/bpmntest` und `store/storetest` (Testhilfen, nicht im Produktivcode), `client`, `model`, `api` (Schnittstelle für Konsumenten).
