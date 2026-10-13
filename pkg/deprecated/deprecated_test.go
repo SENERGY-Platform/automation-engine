@@ -162,12 +162,15 @@ func TestCopiedStartUrlStartsWithBusinessKeyAndVariables(t *testing.T) {
 func TestDeploymentsInTheFormOfTheWrapper(t *testing.T) {
 	e := newEnv(t)
 	d := e.deploy(waitingProcess())
-	e.deploy(waitingProcess())
+	// a name sorts after Lights; two deployments of the same millisecond have no order by time
+	if _, err := e.srv.Controller.CreateDeployment(ctx, alice, "processes", model.DeploymentInput{Name: "Zebra", Xml: waitingProcess()}); err != nil {
+		t.Fatal(err)
+	}
 	var list []struct {
 		Id, Name, TenantId, Diagram string
 		DefinitionId                string `json:"definition_id"`
 	}
-	if status, _ := e.call(alice, http.MethodGet, "/engine/v2/deployments?maxResults=1&firstResult=0&sortBy=deploymentTime&sortOrder=asc", nil, &list); status != http.StatusOK || len(list) != 1 {
+	if status, _ := e.call(alice, http.MethodGet, "/engine/v2/deployments?maxResults=1&firstResult=0&sortBy=name&sortOrder=asc", nil, &list); status != http.StatusOK || len(list) != 1 {
 		t.Fatalf("paging with maxResults and firstResult: %v %+v", status, list)
 	}
 	if list[0].Id != d.Id || list[0].Diagram != "<svg>lights</svg>" || list[0].TenantId != "alice" || list[0].DefinitionId == "" {
