@@ -191,9 +191,13 @@ func (this *Tx) Desire(networkId string, kind string, id string, deleted bool, s
 		}
 		raw = string(temp)
 	}
-	_, err = this.exec("INSERT INTO network_desired (network_id, kind, id, version, deleted, spec, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?) "+
-		"ON CONFLICT (network_id, kind, id) DO UPDATE SET version = network_desired.version + 1, deleted = excluded.deleted, spec = excluded.spec, sent_at = 0, updated_at = excluded.updated_at",
-		networkId, kind, id, boolInt(deleted), raw, millis(now))
+	// versions start at the time, not at 1: the cloud forgets applied deletions and ended
+	// instances, and a later resource with the same id must be newer than what the gateway
+	// applied before
+	_, err = this.exec("INSERT INTO network_desired (network_id, kind, id, version, deleted, spec, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "+
+		"ON CONFLICT (network_id, kind, id) DO UPDATE SET version = CASE WHEN network_desired.version >= excluded.version THEN network_desired.version + 1 ELSE excluded.version END, "+
+		"deleted = excluded.deleted, spec = excluded.spec, sent_at = 0, updated_at = excluded.updated_at",
+		networkId, kind, id, millis(now), boolInt(deleted), raw, millis(now))
 	if err != nil {
 		return 0, err
 	}
@@ -261,6 +265,13 @@ func (this *Tx) SetDesiredApplied(networkId string, kind string, id string, vers
 		return err
 	}
 	_, err = this.exec("DELETE FROM network_desired WHERE network_id = ? AND kind = ? AND id = ? AND deleted = 1 AND applied_version >= version AND error = ''", networkId, kind, id)
+	return err
+}
+
+// ForgetEndedInstance removes the start or stop of an instance the gateway reported as ended;
+// both are done, and the gateway forgets them once the instance is gone there.
+func (this *Tx) ForgetEndedInstance(networkId string, id string) error {
+	_, err := this.exec("DELETE FROM network_desired WHERE network_id = ? AND kind = 'instance' AND id = ? AND deleted = 0", networkId, id)
 	return err
 }
 

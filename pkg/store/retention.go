@@ -65,7 +65,7 @@ func (this *Tx) ModelsAfter(afterId string, limit int) (result []string, err err
 func (this *Tx) DeleteFinishedInstances(column string, value string, before time.Time, limit int) (int64, error) {
 	// instances with modules stay: their resources keep running, e.g. a deployed process (SMS-12)
 	selection := "id IN (SELECT id FROM instances WHERE " + column + " = ? AND state <> 'running' AND restart_at IS NULL AND ended_at < ? " +
-		"AND NOT EXISTS (SELECT 1 FROM modules m WHERE m.instance_id = instances.id) ORDER BY ended_at LIMIT ?)"
+		"AND NOT EXISTS (SELECT 1 FROM modules m WHERE m.instance_id = instances.id) AND " + unsynced + " ORDER BY ended_at LIMIT ?)"
 	args := []any{value, millis(before), limit}
 	if err := this.queueRemovals("instances", selection, args...); err != nil {
 		return 0, err

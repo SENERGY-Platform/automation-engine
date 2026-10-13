@@ -37,6 +37,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/permissions"
@@ -217,7 +218,8 @@ func TestDeployStartAndFollowAnInstanceOnAGateway(t *testing.T) {
 		t.Errorf("only gateways the user may read: %+v %v", others, err)
 	}
 	detail, err := c.GetNetwork(ctx, alice, network)
-	if err != nil || len(detail.Resources) < 3 {
+	// namespace and deployment; the start of the completed instance is done and forgotten
+	if err != nil || len(detail.Resources) != 2 {
 		t.Fatalf("desired and applied state per resource (SYNC-13): %+v %v", detail, err)
 	}
 	for _, r := range detail.Resources {
@@ -502,5 +504,80 @@ func TestEventsOfAGatewayAreReconstructedInTheCloud(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(result.Limitations, " "), "gateway") {
 		t.Errorf("gaps of offline periods are named: %v", result.Limitations)
+	}
+}
+
+// An instance that ends while the gateway is offline stays on the gateway, whatever its budget
+// says, until the cloud has taken its end; then the gateway may remove it, and neither side
+// keeps its start any longer (LONG-07, LONG-10).
+func TestTheCloudLearnsTheEndBeforeTheGatewayTrims(t *testing.T) {
+	e := newEnv(t)
+	c := e.cloud.Controller
+	d, err := c.CreateDeployment(ctx, alice, "processes", model.DeploymentInput{Xml: waitProcess(), NetworkId: network})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := c.StartInstance(ctx, alice, "processes", model.StartInstanceInput{DeploymentId: d.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the running instance", func() bool { return e.cloudInstance(inst.Id).State == model.StateRunning })
+	e.online.Store(false)
+	if _, err = e.gateway.Engine.Correlate(ctx, engine.CorrelationRequest{MessageInput: model.MessageInput{Name: "go", InstanceId: inst.Id}}); err != nil {
+		t.Fatal(err)
+	}
+	trim := func() {
+		err := e.gateway.Store.Tx(ctx, func(tx *store.Tx) error {
+			if _, err := tx.TrimOldestHistory(1000); err != nil {
+				return err
+			}
+			_, err := tx.DeleteFinishedInstances("deployment_id", d.Id, time.Now().Add(time.Hour), 1000)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	onGateway := func() bool {
+		return e.gateway.Store.Tx(ctx, func(tx *store.Tx) error { _, err := tx.GetInstance(inst.Id, true); return err }) == nil
+	}
+	trim()
+	if !onGateway() {
+		t.Fatal("the ended instance stays until the cloud has taken its end")
+	}
+	e.online.Store(true)
+	e.waitFor("the completed instance in the cloud", func() bool { return e.cloudInstance(inst.Id).State == model.StateCompleted })
+	e.waitFor("the acknowledgement on the gateway", func() bool {
+		var acked, latest int64
+		_ = e.gateway.Store.Tx(ctx, func(tx *store.Tx) (err error) {
+			if acked, err = tx.SyncPosition(store.PositionUpAcked); err != nil {
+				return err
+			}
+			latest, err = tx.LatestChangeSeq()
+			return err
+		})
+		return acked == latest
+	})
+	trim()
+	if onGateway() {
+		t.Fatal("once the cloud has taken it, the budget may remove it")
+	}
+	if got := e.cloudInstance(inst.Id); got.State != model.StateCompleted {
+		t.Errorf("the cloud keeps its copy: %+v", got)
+	}
+	if err = e.gateway.Sync.SendStatus(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var appliedOnGateway, desiredInCloud bool
+	_ = e.gateway.Store.Tx(ctx, func(tx *store.Tx) (err error) {
+		_, appliedOnGateway, err = tx.GetApplied(protocol.ResourceInstance, inst.Id)
+		return err
+	})
+	_ = e.cloud.Store.Tx(ctx, func(tx *store.Tx) (err error) {
+		_, desiredInCloud, err = tx.GetDesired(network, protocol.ResourceInstance, inst.Id)
+		return err
+	})
+	if appliedOnGateway || desiredInCloud {
+		t.Errorf("the start of an ended instance is forgotten on both sides: gateway %v, cloud %v", appliedOnGateway, desiredInCloud)
 	}
 }

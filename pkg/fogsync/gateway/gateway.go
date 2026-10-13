@@ -37,7 +37,7 @@ import (
 )
 
 // positionAcked is the position of the change stream the cloud has taken.
-const positionAcked = "up_acked"
+const positionAcked = store.PositionUpAcked
 
 type Settings struct {
 	EngineVersion string
@@ -131,6 +131,10 @@ func (this *Agent) publish(ctx context.Context, kind string, message any) error 
 // Start subscribes to the messages of the cloud and sends status and change stream until ctx is done.
 func (this *Agent) Start(ctx context.Context) error {
 	this.started = this.now()
+	// from now on, retention and budget keep instances until the cloud has taken their end
+	if err := this.store.Tx(ctx, func(tx *store.Tx) error { return tx.InitSyncPosition(positionAcked) }); err != nil {
+		return err
+	}
 	err := this.broker.Subscribe(protocol.GatewayCommandFilter, 1, func(topic string, payload []byte) error {
 		return this.Handle(ctx, topic, payload)
 	})
@@ -341,6 +345,9 @@ func (this *Agent) SendStatus(ctx context.Context) error {
 			return err
 		}
 		if status.Acked, err = tx.SyncPosition(positionAcked); err != nil {
+			return err
+		}
+		if _, err = tx.PruneAppliedInstances(); err != nil {
 			return err
 		}
 		applied, err := tx.ListApplied()

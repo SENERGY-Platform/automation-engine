@@ -169,12 +169,18 @@ func (this *Tx) MarkNamespaceUnregistered(kind model.Kind, namespace string) err
 // runs before the resources are deleted. Unregistered resources may have a registration in
 // flight, so they are queued as well; removing an unknown resource is harmless.
 func (this *Tx) queueRemovals(table string, condition string, args ...any) error {
+	if this.withoutRemovals {
+		return nil
+	}
 	_, err := this.exec("INSERT INTO permission_removals (topic, resource_id, due_at) SELECT namespace || '_"+table+"', id, ? FROM "+table+" WHERE "+condition+" ON CONFLICT (topic, resource_id) DO NOTHING",
 		append([]any{millis(time.Now())}, args...)...)
 	return err
 }
 
 func (this *Tx) QueueRemoval(topic string, id string, at time.Time) error {
+	if this.withoutRemovals {
+		return nil
+	}
 	_, err := this.exec("INSERT INTO permission_removals (topic, resource_id, due_at) VALUES (?, ?, ?) ON CONFLICT (topic, resource_id) DO NOTHING", topic, id, millis(at))
 	return err
 }

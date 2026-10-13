@@ -25,14 +25,19 @@
 //
 //   - Down, the cloud sends the desired state of resources: namespaces, deployments with their
 //     event descriptions, instances to run, stop or delete. Every resource has a version that
-//     grows with each change of its desired state. The gateway applies a newer version
+//     grows with each change of its desired state, also after both sides forgot the resource:
+//     it starts at the time in milliseconds. The gateway applies a newer version
 //     idempotently and acknowledges every resource; the cloud sends again what stays
-//     unacknowledged (SYNC-01, SYNC-08). The order of messages does not matter.
+//     unacknowledged (SYNC-01, SYNC-08). The order of messages does not matter. Applied
+//     deletions and the start of an instance the gateway reported as ended are forgotten, in
+//     the cloud at once, on the gateway once the instance is gone there.
 //   - Up, the gateway sends its change stream: batches of instance states after a position of
 //     the stream up to a position. The cloud takes a batch only if it continues the position it
 //     acknowledged last, and acknowledges after its commit; the gateway sends again from there
 //     (SYNC-02, SYNC-10). Changes of an instance within a batch are folded to its latest state
-//     (LONG-09, LONG-10); a gateway that cannot continue sends a snapshot.
+//     (LONG-09, LONG-10); a gateway that cannot continue sends a snapshot. Retention and
+//     storage budget of the gateway keep an instance until the cloud took its end; an ended
+//     instance missing from a snapshot stays in the cloud.
 //   - The gateway reports its status when it starts and periodically: versions, positions,
 //     applied resources and storage (SYNC-11, SYNC-12, SYNC-13, LONG-14).
 //

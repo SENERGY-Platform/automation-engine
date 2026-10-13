@@ -307,7 +307,13 @@ func (this *Cloud) take(tx *store.Tx, networkId string, changes protocol.Changes
 		if err := tx.ReplaceReplicatedIncidents(inst.Id, inst.Run, state.Incidents); err != nil {
 			return err
 		}
+		if inst.State != model.StateRunning && inst.State != model.StatePending {
+			if err := tx.ForgetEndedInstance(networkId, inst.Id); err != nil {
+				return err
+			}
+		}
 	}
+	absent := map[string]bool{}
 	deleted := slices.Clone(changes.DeletedInstances)
 	if changes.Snapshot {
 		// a snapshot holds every instance; what it lacks is gone on the gateway (LONG-10)
@@ -318,6 +324,7 @@ func (this *Cloud) take(tx *store.Tx, networkId string, changes protocol.Changes
 		for _, id := range ids {
 			if !reported[id] {
 				deleted = append(deleted, id)
+				absent[id] = true
 			}
 		}
 	}
@@ -332,9 +339,21 @@ func (this *Cloud) take(tx *store.Tx, networkId string, changes protocol.Changes
 		if inst.NetworkId != networkId {
 			continue
 		}
-		// an instance the cloud just started and the gateway has not seen yet stays
-		if inst.State == model.StatePending {
+		// the gateway removed an ended instance for its retention or storage budget; the
+		// cloud keeps its copy for its own retention
+		if absent[id] && inst.State != model.StateRunning && inst.State != model.StatePending {
 			continue
+		}
+		if inst.State == model.StatePending {
+			// an instance the cloud just started and the gateway has not seen yet stays;
+			// one the gateway applied and no longer has is gone
+			desired, found, err := tx.GetDesired(networkId, protocol.ResourceInstance, id)
+			if err != nil {
+				return err
+			}
+			if !found || desired.Deleted || desired.AppliedVersion < desired.Version || desired.Error != "" {
+				continue
+			}
 		}
 		if err = tx.DeleteInstance(id); err != nil {
 			return err

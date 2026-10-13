@@ -31,6 +31,30 @@ type Applied struct {
 	At      time.Time
 }
 
+// PositionUpAcked is the position of the change stream of a gateway the cloud has taken.
+const PositionUpAcked = "up_acked"
+
+// unsynced excludes instances with changes the cloud has not taken; without a position, on
+// the cloud, it excludes nothing. Retention and budget keep them, so that the cloud learns how
+// they ended (LONG-07, LONG-10).
+const unsynced = "id NOT IN (SELECT c.instance_id FROM changes c JOIN sync_positions p ON p.name = '" + PositionUpAcked + "' AND c.seq > p.position)"
+
+// InitSyncPosition sets a position to 0 unless it is set.
+func (this *Tx) InitSyncPosition(name string) error {
+	_, err := this.exec("INSERT INTO sync_positions (name, position) VALUES (?, 0) ON CONFLICT (name) DO NOTHING", name)
+	return err
+}
+
+// PruneAppliedInstances forgets instances applied without error that are gone; the cloud
+// forgets them when they end, so that neither side grows with every start.
+func (this *Tx) PruneAppliedInstances() (int64, error) {
+	result, err := this.exec("DELETE FROM sync_applied WHERE kind = 'instance' AND error = '' AND id NOT IN (SELECT id FROM instances)")
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 // SyncPosition reads a position of the synchronisation, 0 if it was never set.
 func (this *Tx) SyncPosition(name string) (result int64, err error) {
 	err = this.queryRow("SELECT COALESCE((SELECT position FROM sync_positions WHERE name = ?), 0)", name).Scan(&result)

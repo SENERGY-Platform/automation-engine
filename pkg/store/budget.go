@@ -35,11 +35,11 @@ func (this *Tx) UsedBytes() (int64, error) {
 // TrimOldestHistory removes the oldest history beyond any retention, when the storage budget
 // is near (LONG-07): finished instances first, then the oldest activity entries and
 // incidents of all instances. Runtime state stays; instances with modules stay, as with the
-// retention. It returns the number of removed rows; 0 means there is no history left.
+// retention, and on a gateway instances whose end the cloud has not taken. It returns the number of removed rows; 0 means there is no history left.
 func (this *Tx) TrimOldestHistory(limit int) (int64, error) {
 	var total int64
 	instances := "id IN (SELECT id FROM instances WHERE state <> 'running' AND restart_at IS NULL " +
-		"AND NOT EXISTS (SELECT 1 FROM modules m WHERE m.instance_id = instances.id) ORDER BY ended_at LIMIT ?)"
+		"AND NOT EXISTS (SELECT 1 FROM modules m WHERE m.instance_id = instances.id) AND " + unsynced + " ORDER BY ended_at LIMIT ?)"
 	if err := this.queueRemovals("instances", instances, max(limit/10, 1)); err != nil {
 		return 0, err
 	}

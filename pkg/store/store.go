@@ -54,6 +54,14 @@ type Store struct {
 	dialect Dialect
 	// the last write failed because the disk or the page limit was full (LONG-07)
 	full atomic.Bool
+	// nothing removes rights from permissions-v2, e.g. on a gateway; the queue would only grow
+	withoutRemovals atomic.Bool
+}
+
+// DisablePermissionRemovals stops queueing rights for removal from permissions-v2, for an
+// engine without permissions-v2.
+func (this *Store) DisablePermissionRemovals() {
+	this.withoutRemovals.Store(true)
 }
 
 // Open connects and applies pending migrations (OPS-03).
@@ -197,7 +205,7 @@ func (this *Store) Tx(ctx context.Context, fn func(tx *Tx) error) (err error) {
 	if err != nil {
 		return model.Unavailable("unable to begin transaction: %v", err)
 	}
-	tx := &Tx{tx: sqlTx, dialect: this.dialect, ctx: ctx}
+	tx := &Tx{tx: sqlTx, dialect: this.dialect, ctx: ctx, withoutRemovals: this.withoutRemovals.Load()}
 	defer func() {
 		if p := recover(); p != nil {
 			_ = sqlTx.Rollback()
@@ -262,9 +270,10 @@ func (this *Store) Vacuum(ctx context.Context, pages int) error {
 }
 
 type Tx struct {
-	tx      *sql.Tx
-	dialect Dialect
-	ctx     context.Context
+	tx              *sql.Tx
+	dialect         Dialect
+	ctx             context.Context
+	withoutRemovals bool
 }
 
 // rebind rewrites ? placeholders to $n for Postgres; queries never contain ? in literals

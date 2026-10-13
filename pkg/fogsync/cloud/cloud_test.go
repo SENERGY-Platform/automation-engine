@@ -26,6 +26,7 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/cloud"
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync/protocol"
+	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
@@ -119,5 +120,75 @@ func TestNetworksWithoutContactAreRemoved(t *testing.T) {
 	}
 	if found() {
 		t.Error("a network without contact for longer than cleanup_max_age is removed (SYNC-07)")
+	}
+}
+
+func seedNetworkInstance(t *testing.T, s *store.Store, id string, state model.InstanceState, applied bool) {
+	t.Helper()
+	now := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	err := s.Tx(ctx, func(tx *store.Tx) error {
+		if _, err := tx.GetDeployment("d1", false); err != nil {
+			if err = tx.InsertDeployment(model.Deployment{Id: "d1", Namespace: "processes", Name: "d", Owner: "alice", Version: 1, NetworkId: "hub-1", CreatedAt: now, UpdatedAt: now}); err != nil {
+				return err
+			}
+		}
+		inst := model.Instance{Id: id, Namespace: "processes", Owner: "alice", DeploymentId: "d1", DeploymentVersion: 1, State: state, NetworkId: "hub-1", CreatedAt: now, StartedAt: now, LastActivityAt: now}
+		if err := tx.InsertInstance(store.Instance{Instance: inst, ActivityMinSeq: 1}); err != nil {
+			return err
+		}
+		version, err := tx.Desire("hub-1", protocol.ResourceInstance, id, false, protocol.InstanceSpec{DeploymentId: "d1", Owner: "alice"}, now)
+		if err != nil || !applied {
+			return err
+		}
+		return tx.SetDesiredApplied("hub-1", protocol.ResourceInstance, id, version, "", now)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A snapshot lacks what the gateway removed: running instances are gone, ended ones were
+// removed for retention or storage and stay in the cloud with its own retention, and a
+// pending instance is gone only if the gateway applied its start (LONG-10).
+func TestASnapshotKeepsEndedInstancesOfTheCloud(t *testing.T) {
+	c, s, _, _ := newCloud(t)
+	envelope := protocol.Envelope{Protocol: protocol.Version}
+	seedNetworkInstance(t, s, "ended", model.StateCompleted, true)
+	seedNetworkInstance(t, s, "running", model.StateRunning, true)
+	seedNetworkInstance(t, s, "applied", model.StatePending, true)
+	seedNetworkInstance(t, s, "new", model.StatePending, false)
+	snapshot := protocol.Changes{Envelope: envelope, After: 0, Upto: 7, Snapshot: true}
+	if err := c.Handle(ctx, "processes/hub-1/state/engine/v1/changes", message(t, snapshot)); err != nil {
+		t.Fatal(err)
+	}
+	for id, kept := range map[string]bool{"ended": true, "running": false, "applied": false, "new": true} {
+		var err error
+		_ = s.Tx(ctx, func(tx *store.Tx) error { _, err = tx.GetInstance(id, true); return nil })
+		if (err == nil) != kept {
+			t.Errorf("%v kept %v, want %v", id, err == nil, kept)
+		}
+	}
+}
+
+// The start of an instance is done once the gateway reports its end; the cloud forgets it, so
+// that the desired state does not grow with every start.
+func TestAnEndedInstanceIsNoLongerDesired(t *testing.T) {
+	c, s, _, _ := newCloud(t)
+	envelope := protocol.Envelope{Protocol: protocol.Version}
+	seedNetworkInstance(t, s, "i1", model.StatePending, false)
+	ended := time.Date(2026, 10, 12, 9, 30, 0, 0, time.UTC)
+	report := protocol.Changes{Envelope: envelope, After: 0, Upto: 3, Instances: []protocol.InstanceState{{Instance: model.Instance{
+		Id: "i1", Namespace: "processes", Owner: "alice", DeploymentId: "d1", DeploymentVersion: 1, Run: 1, State: model.StateCompleted, EndedAt: &ended,
+	}}}}
+	if err := c.Handle(ctx, "processes/hub-1/state/engine/v1/changes", message(t, report)); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	_ = s.Tx(ctx, func(tx *store.Tx) (err error) {
+		_, found, err = tx.GetDesired("hub-1", protocol.ResourceInstance, "i1")
+		return err
+	})
+	if found {
+		t.Error("the start of an ended instance is forgotten")
 	}
 }

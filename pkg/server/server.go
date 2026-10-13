@@ -226,6 +226,8 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	}
 	if service != nil {
 		service.SetNamespaces(registry)
+	} else {
+		s.DisablePermissionRemovals()
 	}
 
 	e := engine.New(s, engineSettings, registry, logger)
