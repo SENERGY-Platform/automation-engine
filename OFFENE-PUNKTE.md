@@ -85,6 +85,7 @@ Jeder Punkt nennt seinen Anlass (Anforderungs-ID oder Meilenstein) und ist entwe
 
 ### web-ui und Prozess-Designer
 
+- [ ] **Aufgabe:** Beim Import eines Modells aus Camunda (Datei oder altes process-model-repository) `POST /namespaces/{ns}/convert` aufrufen und den Bericht anzeigen: umgeschrieben, von Hand zu prüfen, nicht unterstützt (MIG-04, M7).
 - [ ] **Aufgabe:** Fog-Deployments über dieselbe API mit `network_id` statt über process-fog-deployment und process-sync; Netzübersicht über `GET /networks` und `GET /networks/{id}` mit Soll- und Ist-Zustand je Ressource; Instanzen eines Gateways sind bis zur ersten Meldung `pending` (DEP-09, SYNC-12, SYNC-13, M6). Instanzen eines Gateways lassen sich aus der Cloud starten, stoppen und löschen, nicht neu starten oder in Variablen und Parametern ändern. Versionen in `GET /networks/{id}` sind große Zahlen (sie beginnen bei der Zeit in Millisekunden) und taugen nur zum Vergleich von Soll und Ist; der Start einer beendeten Instanz erscheint dort nicht mehr.
 - [ ] **Aufgabe:** Debug-Ansicht einer Gateway-Instanz: `offline: true` im Debug-Zustand heißt zuletzt gemeldeter Stand, das Gateway ist nicht erreichbar; Variablen, Durchläufe und Verlauf sind dann nicht abrufbar (503) (DBG-15, M6).
 

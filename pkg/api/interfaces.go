@@ -30,6 +30,8 @@ type Controller interface {
 	GetNamespace(ctx context.Context, token string, namespace string) (model.Namespace, error)
 	// Validate checks BPMN against the rules of a namespace without storing it (BPMN-18)
 	Validate(ctx context.Context, token string, namespace string, xml string) ([]model.Issue, error)
+	// Convert rewrites a model written for Camunda 7 without storing it (MIG-04)
+	Convert(ctx context.Context, token string, namespace string, xml string) (model.Conversion, error)
 	// PutNamespace creates or changes a namespace; admins only (NS-02)
 	PutNamespace(ctx context.Context, token string, name string, ns model.Namespace) (model.Namespace, error)
 	// DeleteNamespace removes a namespace without resources; admins only

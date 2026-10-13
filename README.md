@@ -92,13 +92,16 @@ OpenAPI in `docs/swagger.json` und `docs/swagger.yaml`, erzeugt mit `go generate
 
 Go-Client in `pkg/client`: `client.New(url)` für einen laufenden Server, `client.NewTestClient(ctx)` für Tests ohne Netz und Container; beide erfüllen dasselbe Interface.
 
-## Tests
+## Modelle aus Camunda
+
+`POST /namespaces/{ns}/convert` schreibt ein Modell für Camunda 7 in das Format der Engine um, ohne etwas zu speichern (MIG-04). JUEL wird zu JavaScript (ein einzelner Ausdruck behält seinen Typ, Text mit Ausdrücken wird ein Template-Literal, in dem `null` leer ist wie in JUEL), Groovy mit `println` zu `log`, die Topics `pessimistic`, `optimistic`, `process_io` und die der Module zu Aufgabentypen, der `http-connector` zum Aufgabentyp `notification` (Ziel `notification` des alten process-deployment) bzw. `http`, Nachrichtennamen wie `${done_event}` zu `senergy:messageName`. Die Antwort nennt, was umgeschrieben wurde, was von Hand zu prüfen ist und was nicht unterstützt wird (`mail-send`, Bedingungen ohne Sprache), dazu die Befunde unter den Regeln des Namespace. Bekannte Abweichungen zu Camunda: Ein String `"false"` ist in JUEL bei `== false` ein Boolean, in JavaScript nicht; ganzzahlige Doubles erscheinen in Texten als `30` statt `30.0`.
+
 
 ```sh
 go test ./...
 ```
 
-Store- und Engine-Tests laufen gegen SQLite und gegen Postgres in einem Container (testcontainers). Ohne Container-Runtime werden die Postgres-Varianten übersprungen; `AE_TEST_POSTGRES=off` schaltet sie ab. `AE_BPMN_EXPORT_DIR=<Verzeichnis>` prüft den Parser zusätzlich gegen exportierte Modelle.
+Store- und Engine-Tests laufen gegen SQLite und gegen Postgres in einem Container (testcontainers). Ohne Container-Runtime werden die Postgres-Varianten übersprungen; `AE_TEST_POSTGRES=off` schaltet sie ab. Der Vergleich der Umschreibung mit Camunda 7.24 (MIG-05) startet Camunda ebenfalls im Container; `AE_TEST_CAMUNDA=off` schaltet ihn ab. `AE_BPMN_EXPORT_DIR=<Verzeichnis>` prüft den Parser zusätzlich gegen exportierte Modelle.
 
 ### Dauertest (LONG-15)
 

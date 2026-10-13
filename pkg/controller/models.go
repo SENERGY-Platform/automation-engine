@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/rewrite"
 	"strings"
 	"time"
 
@@ -40,6 +41,31 @@ func (this *Controller) Validate(ctx context.Context, token string, namespace st
 		issues = []model.Issue{}
 	}
 	return issues, nil
+}
+
+// Convert rewrites a model written for Camunda 7 and validates the result against the rules of
+// the namespace, without storing it (MIG-04).
+func (this *Controller) Convert(ctx context.Context, token string, namespace string, xml string) (model.Conversion, error) {
+	_, ns, err := this.begin(token, namespace)
+	if err != nil {
+		return model.Conversion{}, err
+	}
+	result, report, err := rewrite.Rewrite(xml)
+	if err != nil {
+		return model.Conversion{}, model.ValidationFailed([]model.Issue{{Message: err.Error()}})
+	}
+	conversion := model.Conversion{Xml: result, Rewritten: nonNil(report.Rewritten), Check: nonNil(report.Check), Unsupported: nonNil(report.Unsupported), Issues: []model.Issue{}}
+	if _, issues, err := bpmn.ParseAndValidate(result, this.engine.Rules(ns)); err == nil && issues != nil {
+		conversion.Issues = issues
+	}
+	return conversion, nil
+}
+
+func nonNil(issues []model.Issue) []model.Issue {
+	if issues == nil {
+		return []model.Issue{}
+	}
+	return issues
 }
 
 // modelIssues validates a model on save; issues are hints, the model is stored anyway (MOD-04)

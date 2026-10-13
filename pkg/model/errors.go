@@ -56,6 +56,17 @@ type Issue struct {
 	Message   string `json:"message"`
 }
 
+// Conversion is a model written for Camunda 7 rewritten into the format of this engine
+// (MIG-04): what was rewritten, what should be checked by hand, what keeps it from running,
+// and the issues of the result under the rules of the namespace.
+type Conversion struct {
+	Xml         string  `json:"xml"`
+	Rewritten   []Issue `json:"rewritten"`
+	Check       []Issue `json:"check"`
+	Unsupported []Issue `json:"unsupported"`
+	Issues      []Issue `json:"issues"`
+}
+
 func (this Issue) String() string {
 	if this.ElementId == "" {
 		return this.Message

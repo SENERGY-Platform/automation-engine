@@ -115,6 +115,7 @@ func (h *handlers) routes() []route {
 		{"PUT /namespaces/{ns}", h.putNamespace},
 		{"DELETE /namespaces/{ns}", h.deleteNamespace},
 		{"POST /namespaces/{ns}/validate", h.validate},
+		{"POST /namespaces/{ns}/convert", h.convert},
 
 		{"GET /namespaces/{ns}/models", h.listModels},
 		{"POST /namespaces/{ns}/models", h.createModel},

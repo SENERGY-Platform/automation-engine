@@ -163,6 +163,11 @@ func (this *ClientImpl) Validate(ctx context.Context, token string, namespace st
 	return result, err
 }
 
+func (this *ClientImpl) Convert(ctx context.Context, token string, namespace string, xml string) (result model.Conversion, err error) {
+	err = this.do(ctx, token, http.MethodPost, path("namespaces", namespace, "convert"), nil, api.ValidateInput{Xml: xml}, &result)
+	return result, err
+}
+
 func (this *ClientImpl) CreateModel(ctx context.Context, token string, namespace string, input model.ModelInput) (result model.Model, err error) {
 	err = this.do(ctx, token, http.MethodPost, path("namespaces", namespace, "models"), nil, input, &result)
 	return result, err

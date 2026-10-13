@@ -116,6 +116,27 @@ definitions:
         type: string
       value: {}
     type: object
+  model.Conversion:
+    properties:
+      check:
+        items:
+          $ref: '#/definitions/model.Issue'
+        type: array
+      issues:
+        items:
+          $ref: '#/definitions/model.Issue'
+        type: array
+      rewritten:
+        items:
+          $ref: '#/definitions/model.Issue'
+        type: array
+      unsupported:
+        items:
+          $ref: '#/definitions/model.Issue'
+        type: array
+      xml:
+        type: string
+    type: object
   model.Correlation:
     properties:
       duplicate:
@@ -2103,6 +2124,42 @@ paths:
       summary: change the owner of a model, deployment or instance
       tags:
       - owners
+  /namespaces/{ns}/convert:
+    post:
+      consumes:
+      - application/json
+      description: JUEL becomes JavaScript, external task topics become task types,
+        the http-connector becomes a notification or HTTP call; nothing is stored.
+        The result lists what was rewritten, what to check by hand, what is unsupported
+        and the issues under the rules of the namespace.
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: BPMN
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.ValidateInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Conversion'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: rewrite a model written for Camunda 7
+      tags:
+      - namespaces
   /namespaces/{ns}/deployments:
     get:
       parameters:

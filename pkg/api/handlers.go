@@ -77,6 +77,28 @@ func (h *handlers) validate(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, result, err)
 }
 
+// convert godoc
+//
+//	@Summary		rewrite a model written for Camunda 7
+//	@Description	JUEL becomes JavaScript, external task topics become task types, the http-connector becomes a notification or HTTP call; nothing is stored. The result lists what was rewritten, what to check by hand, what is unsupported and the issues under the rules of the namespace.
+//	@Tags			namespaces
+//	@Security		Bearer
+//	@Accept			json
+//	@Produce		json
+//	@Param			ns		path		string			true	"namespace"
+//	@Param			body	body		ValidateInput	true	"BPMN"
+//	@Success		200		{object}	model.Conversion
+//	@Failure		400		{object}	model.Error
+//	@Router			/namespaces/{ns}/convert [post]
+func (h *handlers) convert(w http.ResponseWriter, r *http.Request) {
+	input, ok := decode[ValidateInput](w, r)
+	if !ok {
+		return
+	}
+	result, err := h.c.Convert(r.Context(), token(r), r.PathValue("ns"), input.Xml)
+	respond(w, http.StatusOK, result, err)
+}
+
 // listModels godoc
 //
 //	@Summary	list models

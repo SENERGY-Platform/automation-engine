@@ -506,6 +506,58 @@
                 }
             }
         },
+        "/namespaces/{ns}/convert": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "JUEL becomes JavaScript, external task topics become task types, the http-connector becomes a notification or HTTP call; nothing is stored. The result lists what was rewritten, what to check by hand, what is unsupported and the issues under the rules of the namespace.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "namespaces"
+                ],
+                "summary": "rewrite a model written for Camunda 7",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "BPMN",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.ValidateInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Conversion"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/namespaces/{ns}/deployments": {
             "get": {
                 "security": [
@@ -4215,6 +4267,38 @@
                     "type": "string"
                 },
                 "value": {}
+            }
+        },
+        "model.Conversion": {
+            "type": "object",
+            "properties": {
+                "check": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Issue"
+                    }
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Issue"
+                    }
+                },
+                "rewritten": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Issue"
+                    }
+                },
+                "unsupported": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Issue"
+                    }
+                },
+                "xml": {
+                    "type": "string"
+                }
             }
         },
         "model.Correlation": {
