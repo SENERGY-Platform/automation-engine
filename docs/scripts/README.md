@@ -1,24 +1,24 @@
 <!-- generated with: go generate ./pkg/scriptdoc - do not edit by hand -->
 
-# Skript-Umgebungen
+# Script environments
 
-Die Engine führt JavaScript mit [goja](https://github.com/dop251/goja) aus (ECMAScript 5.1 mit Teilen von ES6), an zwei Stellen mit verschiedenen Globals. Diese Referenz und die Dateien daneben werden aus dem Go-Quelltext erzeugt: Methoden und Beschreibungen aus `pkg/modules/compat`, Typen und Feldnamen per Reflection mit der Namensabbildung der Laufzeit (JSON-Tags), Abkündigungen aus den Kommentaren der Modelle. Ein Test schlägt fehl, wenn die Dateien nicht zum Code passen.
+The engine runs JavaScript with [goja](https://github.com/dop251/goja) (ECMAScript 5.1 with parts of ES6), in two places with different globals. This reference and the files next to it are generated from the Go source: methods and descriptions from `pkg/modules/compat`, types and field names by reflection with the name mapping of the runtime (JSON tags), deprecations from the comments of the models. A test fails when the files do not match the code.
 
-| Datei | Inhalt |
+| File | Content |
 |---|---|
-| `engine/script-env.d.ts` | TypeScript-Deklarationen der BPMN-Skripte und -Ausdrücke |
-| `modules/script-env.d.ts` | TypeScript-Deklarationen der Pre- und Postscripts von Modul-Aufgaben, für Editoren mit Typprüfung (Monaco, VS Code) |
-| `modules/jsdoc.js` | dieselbe API als JSDoc |
-| `modules/ace-code-completer.ts` | Vervollständigung für den Ace-Editor des web-ui, wie bisher aus smart-service-module-worker-lib |
+| `engine/script-env.d.ts` | TypeScript declarations of the BPMN scripts and expressions |
+| `modules/script-env.d.ts` | TypeScript declarations of the prescripts and postscripts of module tasks, for editors with type checking (Monaco, VS Code) |
+| `modules/jsdoc.js` | the same API as JSDoc |
+| `modules/ace-code-completer.ts` | completion for the Ace editor of the web-ui, as before from smart-service-module-worker-lib |
 
-## BPMN-Skripte und -Ausdrücke
+## BPMN scripts and expressions
 
-Gilt für Script Tasks, Bedingungen an Sequenzflüssen, Ein- und Ausgabe-Mappings, Timer-Werte, `senergy:messageName` und die Bedingungen von Geräte- und Import-Events (`senergy:script`).
+Applies to script tasks, conditions on sequence flows, input and output mappings, timer values, `senergy:messageName` and the conditions of device and import events (`senergy:script`).
 
-- Die Variablen der Instanz und die lokalen Variablen des Elements sind Globals. In Event-Bedingungen sind es der Wert unter `senergy:value_variable_name` und die Variablen aus `senergy:variables`.
-- Das Ergebnis ist der Wert des letzten Ausdrucks. Bedingungen müssen einen Boolean liefern.
-- Werte sind JSON: Zahlen sind Double, fehlende Werte `null`.
-- Grenzen je Auswertung: Laufzeit `SCRIPT_TIMEOUT` (Vorgabe 2 s, bei Event-Bedingungen fest 2 s), Ergebnis bis `MAX_VARIABLE_BYTES` (Vorgabe 1 MiB), 100 Logeinträge, Aufruftiefe 1000. Kein Zugriff auf Netz, Dateisystem oder Engine-Interna.
+- The variables of the instance and the local variables of the element are globals. In event conditions, they are the value under `senergy:value_variable_name` and the variables from `senergy:variables`.
+- The result is the value of the last expression. Conditions must return a boolean.
+- Values are JSON: numbers are doubles, missing values `null`.
+- Limits per evaluation: run time `SCRIPT_TIMEOUT` (default 2 s, fixed 2 s for event conditions), result up to `MAX_VARIABLE_BYTES` (default 1 MiB), 100 log entries, call depth 1000. No access to the network, the file system or engine internals.
 
 ### `log(...args: any[]): void`
 
@@ -32,15 +32,15 @@ console.log is the same function as log.
 
 Sets a variable: the local variable of the element if it has one of this name, otherwise the variable of the instance. The value has to be representable as JSON; it is also visible to the rest of the script under its name.
 
-## Pre- und Postscripts von Modul-Aufgaben
+## Prescripts and postscripts of module tasks
 
-Gilt für die Eingaben `prescript*` und `postscript*` der Aufgabentypen `info`, `import`, `export`, `analytics`, `device_repository`, `process_deployment`, `process_deployment_start` und `watcher`. Teile mit demselben Präfix werden nach Namen sortiert zusammengesetzt.
+Applies to the inputs `prescript*` and `postscript*` of the task types `info`, `import`, `export`, `analytics`, `device_repository`, `process_deployment`, `process_deployment_start` and `watcher`. Parts with the same prefix are joined in the order of their names.
 
-- Ablauf: Prescripts mit den rohen Eingaben, dann werden die String-Eingaben als Go-Template gegen die Variablen gerendert (`{{.name}}`), dann läuft die Aufgabe, dann Postscripts mit allen Ausgaben.
-- Variablen sind die der Instanz, bei Wartungsprozeduren die der Elterninstanz. Geschriebene Variablen gelten nach dem Skript.
-- `deviceRepo` fragt device-repository mit dem Token des Owners.
-- Laufzeit höchstens 2 s je Skript.
-- `console` schreibt in das Log der Engine, nicht in den Verlauf der Instanz.
+- Order: prescripts with the raw inputs, then the string inputs are rendered as Go templates against the variables (`{{.name}}`), then the task runs, then postscripts with all outputs.
+- Variables are those of the instance, for maintenance procedures those of the parent instance. Written variables apply after the script.
+- `deviceRepo` asks device-repository with the token of the owner.
+- Run time at most 2 s per script.
+- `console` writes to the log of the engine, not to the history of the instance.
 
 ### `console`
 
@@ -117,7 +117,7 @@ Gilt für die Eingaben `prescript*` und `postscript*` der Aufgabentypen `info`, 
 - `ref(name: string): string`<br>Ref creates a reference to a variable (e.g. "my_var_name" --> "{{.my_var_name}}") throws exception if variable is unknown
 - `write(name: string, value: any): void`<br>Write value as smart-service instance variable
 
-### Typen
+### Types
 
 #### `Aspect`
 
@@ -175,7 +175,7 @@ Gilt für die Eingaben `prescript*` und `postscript*` der Aufgabentypen `info`, 
 
 - `path: string`
 - `characteristic_id: string`
-- `aspect_node: AspectNode` (abgekündigt: alias for a single element AspectNodes; holds the node with the alphabetically first id)
+- `aspect_node: AspectNode` (deprecated: alias for a single element AspectNodes; holds the node with the alphabetically first id)
 - `aspect_nodes: AspectNode[]`
 - `function_id: string`
 - `value: any`
@@ -201,7 +201,7 @@ Gilt für die Eingaben `prescript*` und `postscript*` der Aufgabentypen `info`, 
 - `serialization_options: string[]`
 - `unit_reference: string`
 - `function_id: string`
-- `aspect_id: string` (abgekündigt: please use AspectIds)
+- `aspect_id: string` (deprecated: please use AspectIds)
 - `aspect_ids: string[]`
 
 #### `ConverterExtension`
@@ -242,7 +242,7 @@ Gilt für die Eingaben `prescript*` und `postscript*` der Aufgabentypen `info`, 
 
 - `interaction: string`
 - `function_id: string`
-- `aspect_id: string` (abgekündigt: please use AspectIds)
+- `aspect_id: string` (deprecated: please use AspectIds)
 - `aspect_ids: string[]`
 - `device_class_id: string`
 
@@ -278,7 +278,7 @@ Gilt für die Eingaben `prescript*` und `postscript*` der Aufgabentypen `info`, 
 - `interaction: string`
 - `function_id: string`
 - `device_class_id: string`
-- `aspect_id: string` (abgekündigt: alias for a single element AspectIds; normalized into AspectIds at the controller boundary)
+- `aspect_id: string` (deprecated: alias for a single element AspectIds; normalized into AspectIds at the controller boundary)
 - `aspect_ids: string[]`
 
 #### `FunctionType`
@@ -354,7 +354,7 @@ Gilt für die Eingaben `prescript*` und `postscript*` der Aufgabentypen `info`, 
 - `service_id: string`
 - `path: string`
 - `characteristic_id: string`
-- `aspect_node: AspectNode` (abgekündigt: alias for a single element AspectNodes; holds the node with the alphabetically first id)
+- `aspect_node: AspectNode` (deprecated: alias for a single element AspectNodes; holds the node with the alphabetically first id)
 - `aspect_nodes: AspectNode[]`
 - `function_id: string`
 - `is_void: boolean`

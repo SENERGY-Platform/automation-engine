@@ -1,145 +1,145 @@
 # Automation-Engine
 
-Ersatz für Camunda 7 auf der SENERGY-Plattform: Modelle, Deployments und Instanzen von Prozessen und Smart Services in einer Engine. Anforderungen in `docs/anforderungen.md`, Umsetzungsstand und Entscheidungen in `PLAN.md`.
+Replacement for Camunda 7 on the SENERGY platform: models, deployments and instances of processes and smart services in one engine. Requirements in `docs/requirements.md`, implementation status and decisions in `PLAN.md`.
 
-## Starten
+## Running
 
 ```sh
 go run . -config config.json
 ```
 
-Die Konfiguration kommt aus `config.json` und aus Umgebungsvariablen (Namen in `pkg/configuration/config.go`, z. B. `DATABASE=postgres`, `POSTGRES_DSN`, `SERVER_PORT`, `NAMESPACES` als JSON). Vorgabe ist SQLite in `automation-engine.db`. Das Schema migriert die Engine beim Start selbst.
+The configuration comes from `config.json` and from environment variables (names in `pkg/configuration/config.go`, e.g. `DATABASE=postgres`, `POSTGRES_DSN`, `SERVER_PORT`, `NAMESPACES` as JSON). The default is SQLite in `automation-engine.db`. The engine migrates the schema itself on start.
 
-Für den Plattformbetrieb kommen dazu:
-- `PERMISSIONS_V2_URL` mit `AUTH_ENDPOINT`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`: Teilen über permissions-v2; der Keycloak-Client braucht die Realm-Rolle `admin`. Ohne URL haben nur Owner und Admins Zugriff.
-- `NOTIFIER_URL`, `DEVELOPER_NOTIFICATIONS_URL`: Benachrichtigungen bei Incidents.
-- `INTERNAL_PORT` (Vorgabe 8081, ersetzt `METRICS_PORT`): Prometheus-Metriken unter `/metrics` und Antworten von Geräten über HTTP unter `/responses` und `/errors`. Nicht über Kong routen.
-- `RETENTION_DEFAULT_DAYS`, `RETENTION_MAX_DAYS`: Aufbewahrung des Verlaufs.
-- `KAFKA_URL`: Gerätekommandos und ihre Antworten (`RESPONSE_TOPIC`, `ERROR_TOPIC`), Änderungen an Geräten und Gerätegruppen (`DEVICE_TOPIC`, `DEVICE_GROUP_TOPIC`), Nutzerlöschungen (`USER_TOPIC`) und optional das Rechte-Signal von permissions-v2 (`PERMISSIONS_KAFKA_TOPIC`).
-- `DEVICE_REPOSITORY_URL`, `MARSHALLER_URL`, `TIMESCALE_WRAPPER_URL`, `DEVICE_SELECTION_URL`, `IMPORT_DEPLOY_URL`, `IMPORT_REPOSITORY_URL`: Dienste für Gerätekommandos, Geräteauswahl und Geräteevents. Gerätekommandos brauchen zusätzlich `AUTH_ENDPOINT` für den Token-Exchange.
-- `MODE` (`cloud` oder `fog`, Vorgabe `cloud`): wählt die Richtlinie für HTTP-Aufrufe aus Prozessen.
-- `MAX_IO_VALUES_PER_USER`, `MAX_IO_VALUE_BYTES`: Grenzen für Process-IO.
-- `MAX_LIVE_CONNECTIONS_PER_USER` (Vorgabe 5): Live-Debug-Verbindungen je Nutzer und Replica.
-- `OTEL_ENDPOINT`: OTLP-Collector (gRPC) für Traces. Leer heißt Vorgabe von `gin-middleware/otelx` (`jaeger.logging.svc.cluster.local:4317`), `off` schaltet Tracing ab, etwa im Fog oder lokal.
+For platform operation, add:
+- `PERMISSIONS_V2_URL` with `AUTH_ENDPOINT`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`: sharing through permissions-v2; the Keycloak client needs the realm role `admin`. Without the URL, only owners and admins have access.
+- `NOTIFIER_URL`, `DEVELOPER_NOTIFICATIONS_URL`: notifications on incidents.
+- `INTERNAL_PORT` (default 8081, replaces `METRICS_PORT`): Prometheus metrics under `/metrics` and answers of devices over HTTP under `/responses` and `/errors`. Do not route it through Kong.
+- `RETENTION_DEFAULT_DAYS`, `RETENTION_MAX_DAYS`: retention of the history.
+- `KAFKA_URL`: device commands and their answers (`RESPONSE_TOPIC`, `ERROR_TOPIC`), changes to devices and device groups (`DEVICE_TOPIC`, `DEVICE_GROUP_TOPIC`), user deletions (`USER_TOPIC`) and optionally the rights signal of permissions-v2 (`PERMISSIONS_KAFKA_TOPIC`).
+- `DEVICE_REPOSITORY_URL`, `MARSHALLER_URL`, `TIMESCALE_WRAPPER_URL`, `DEVICE_SELECTION_URL`, `IMPORT_DEPLOY_URL`, `IMPORT_REPOSITORY_URL`: services for device commands, device selection and device events. Device commands additionally need `AUTH_ENDPOINT` for the token exchange.
+- `MODE` (`cloud` or `fog`, default `cloud`): selects the policy for HTTP calls from processes.
+- `MAX_IO_VALUES_PER_USER`, `MAX_IO_VALUE_BYTES`: limits for process-io.
+- `MAX_LIVE_CONNECTIONS_PER_USER` (default 5): live debug connections per user and replica.
+- `OTEL_ENDPOINT`: OTLP collector (gRPC) for traces. Empty means the default of `gin-middleware/otelx` (`jaeger.logging.svc.cluster.local:4317`), `off` switches tracing off, for example in the fog or locally.
 
-## Smart Services und Module
+## Smart services and modules
 
-Smart Services sind der Namespace `smart-services`. Ihre Aufgabentypen ersetzen die acht Module-Worker:
-- `info`, `import`, `export`, `analytics`, `device_repository`: das Verhalten der bisherigen Worker, im Repo implementiert und gegen deren Testfälle geprüft (`pkg/modules/testdata`). Eingaben mit Präfix `<typ>.`, Go-Templates gegen die Instanzvariablen (`{{.param}}`), `prescript*`/`postscript*` mit `variables`, `inputs`, `outputs`, `util`, `deviceRepo`. Die Skript-API beider JavaScript-Umgebungen (Modul-Skripte und BPMN-Skripte) steht in [docs/scripts](docs/scripts/README.md), als TypeScript-Deklarationen, JSDoc und Ace-Vervollständigung; erzeugt mit `go generate ./pkg/scriptdoc`.
-- `process_deployment`, `process_deployment_start`: deployen bzw. starten Prozesse im referenzierten Namespace (`processes`) mit dem Token des Owners. Das Deployment verweist auf die verwaltende Instanz (`managed_by`). Den Abschluss meldet die Engine mit der Nachricht `deployment_done_<id>`, die die Instanz beim nächsten Warten darauf sofort erhält; Wartepunkte nennen ihren Namen mit `senergy:messageName` (JavaScript).
-- `watcher`: prüft Geräteauswahlen (oder mit `ALLOW_GENERIC_WATCH_REQUESTS` beliebige Anfragen unter der HTTP-Richtlinie des Namespace) in Abständen und startet bei einer Änderung eine Wartungsprozedur.
+Smart services are the namespace `smart-services`. Their task types replace the eight module workers:
+- `info`, `import`, `export`, `analytics`, `device_repository`: the behaviour of the previous workers, implemented in this repository and checked against their test cases (`pkg/modules/testdata`). Inputs with the prefix `<type>.`, Go templates against the instance variables (`{{.param}}`), `prescript*`/`postscript*` with `variables`, `inputs`, `outputs`, `util`, `deviceRepo`. The script API of both JavaScript environments (module scripts and BPMN scripts) is in [docs/scripts](docs/scripts/README.md), as TypeScript declarations, JSDoc and Ace completion; generated with `go generate ./pkg/scriptdoc`.
+- `process_deployment`, `process_deployment_start`: deploy or start processes in the referenced namespace (`processes`) with the token of the owner. The deployment refers to the managing instance (`managed_by`). The engine reports completion with the message `deployment_done_<id>`, which the instance receives at once the next time it waits for it; waiting points name it with `senergy:messageName` (JavaScript).
+- `watcher`: checks device selections (or, with `ALLOW_GENERIC_WATCH_REQUESTS`, any request under the HTTP policy of the namespace) at intervals and starts a maintenance procedure on a change.
 
-Konfiguration: `DEVICE_MANAGER_URL`, `DEVICE_SELECTION_URL`, `FLOW_ENGINE_URL`, `FLOW_PARSER_URL`, `IMPORT_DEPLOY_URL`, `SERVING_SERVICE_URL`, `DEVICE_REPOSITORY_URL`, dazu die Optionen der Worker (`ANALYTICS_*`, `DEVICE_GROUP_*`, `INFO_ADDITIONAL_MODULE_DATA_FIELDS`, `WATCHER_MIN_INTERVAL`, `WATCHER_DEFAULT_INTERVAL`, `MODULE_HEALTH_CHECK_INTERVAL`). Ein Aufgabentyp ist nur registriert, wenn seine Dienste konfiguriert sind; sonst lehnt der Deploy ihn ab.
+Configuration: `DEVICE_MANAGER_URL`, `DEVICE_SELECTION_URL`, `FLOW_ENGINE_URL`, `FLOW_PARSER_URL`, `IMPORT_DEPLOY_URL`, `SERVING_SERVICE_URL`, `DEVICE_REPOSITORY_URL`, plus the options of the workers (`ANALYTICS_*`, `DEVICE_GROUP_*`, `INFO_ADDITIONAL_MODULE_DATA_FIELDS`, `WATCHER_MIN_INTERVAL`, `WATCHER_DEFAULT_INTERVAL`, `MODULE_HEALTH_CHECK_INTERVAL`). A task type is registered only when its services are configured; otherwise a deploy rejects it.
 
 API:
-- Module: `GET .../modules?instance_id=&module_type=&key=`, `GET|DELETE .../modules/{id}`. Gelöscht werden Ressourcen über eine Outbox mit Wiederholung; Instanzen mit Modulen fallen nicht unter die Aufbewahrung.
-- Status jeder Instanz (`status`, `status_message`): `running`, `ready`, `error` aus Laufzustand und Modulfehlern der stündlichen Gesundheitsprüfung.
-- Startparameter mit Optionen: `GET .../deployments/{id}/parameters`; `auto_select_all`-Felder füllt die Engine beim Start.
-- Parameter ändern: `PUT .../instances/{id}/parameters`. Jeder neue Lauf entfernt die Module des vorigen; `smart-services` lehnt deshalb Schleifen im Sequenzfluss ab (`forbid_cycles`).
-- Wartungsprozeduren: `GET .../instances/{id}/maintenance-procedures[/{procedure}/parameters]`, `POST .../{procedure}/start`. Message-Starts in `smart-services` starten nur so, nicht über `/messages`.
-- Variablen setzen und löschen auch bei beendeten Instanzen: `PUT|DELETE .../instances/{id}/variables/{name}`.
-- Deploy-Parameter je Element: `parameters` am Deployment überschreibt Eingaben, Eventvariablen, Timer und Startvorgaben.
-- Genutzte Ressourcen: Eine Version nennt die Prozessmodelle, Flows und Import-Typen ihrer Modul-Tasks (`used_resources`) und, was sich daran seit dem Deploy geändert hat oder gelöscht wurde (`changed_resources`). Geprüft wird alle `RESOURCE_CHECK_CYCLE` (Vorgabe `1h`, `off` schaltet ab) gegen `FLOW_REPO_URL` und `IMPORT_REPOSITORY_URL`. `GET /namespaces/{ns}/resource-usage/{kind}/{id}` zählt Versionen und Instanzen, die eine Ressource nutzen; ein genutztes Modell löscht nur ein Admin mit `?force=true`.
-- Instanzen je Version: `GET .../deployments/{id}/instance-count?version=` (Administratoren des Deployments).
+- Modules: `GET .../modules?instance_id=&module_type=&key=`, `GET|DELETE .../modules/{id}`. Resources are deleted through an outbox with retries; instances with modules are exempt from retention.
+- Status of every instance (`status`, `status_message`): `running`, `ready`, `error`, from the run state and the module errors of the hourly health check.
+- Start parameters with options: `GET .../deployments/{id}/parameters`; the engine fills `auto_select_all` fields on start.
+- Changing parameters: `PUT .../instances/{id}/parameters`. Every new run removes the modules of the previous one; `smart-services` therefore rejects loops in the sequence flow (`forbid_cycles`).
+- Maintenance procedures: `GET .../instances/{id}/maintenance-procedures[/{procedure}/parameters]`, `POST .../{procedure}/start`. Message starts in `smart-services` start only this way, not through `/messages`.
+- Setting and deleting variables, also on ended instances: `PUT|DELETE .../instances/{id}/variables/{name}`.
+- Deploy parameters per element: `parameters` on the deployment override inputs, event variables, timers and start defaults.
+- Used resources: a version names the process models, flows and import types of its module tasks (`used_resources`) and what of them changed or was deleted since the deploy (`changed_resources`). The check runs every `RESOURCE_CHECK_CYCLE` (default `1h`, `off` switches it off) against `FLOW_REPO_URL` and `IMPORT_REPOSITORY_URL`. `GET /namespaces/{ns}/resource-usage/{kind}/{id}` counts the versions and instances that use a resource; only an admin deletes a model in use, with `?force=true`.
+- Instances per version: `GET .../deployments/{id}/instance-count?version=` (administrators of the deployment).
 
 ## Debugging
 
-- `GET .../instances/{id}/debug`: aktueller Zustand mit aktiven Elementen, Wartegründen, Variablen, offenen Incidents und Durchlaufzählern von Elementen und Sequenzflüssen. Große Werte kommen gekürzt, `GET .../instances/{id}/variables/{name}` liefert sie einzeln.
-- `GET .../instances/{id}/live`: WebSocket mit Snapshot, Deltas und Endzustand; `after=<seq>` setzt nach einem Abbruch fort. Das Token kommt im `Authorization`-Header oder, für Browser, als erste Nachricht `{"type":"auth","token":"..."}`. Die zweite Variante gibt es nur mit `KEYCLOAK_CERT_URL`, weil das Token dann nicht über Kong läuft und die Engine die Signatur selbst prüft. Kong muss das Upgrade durchreichen.
-- `GET .../instances/{id}/history?seq=|time=`: Zustand nach einem Schritt des Verlaufs, rekonstruiert aus Vollständen und Aktivitäten; `first_seq` nennt den frühesten noch rekonstruierbaren Schritt.
-- `GET .../instances/{id}/event-evaluations?element_id=`: Auswertungen eines Geräteevents, rekonstruiert aus den Werten in Timescale, neben den tatsächlichen Korrelationen. Braucht `TIMESCALE_WRAPPER_URL`, `DEVICE_REPOSITORY_URL` und `AUTH_ENDPOINT` (Token des Owners); dieselben Werte erlauben `evaluate_events=true` am Debug-Zustand und am Live-Strom.
-- Im Go-Client: `client.Follow` führt Snapshot und Deltas zusammen und setzt nach Abbrüchen fort, `client.OpenHistory` geht Schritt für Schritt durch den Verlauf.
+- `GET .../instances/{id}/debug`: current state with active elements, reasons for waiting, variables, open incidents and pass counters of elements and sequence flows. Large values are cut; `GET .../instances/{id}/variables/{name}` returns them one by one.
+- `GET .../instances/{id}/live`: WebSocket with snapshot, deltas and final state; `after=<seq>` resumes after a disconnect. The token comes in the `Authorization` header or, for browsers, as the first message `{"type":"auth","token":"..."}`. The second form exists only with `KEYCLOAK_CERT_URL`, because the token then does not pass Kong and the engine verifies the signature itself. Kong has to pass the upgrade through.
+- `GET .../instances/{id}/history?seq=|time=`: the state after a step of the history, reconstructed from full states and activities; `first_seq` names the earliest step that can still be reconstructed.
+- `GET .../instances/{id}/event-evaluations?element_id=`: evaluations of a device event, reconstructed from the values in Timescale, next to the actual correlations. Needs `TIMESCALE_WRAPPER_URL`, `DEVICE_REPOSITORY_URL` and `AUTH_ENDPOINT` (token of the owner); the same values allow `evaluate_events=true` on the debug state and on the live stream.
+- In the Go client: `client.Follow` merges snapshot and deltas and resumes after disconnects, `client.OpenHistory` steps through the history.
 
-Mehrere Replicas brauchen keine Sticky Sessions: Jede Schreiboperation einer Instanz landet im Änderungsstrom (Tabelle `changes`), Postgres meldet ihn per LISTEN/NOTIFY, SQLite wird gepollt.
+Several replicas need no sticky sessions: every write operation of an instance lands in the change stream (table `changes`), Postgres announces it through LISTEN/NOTIFY, SQLite is polled.
 
 ## Tracing
 
-Wie in den anderen Plattformdiensten über `gin-middleware/otelx`:
-- Eingehende Anfragen übernehmen Trace-Kontext und Baggage des Aufrufers; otelx legt `user_id` und `username` aus dem Token in die Baggage.
-- Anfragen an Plattformdienste (permissions-v2, Notifier, import-deploy, HTTP-Antwortziele von Gerätekommandos) tragen Trace-Kontext und Baggage weiter. Nicht weitergegeben wird an device-selection, device-repository und Marshaller, deren Clients keinen Kontext annehmen.
-- Der Aufgabentyp `http` gibt nichts weiter: seine Ziele liegen außerhalb der Plattform, und die Baggage enthält Nutzer-IDs.
-- Jede Ausführung einer Aufgabe und jede Auswertung eines Geräteevents ist ein eigener Span; Instanz, Deployment, Namespace und Owner stehen als `automation_instance_id`, `automation_deployment_id`, `automation_namespace` und `user_id` in Span und Baggage. Die Ausführung läuft im Hintergrund, ihr Span beginnt deshalb einen eigenen Trace statt an der startenden Anfrage zu hängen.
-- Logeinträge mit Kontext (`InfoContext`, ...) tragen die Baggage und werden Ereignisse des Spans.
+As in the other platform services, through `gin-middleware/otelx`:
+- Incoming requests take over the trace context and baggage of the caller; otelx puts `user_id` and `username` from the token into the baggage.
+- Requests to platform services (permissions-v2, notifier, import-deploy, HTTP answer targets of device commands) carry trace context and baggage on. They are not passed to device-selection, device-repository and marshaller, whose clients take no context.
+- The task type `http` passes nothing on: its targets lie outside the platform, and the baggage contains user ids.
+- Every execution of a task and every evaluation of a device event is a span of its own; instance, deployment, namespace and owner are in span and baggage as `automation_instance_id`, `automation_deployment_id`, `automation_namespace` and `user_id`. Execution runs in the background, so its span starts a trace of its own instead of hanging off the starting request.
+- Log entries with context (`InfoContext`, ...) carry the baggage and become events of the span.
 
-## Rollen
+## Roles
 
-Dasselbe Binary läuft in zwei Rollen, getrennt skalierbar und an dieselbe Datenbank gebunden:
-- `ROLE=engine` (Vorgabe): API, Ausführung, Aufgaben, Zeitpläne.
-- `ROLE=event`: Event-Worker. Liest die Eventbeschreibungen aus der Datenbank, abonniert die zugehörigen Gerätedaten-Topics in der Consumer-Gruppe `EVENT_CONSUMER_GROUP` und korreliert Treffer direkt. Braucht `KAFKA_URL` und für die Auswertung `DEVICE_REPOSITORY_URL` mit den `AUTH_*`-Werten; das Unmarshalling läuft im Prozess. Ist device-repository nicht erreichbar, wird eine QoS-1-Nachricht erneut gelesen statt dem Owner gemeldet.
+The same binary runs in two roles, scalable separately and bound to the same database:
+- `ROLE=engine` (default): API, execution, tasks, schedules.
+- `ROLE=event`: event worker. Reads the event descriptions from the database, subscribes to the related device data topics in the consumer group `EVENT_CONSUMER_GROUP` and correlates matches directly. Needs `KAFKA_URL` and, for the evaluation, `DEVICE_REPOSITORY_URL` with the `AUTH_*` values; unmarshalling runs in the process. If device-repository is not reachable, a QoS 1 message is read again instead of being reported to the owner.
 
-## Gateway (Fog)
+## Gateway (fog)
 
-Mit `MODE=fog` läuft dasselbe Binary auf einem Gateway, als einziger Container des Prozessmoduls und mit SQLite:
-- Gerätekommandos gehen an `command/{lokale Geräte-ID}/{lokale Service-ID}` des Gateway-Brokers (`MQTT_BROKER`, z. B. `tcp://broker:1881`); Antworten kommen über `response/#`, Fehler über `error/command/#`, erkannt am Präfix `LOCAL_COMMAND_PREFIX` (Vorgabe `automation-engine-`).
-- Geräteevents kommen von `event/#`; die Event-Rolle läuft im selben Prozess.
-- `DEVICE_REPOSITORY_URL` ist der device-repository-Mirror des Gateways, ohne Token; marshallt wird im Prozess.
-- `LAST_VALUE_URL` ist mgw-last-value, für Services, die nur Events senden.
-- `NOTIFIER_URL` zeigt auf den cloud-proxy (`http://{gateway}/notifications-v2/notifications`).
-- `STORAGE_BUDGET` begrenzt die Datenbank in Bytes (Vorgabe im Fog 1 GiB, negativ heißt unbegrenzt). Ab 80 % wird der Verlauf über die Aufbewahrung hinaus gekürzt, älteste Einträge zuerst, bis 70 %, mit einer Warnung je Tag. Ist der Datenträger voll, hält die Ausführung an und `/health` meldet einen Fehler, bis Schreiben wieder gelingt.
-- Die API ist lokal nur lesend und braucht kein Token; Deployments, Starts und Stopps kommen über die Synchronisation aus der Cloud.
-- `LEGACY_IO_POSTGRES` (DSN der Postgres von process-io-worker des alten Prozessmoduls) übernimmt beim ersten Start einmalig deren Werte; Werte von Instanzen entfallen, weil die Instanzen aus Camunda nicht weiterlaufen. `LEGACY_IO_OWNER` setzt den Owner der Werte, weil das Camunda des Gateways keine Nutzer der Plattform kannte. Deployments und Starts des Gateways kommen aus der Cloud, die sie bei der Migration aus process-sync übernimmt.
+With `MODE=fog`, the same binary runs on a gateway, as the only container of the process module and with SQLite:
+- Device commands go to `command/{local device id}/{local service id}` of the gateway broker (`MQTT_BROKER`, e.g. `tcp://broker:1881`); answers come through `response/#`, errors through `error/command/#`, recognised by the prefix `LOCAL_COMMAND_PREFIX` (default `automation-engine-`).
+- Device events come from `event/#`; the event role runs in the same process.
+- `DEVICE_REPOSITORY_URL` is the device-repository mirror of the gateway, without a token; marshalling happens in the process.
+- `LAST_VALUE_URL` is mgw-last-value, for services that only send events.
+- `NOTIFIER_URL` points to the cloud proxy (`http://{gateway}/notifications-v2/notifications`).
+- `STORAGE_BUDGET` limits the database in bytes (default in the fog 1 GiB, negative means unlimited). From 80 %, the history is trimmed beyond retention, oldest entries first, down to 70 %, with one warning per day. If the disk is full, execution stops and `/health` reports an error until writing succeeds again.
+- The local API is read-only and needs no token; deployments, starts and stops come from the cloud through the synchronisation.
+- `LEGACY_IO_POSTGRES` (DSN of the Postgres of process-io-worker of the old process module) takes over its values once on the first start; values of instances are dropped, because the instances from Camunda do not continue. `LEGACY_IO_OWNER` sets the owner of the values, because the Camunda of the gateway knew no platform users. Deployments and starts of the gateway come from the cloud, which takes them over from process-sync during the migration.
 
-Images gibt es für `linux/amd64` und `linux/arm64`, nicht für `arm/v7`. Das Dockerfile kompiliert auf der Plattform des Build-Hosts für die Zielplattform, arm64 braucht deshalb keine Emulation.
+Images exist for `linux/amd64` and `linux/arm64`, not for `arm/v7`. The Dockerfile compiles on the platform of the build host for the target platform, so arm64 needs no emulation.
 
-## Synchronisation mit Gateways
+## Synchronisation with gateways
 
-In der Cloud verbindet `SYNC_MQTT_BROKER` die Engine mit dem Broker, den die Gateways über mgw-device-cloud-connector erreichen. Deployments für ein Gateway entstehen über dieselbe API mit `network_id` (die Hub-ID) und laufen dort, nicht in der Cloud; Instanzen eines Gateways startet, stoppt und löscht die Cloud, ihren Zustand meldet das Gateway. Die Replicas teilen die Nachrichten der Gateways (`SYNC_SHARE_GROUP`); das Protokoll bestätigt und sendet selbst erneut (`SYNC_RESEND_AFTER`), Gateways ohne Kontakt seit `SYNC_OFFLINE_AFTER` gelten als offline, nach `NETWORK_CLEANUP_MAX_AGE` werden ihre Daten entfernt. `GET /networks` zeigt Kontakt, Versionen und Rückstand je Gateway, `GET /networks/{id}` Soll- und Ist-Zustand je Ressource. Rechte auf Gateways prüft permissions-v2 (Topic `hubs`: `rx` zum Lesen und Starten, `a` zum Deployen). Das Protokoll ist in `pkg/fogsync/protocol.go` beschrieben.
+In the cloud, `SYNC_MQTT_BROKER` connects the engine to the broker the gateways reach through mgw-device-cloud-connector. Deployments for a gateway are created through the same API with `network_id` (the hub id) and run there, not in the cloud; the cloud starts, stops and deletes the instances of a gateway, the gateway reports their state. The replicas share the messages of the gateways (`SYNC_SHARE_GROUP`); the protocol acknowledges and resends by itself (`SYNC_RESEND_AFTER`), gateways without contact since `SYNC_OFFLINE_AFTER` count as offline, and after `NETWORK_CLEANUP_MAX_AGE` their data is removed. `GET /networks` shows contact, versions and backlog per gateway, `GET /networks/{id}` the desired and the actual state per resource. permissions-v2 checks the rights on gateways (topic `hubs`: `rx` to read and start, `a` to deploy). The protocol is described in `pkg/fogsync/protocol.go`.
 
-Debug-Routen und der Live-Endpunkt einer Gateway-Instanz fragen das Gateway über dasselbe Protokoll an und warten höchstens `SYNC_CALL_TIMEOUT` (Vorgabe 10 s). Ist es nicht erreichbar, antwortet der Debug-Zustand mit dem zuletzt gemeldeten Stand und `offline: true`, die übrigen Routen mit 503.
+Debug routes and the live endpoint of a gateway instance ask the gateway through the same protocol and wait at most `SYNC_CALL_TIMEOUT` (default 10 s). If it is not reachable, the debug state answers with the last reported state and `offline: true`, the other routes with 503.
 
-Deployments ausschalten: `PUT .../deployments/{id}/disabled` mit `{"disabled": true}` stoppt laufende Instanzen; danach startet das Deployment nichts mehr, auch nicht über Nachrichten und Zeitpläne, bis es wieder eingeschaltet wird. Nur Cloud-Deployments.
+Switching deployments off: `PUT .../deployments/{id}/disabled` with `{"disabled": true}` stops running instances; after that the deployment starts nothing, not through messages and schedules either, until it is switched on again. Cloud deployments only.
 
-Namespaces aus `NAMESPACES` werden nur angelegt, wenn es sie noch nicht gibt; danach verwaltet `PUT /namespaces/{ns}` sie (Admins).
+Namespaces from `NAMESPACES` are created only if they do not exist yet; after that, `PUT /namespaces/{ns}` manages them (admins).
 
 ## API
 
-OpenAPI in `docs/swagger.json` und `docs/swagger.yaml`, erzeugt mit `go generate ./...` aus den Go-Typen in `pkg/model` und den Annotationen in `pkg/api`. Nach Änderungen an API oder Typen neu erzeugen und mit einchecken.
+OpenAPI in `docs/swagger.json` and `docs/swagger.yaml`, generated with `go generate ./...` from the Go types in `pkg/model` and the annotations in `pkg/api`. Regenerate after changes to the API or the types and check the files in.
 
-AsyncAPI 3.0.0 in `docs/asyncapi.json`: die Kafka-Topics und MQTT-Topics, die die Engine liest und schreibt (Gerätekommandos, Geräte- und Importdaten, Plattformsignale, Gateway, Synchronisation). Erzeugt ebenfalls mit `go generate ./...` durch `docs/asyncapi-gen`; die Nutzdaten-Schemas stammen aus den Go-Typen der Nachrichten, die Topic-Namen aus den Vorgaben der Konfiguration. Anders als bei anderen Plattformdiensten gibt es keine Umwandlung von 2.4.0 von Hand, und CI prüft die Datei wie die OpenAPI.
+AsyncAPI 3.0.0 in `docs/asyncapi.json`: the Kafka topics and MQTT topics the engine reads and writes (device commands, device and import data, platform signals, gateway, synchronisation). Also generated with `go generate ./...`, by `docs/asyncapi-gen`; the payload schemas come from the Go types of the messages, the topic names from the defaults of the configuration. Unlike other platform services, there is no conversion from 2.4.0 by hand, and CI checks the file as it does the OpenAPI.
 
-Go-Client in `pkg/client`: `client.New(url)` für einen laufenden Server, `client.NewTestClient(ctx)` für Tests ohne Netz und Container; beide erfüllen dasselbe Interface.
+Go client in `pkg/client`: `client.New(url)` for a running server, `client.NewTestClient(ctx)` for tests without network and containers; both implement the same interface.
 
-## Modelle aus Camunda
+## Models from Camunda
 
-`POST /namespaces/{ns}/convert` schreibt ein Modell für Camunda 7 in das Format der Engine um, ohne etwas zu speichern (MIG-04). JUEL wird zu JavaScript (ein einzelner Ausdruck behält seinen Typ, Text mit Ausdrücken wird ein Template-Literal, in dem `null` leer ist wie in JUEL), Groovy mit `println` zu `log`, die Topics `pessimistic`, `optimistic`, `process_io` und die der Module zu Aufgabentypen, der `http-connector` zum Aufgabentyp `notification` (Ziel `notification` des alten process-deployment) bzw. `http`, Nachrichtennamen wie `${done_event}` zu `senergy:messageName`. Die Antwort nennt, was umgeschrieben wurde, was von Hand zu prüfen ist und was nicht unterstützt wird (`mail-send`, Bedingungen ohne Sprache), dazu die Befunde unter den Regeln des Namespace. Bekannte Abweichungen zu Camunda: Ein String `"false"` ist in JUEL bei `== false` ein Boolean, in JavaScript nicht; ganzzahlige Doubles erscheinen in Texten als `30` statt `30.0`.
+`POST /namespaces/{ns}/convert` rewrites a model written for Camunda 7 into the format of the engine without storing anything (MIG-04). JUEL becomes JavaScript (a single expression keeps its type, text with expressions becomes a template literal in which `null` is empty as in JUEL), Groovy with `println` becomes `log`, the topics `pessimistic`, `optimistic`, `process_io` and those of the modules become task types, the `http-connector` becomes the task type `notification` (target `notification` of the old process-deployment) or `http`, message names like `${done_event}` become `senergy:messageName`. The answer names what was rewritten, what has to be checked by hand and what is not supported (`mail-send`, conditions without a language), plus the findings under the rules of the namespace. Known differences to Camunda: a string `"false"` is a boolean in JUEL for `== false`, in JavaScript it is not; integral doubles appear in texts as `30` instead of `30.0`.
 
 
-## Migration aus Camunda
+## Migration from Camunda
 
-`automation-engine migrate` übernimmt die Daten der alten Dienste (MIG-01 bis MIG-09). Die Engine wird wie zum Betrieb konfiguriert (`-config`, Umgebung); sie braucht `permissions_v2_url` und `auth_endpoint`, weil das Werkzeug als Admin schreibt und Rechte überträgt. Die Quellen:
+`automation-engine migrate` takes over the data of the old services (MIG-01 to MIG-09). The engine is configured as for operation (`-config`, environment); it needs `permissions_v2_url` and `auth_endpoint`, because the tool writes as admin and transfers rights. The sources:
 
-- `MIGRATE_MONGO_URL`: die MongoDB der alten Dienste; Datenbanken nach den Namen der Plattform, änderbar mit `-db-*`.
-- `-camunda`: Basis-URLs der Camunda-Engines (alle Shards), jeweils bis `/engine-rest`; `-camunda-user` und `MIGRATE_CAMUNDA_PASSWORD` für die Basic-Auth.
+- `MIGRATE_MONGO_URL`: the MongoDB of the old services; databases by the names of the platform, changeable with `-db-*`.
+- `-camunda`: base URLs of the Camunda engines (all shards), each up to `/engine-rest`; `-camunda-user` and `MIGRATE_CAMUNDA_PASSWORD` for basic auth.
 
-Ohne `-apply` ist es ein Trockenlauf. Ein Lauf legt nur an, was fehlt, behält IDs und leitet nötige neue IDs aus den alten ab; er lässt sich also wiederholen. Der Bericht nennt je Schritt, was übernommen, geplant, schon vorhanden, übersprungen, zu entscheiden oder fehlgeschlagen ist; Exit-Code 0 heißt vollständig, 1 offen oder teilweise, 2 nicht gelaufen. Zu entscheiden sind Ressourcen ohne gültigen Owner (`-owner alt=neu`), Modelle mit nicht unterstützten Teilen (z. B. `mail-send`) und Deployments, die nur in Camunda existieren (`-camunda-only <ids>`). `-no-restart` listet laufende Instanzen nur auf, statt sie neu zu starten; mit `-json` kommt der Bericht als JSON.
+Without `-apply`, it is a dry run. A run creates only what is missing, keeps ids and derives necessary new ids from the old ones, so it can be repeated. The report names per step what was taken over, planned, already present, skipped, left to decide or failed; exit code 0 means complete, 1 open or partial, 2 not run. Left to decide are resources without a valid owner (`-owner old=new`), models with unsupported parts (e.g. `mail-send`) and deployments that exist only in Camunda (`-camunda-only <ids>`). `-no-restart` only lists running instances instead of restarting them; with `-json`, the report comes as JSON.
 
-Modelle bleiben im Format des alten Designers, Deployments werden umgeschrieben und behalten den Bezug zum Modell, wenn Owner und BPMN übereinstimmen. Laufende Instanzen starten neu, mit dem Business Key als ID, wo er eindeutig ist, und den aktuellen Werten der Variablen, die wie die Startfelder heißen. IO-Werte folgen ihrer Instanz in Schlüssel und Bindung; Werte beendeter Instanzen entfallen.
+Models stay in the format of the old designer; deployments are rewritten and keep their reference to the model when owner and BPMN match. Running instances restart, with the business key as id where it is unique, and with the current values of the variables named like the start fields. IO values follow their instance in key and binding; values of ended instances are dropped.
 
-Smart-Service-Designs werden Modelle im Namespace `smart-services`, die Releases eines Designs die Versionen eines Deployments mit der ID des neuesten Releases. Instanzen, deren Einrichtung beendet ist, werden mit ihren Modulen und Variablen übernommen und nicht erneut ausgeführt, weil das jedes Modul ein zweites Mal anlegen würde; eine Instanz in der Einrichtung startet neu. Löschverweise von Modulen auf process-deployment und process-sync werden zu Deployments und Instanzen der Engine, andere URLs bleiben. Was process-sync für Gateways hält, wird Deployment und Start des Netzes und läuft, sobald das Gateway die Engine hat; Owner ist der eine Administrator des Hubs oder der mit `-owner network:<id>=<user>` genannte.
+Smart service designs become models in the namespace `smart-services`, the releases of a design the versions of one deployment with the id of the newest release. Instances whose setup has ended are taken over with their modules and variables and not run again, because that would create every module a second time; an instance still in setup restarts. Delete references of modules to process-deployment and process-sync become deployments and instances of the engine, other URLs stay. What process-sync holds for gateways becomes a deployment and a start of the network and runs as soon as the gateway has the engine; the owner is the one administrator of the hub or the one named with `-owner network:<id>=<user>`.
 
 ## Tests
 
 ```sh
-go test ./...          # mit den Container-Varianten der Integrationstests
-go test -short ./...   # ohne sie, wie die CI
+go test ./...          # with the container variants of the integration tests
+go test -short ./...   # without them, as CI runs
 ```
 
-Store- und Engine-Tests laufen gegen SQLite und gegen Postgres in einem Container (testcontainers). Ohne Container-Runtime werden die Postgres-Varianten übersprungen; `AE_TEST_POSTGRES=off` schaltet sie ab. Der Vergleich der Umschreibung mit Camunda 7.24 (MIG-05) und die Leser der Migration starten Camunda und MongoDB ebenfalls im Container; `AE_TEST_CAMUNDA=off` und `AE_TEST_MONGO=off` schalten sie ab. `AE_BPMN_EXPORT_DIR=<Verzeichnis>` prüft Parser und Umschreibung zusätzlich gegen exportierte Modelle.
+Store and engine tests run against SQLite and against Postgres in a container (testcontainers). Without a container runtime, the Postgres variants are skipped; `AE_TEST_POSTGRES=off` switches them off. The comparison of the rewrite with Camunda 7.24 (MIG-05) and the readers of the migration start Camunda and MongoDB in containers as well; `AE_TEST_CAMUNDA=off` and `AE_TEST_MONGO=off` switch them off. `AE_BPMN_EXPORT_DIR=<directory>` additionally checks parser and rewrite against exported models.
 
-`pkg/integration` spielt die üblichen Abläufe von Nutzern über HTTP gegen einen vollständigen Server durch: Prozess vom Modell bis zum Abschluss, Zeitplan mit Aus- und Einschalten, Incident mit Reparatur über eine neue Version, Werte über process-io, der Weg des web-ui über die `deprecated/`-Routen, ein Smart Service vom Design bis zum Upgrade und ein Smart Service, der einen Prozess verwaltet. Die Event-Szenarien starten dazu eine eigene Event-Rolle auf derselben Datenbank: ein wartender Prozess, den ein Gerät oder ein Import fortsetzt (mit Umrechnung Kelvin nach Celsius), und Starts durch die Geräte einer Gruppe, die beim ausgeschalteten Deployment ausbleiben. Die Tests der übrigen Pakete prüfen einzelne Funktionen. Jedes Szenario läuft zweimal: `fakes` mit Stand-ins im Prozess (permissions-v2 im Prozess, SQLite, für die Events ein Kafka-Ersatz und ein Fake für device-repository, import-deploy, import-repository und Keycloak) und `containers` gegen die echten Abhängigkeiten in Testcontainers (Postgres, MongoDB, Kafka und die `:dev`-Images von permissions-v2, device-repository, import-repository und import-deploy; Keycloak und Rancher bleiben Stand-ins, weil die Dienste im Test keine Signaturen prüfen und import-deploy sonst Import-Container starten würde). Die Container starten einmal je Testlauf und werden geteilt; ohne Docker schlägt die Variante fehl statt sich zu überspringen. `go test -short ./...` überspringt die Container-Varianten; so läuft die CI.
+`pkg/integration` plays through the usual user flows over HTTP against a complete server: a process from model to completion, a schedule with switching off and on, an incident repaired through a new version, values through process-io, the path of the web-ui through the `deprecated/` routes, a smart service from design to upgrade and a smart service that manages a process. The event scenarios additionally start an event role of their own on the same database: a waiting process continued by a device or an import (with conversion from kelvin to celsius), and starts by the devices of a group, which stay away while the deployment is switched off. The tests of the other packages check single features. Every scenario runs twice: `fakes` with stand-ins in the process (permissions-v2 in the process, SQLite, for the events a Kafka stand-in and a fake for device-repository, import-deploy, import-repository and Keycloak) and `containers` against the real dependencies in testcontainers (Postgres, MongoDB, Kafka and the `:dev` images of permissions-v2, device-repository, import-repository and import-deploy; Keycloak and Rancher stay stand-ins, because the services do not verify signatures in tests and import-deploy would otherwise start import containers). The containers start once per test run and are shared; without Docker, the variant fails instead of skipping itself. `go test -short ./...` skips the container variants; that is how CI runs.
 
-### Dauertest (LONG-15)
+### Soak test (LONG-15)
 
-`pkg/soak` lässt eine Gateway-Engine mit einer Cloud-Engine im selben Prozess unter gleichmäßiger Last laufen: Die Cloud startet Instanzen eines Prozesses, der auf ein Geräteevent wartet, ein Gerät abfragt, eine Sekunde wartet und eine Variable von etwa 1 KiB schreibt; simulierte Geräte antworten über den Broker des Gateways und senden Events. Die Verbindung zur Cloud fällt zeitweise aus. In festen Abständen landen Größe der Datenbank, belegter Platz, Heap, Goroutinen, offene Dateien, Instanzen und Rückstand der Synchronisation in einer CSV.
+`pkg/soak` runs a gateway engine with a cloud engine in the same process under steady load: the cloud starts instances of a process that waits for a device event, queries a device, waits one second and writes a variable of about 1 KiB; simulated devices answer through the broker of the gateway and send events. The connection to the cloud drops at times. At fixed intervals, the size of the database, the used space, heap, goroutines, open files, instances and the backlog of the synchronisation land in a CSV.
 
-Ohne `SOAK_DURATION` läuft er 5 s lang in der normalen Suite und prüft nur, dass alle gestarteten Instanzen abschließen. Ab 30 min prüft er zusätzlich, dass die Ressourcen nach dem Einschwingen nicht weiter wachsen: Datenbankdatei, Heap, Goroutinen und offene Dateien im letzten Viertel gegen das zweite. Der belegte Platz muss im Median des letzten Viertels unter dem Budget liegen; Spitzen darüber sind erlaubt, weil das Budget nur je Aufräumrunde durchgesetzt wird und Instanzen nach einer Offline-Phase bleiben, bis die Cloud ihr Ende kennt.
+Without `SOAK_DURATION`, it runs for 5 s in the normal suite and only checks that all started instances complete. From 30 min on, it additionally checks that the resources stop growing after settling: database file, heap, goroutines and open files in the last quarter against the second. The median of the used space in the last quarter has to stay below the budget; peaks above it are allowed, because the budget is enforced only per cleanup round and instances stay after an offline phase until the cloud knows their end.
 
-Auf einem arm64-Gateway als vorab übersetztes Testbinary:
+On an arm64 gateway, as a pre-built test binary:
 
 ```sh
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c -o soak.test ./pkg/soak
-# auf dem Gateway
+# on the gateway
 SOAK_DURATION=72h SOAK_DIR=/data/soak ./soak.test -test.run TestSoak -test.timeout 0 -test.v
 ```
 
-Variablen: `SOAK_DURATION`, `SOAK_DIR` (Datenbanken und Bericht, Vorgabe ein temporäres Verzeichnis), `SOAK_REPORT` (CSV, Vorgabe `SOAK_DIR/soak.csv`), `SOAK_SAMPLE_INTERVAL`, `SOAK_STARTS_PER_SECOND` (Vorgabe 2), `SOAK_EVENT_INTERVAL` (Vorgabe 500 ms), `SOAK_STORAGE_BUDGET` (Vorgabe 32 MiB; Änderungsstrom und Empfangsbelege werden erst nach 1 h und 24 h aufgeräumt, ein zu kleines Budget lässt keinen Verlauf übrig), `SOAK_OFFLINE_EVERY` und `SOAK_OFFLINE_FOR` (Vorgabe ein Viertel und ein Vierzigstel der Dauer). `SOAK_MQTT_BROKER` mit `SOAK_MQTT_USER` und `SOAK_MQTT_PASSWORD` nutzt einen echten Broker statt eines im Prozess; die Synchronisation läuft dann über dessen Topics `processes/cmd/...` und `processes/state/...`, deshalb auf einem Gateway ohne laufenden mgw-device-cloud-connector, sonst erreichen die Nachrichten die echte Cloud. Marshaller und Geräte-Repository sind im Test nachgebildet; gemessen wird das Verhalten der Engine über die Zeit, nicht die Umrechnung von Werten.
+Variables: `SOAK_DURATION`, `SOAK_DIR` (databases and report, default a temporary directory), `SOAK_REPORT` (CSV, default `SOAK_DIR/soak.csv`), `SOAK_SAMPLE_INTERVAL`, `SOAK_STARTS_PER_SECOND` (default 2), `SOAK_EVENT_INTERVAL` (default 500 ms), `SOAK_STORAGE_BUDGET` (default 32 MiB; the change stream and receipts are cleaned up only after 1 h and 24 h, a budget that is too small leaves no history), `SOAK_OFFLINE_EVERY` and `SOAK_OFFLINE_FOR` (default a quarter and a fortieth of the duration). `SOAK_MQTT_BROKER` with `SOAK_MQTT_USER` and `SOAK_MQTT_PASSWORD` uses a real broker instead of one in the process; the synchronisation then runs over its topics `processes/cmd/...` and `processes/state/...`, so use it on a gateway without a running mgw-device-cloud-connector, otherwise the messages reach the real cloud. Marshaller and device repository are simulated in the test; what is measured is the behaviour of the engine over time, not the conversion of values.

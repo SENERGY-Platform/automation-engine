@@ -232,7 +232,7 @@ func TestDeclarationsMarkDeprecatedFieldsOfTheModels(t *testing.T) {
 			"    /** @deprecated alias for a single element AspectNodes; holds the node with the alphabetically first id */\n    aspect_node: AspectNode;",
 		},
 		ModuleJsDoc: {" * @property { string } aspect_id deprecated: alias for a single element AspectIds"},
-		Reference:   {"- `aspect_id: string` (abgekündigt: alias for a single element AspectIds"},
+		Reference:   {"- `aspect_id: string` (deprecated: alias for a single element AspectIds"},
 	} {
 		for _, e := range expected {
 			if !strings.Contains(files[name], e) {
