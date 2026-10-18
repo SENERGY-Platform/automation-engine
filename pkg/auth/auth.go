@@ -71,7 +71,11 @@ func (this *TokenExchange) Token(userId string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	result := "Bearer " + token.Jwt()
+	// Jwt returns what the exchange parsed, which already starts with "Bearer "
+	result := token.Jwt()
+	if !strings.HasPrefix(strings.ToLower(result), "bearer ") {
+		result = "Bearer " + result
+	}
 	this.mux.Lock()
 	this.cache[userId] = cachedToken{token: result, expires: time.Now().Add(expiration)}
 	this.mux.Unlock()
