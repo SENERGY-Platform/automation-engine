@@ -1,0 +1,166 @@
+# Adds the platform services to docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.platform.yml up --build
+#
+# Kafka, MongoDB, permissions-v2, device-repository, marshaller and converter in the images the
+# platform deploys, and the event role of the engine. Sharing goes through permissions-v2.
+# Device commands go to the Kafka topic of the protocol handler ("connector"), where devicesim
+# answers in place of platform-connector and the devices; examples/seed-devices.sh creates a
+# device to command. Device data on Kafka reaches the event role. Kafka is reachable from the
+# host on localhost:29092.
+
+services:
+  mongo:
+    image: mongo:7.0
+    volumes:
+      - mongo:/data/db
+
+  kafka:
+    image: apache/kafka:3.9.1
+    environment:
+      KAFKA_NODE_ID: "1"
+      CLUSTER_ID: "IrzuggcFT-mWom7mj7PgtA"
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_LISTENERS: INTERNAL://:9092,HOST://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_NUM_PARTITIONS: "1"
+    ports:
+      - "127.0.0.1:29092:29092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  # the topics the engine and the event role subscribe to at start; a consumer that starts
+  # before its topic exists gets no partition
+  kafka-init:
+    image: apache/kafka:3.9.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        for topic in device-types protocols devices device-groups concepts characteristics functions aspects user response errors connector;
+        do /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $$topic --partitions 1 --replication-factor 1 || exit 1;
+        done
+
+  permissions-v2:
+    image: ghcr.io/senergy-platform/permissions-v2:dev
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+    restart: on-failure
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      KAFKA_URL: kafka:9092
+      # devauth logs what would go to developer-notifications
+      DEV_NOTIFIER_URL: http://devauth:8080
+    ports:
+      - "127.0.0.1:8083:8080"
+
+  device-repository:
+    image: ghcr.io/senergy-platform/device-repository:dev
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+      permissions-v2:
+        condition: service_started
+    restart: on-failure
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      KAFKA_URL: kafka:9092
+      PERMISSIONS_V2_URL: http://permissions-v2:8080
+    ports:
+      - "127.0.0.1:8084:8080"
+
+  converter:
+    image: ghcr.io/senergy-platform/converter:dev
+
+  marshaller:
+    image: ghcr.io/senergy-platform/marshaller:dev
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      device-repository:
+        condition: service_started
+      converter:
+        condition: service_started
+    restart: on-failure
+    environment:
+      SERVER_PORT: "8080"
+      DEVICE_REPOSITORY_URL: http://device-repository:8080
+      CONVERTER_URL: http://converter:8080
+      AUTH_ENDPOINT: http://devauth:8080
+      AUTH_CLIENT_ID: marshaller
+      KAFKA_URL: kafka:9092
+    ports:
+      - "127.0.0.1:8085:8080"
+
+  # answers device commands in place of platform-connector and the devices
+  devicesim:
+    build:
+      context: .
+      dockerfile: tools/devicesim/Dockerfile
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: on-failure
+    environment:
+      KAFKA_URL: kafka:9092
+      TOPICS: connector
+      NUMBER: "21.5"
+
+  engine:
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      permissions-v2:
+        condition: service_started
+      device-repository:
+        condition: service_started
+      marshaller:
+        condition: service_started
+    environment: &platform
+      PERMISSIONS_V2_URL: http://permissions-v2:8080
+      DEVICE_REPOSITORY_URL: http://device-repository:8080
+      MARSHALLER_URL: http://marshaller:8080
+      AUTH_ENDPOINT: http://devauth:8080
+      AUTH_CLIENT_ID: automation-engine
+      KAFKA_URL: kafka:9092
+
+  engine-events:
+    image: automation-engine:local
+    pull_policy: never
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      engine:
+        condition: service_started
+    restart: on-failure
+    environment:
+      <<: *platform
+      ROLE: event
+      DATABASE: postgres
+      POSTGRES_DSN: postgres://engine:engine@postgres:5432/engine?sslmode=disable
+      INTERNAL_PORT: "8081"
+      LOG_LEVEL: info
+      OTEL_ENDPOINT: "off"
+
+volumes:
+  mongo:

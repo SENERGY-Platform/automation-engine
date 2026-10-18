@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Waits for the message "go" after doubling the start value "level"; see "Running locally" in README.md -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:senergy="https://senergy.infai.org" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_1">
+  <bpmn:message id="m" name="go"/>
+  <bpmn:process id="wait_for_message" name="Wait for go" isExecutable="true">
+    <bpmn:startEvent id="start">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="level" label="level" type="string" defaultValue="5"/>
+        </camunda:formData>
+      </bpmn:extensionElements>
+    </bpmn:startEvent>
+    <bpmn:scriptTask id="double" scriptFormat="javascript" camunda:resultVariable="doubled">
+      <bpmn:script>level * 2</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:intermediateCatchEvent id="wait">
+      <bpmn:messageEventDefinition messageRef="m"/>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="end"/>
+    <bpmn:sequenceFlow id="f_start_double" sourceRef="start" targetRef="double"/>
+    <bpmn:sequenceFlow id="f_double_wait" sourceRef="double" targetRef="wait"/>
+    <bpmn:sequenceFlow id="f_wait_end" sourceRef="wait" targetRef="end"/>
+  </bpmn:process>
+</bpmn:definitions>

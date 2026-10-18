@@ -1,0 +1,62 @@
+# Local setup for trying the engine by hand; see "Running locally" in README.md.
+#
+#   docker compose up --build
+#   TOKEN=$(curl -s localhost:8090/token/alice)
+#   curl -H "Authorization: $TOKEN" localhost:8080/namespaces
+#
+# The engine runs with Postgres and without the platform services: only owners and admins have
+# access, there are no device commands and no device events. docker-compose.platform.yml adds
+# Kafka, permissions-v2, device-repository and the event role.
+#
+# devauth stands in for Keycloak and issues unsigned tokens. The engine accepts them because
+# KEYCLOAK_CERT_URL is not set. Not for anything but a local machine.
+
+name: automation-engine
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: engine
+      POSTGRES_PASSWORD: engine
+      POSTGRES_DB: engine
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U engine -d engine"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  devauth:
+    build:
+      context: .
+      dockerfile: tools/devauth/Dockerfile
+    ports:
+      - "127.0.0.1:8090:8080"
+
+  engine:
+    build: .
+    image: automation-engine:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+    environment:
+      DATABASE: postgres
+      POSTGRES_DSN: postgres://engine:engine@postgres:5432/engine?sslmode=disable
+      SERVER_PORT: "8080"
+      INTERNAL_PORT: "8081"
+      LOG_LEVEL: info
+      # no collector locally
+      OTEL_ENDPOINT: "off"
+    ports:
+      # API
+      - "127.0.0.1:8080:8080"
+      # metrics and HTTP answers of devices
+      - "127.0.0.1:8081:8081"
+
+volumes:
+  postgres:

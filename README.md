@@ -22,6 +22,63 @@ For platform operation, add:
 - `MAX_LIVE_CONNECTIONS_PER_USER` (default 5): live debug connections per user and replica.
 - `OTEL_ENDPOINT`: OTLP collector (gRPC) for traces. Empty means the default of `gin-middleware/otelx` (`jaeger.logging.svc.cluster.local:4317`), `off` switches tracing off, for example in the fog or locally.
 
+### Running locally with Docker Compose
+
+For trying the engine by hand, `docker-compose.yml` starts it with Postgres and `devauth`, a stand-in for Keycloak (`tools/devauth`):
+
+```sh
+docker compose up --build
+```
+
+| Service | Port on localhost | |
+|---|---|---|
+| engine | 8080, 8081 | API; metrics and device answers |
+| devauth | 8090 | `GET /token/{user}[?roles=admin]` returns a token to paste |
+| postgres | 5433 | user, password and database `engine` |
+
+The engine does not verify token signatures without `KEYCLOAK_CERT_URL`, so the unsigned tokens of devauth are accepted. Without permissions-v2, only owners and admins have access. A walkthrough with the example model (needs `jq`):
+
+```sh
+TOKEN=$(curl -s localhost:8090/token/alice)
+DEPLOYMENT=$(jq -Rs '{name: "Wait for go", xml: .}' examples/wait-for-message.bpmn \
+  | curl -s -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d @- localhost:8080/namespaces/processes/deployments | jq -r .id)
+INSTANCE=$(curl -s -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"deployment_id\": \"$DEPLOYMENT\", \"variables\": {\"level\": 21}}" localhost:8080/namespaces/processes/instances | jq -r .id)
+curl -s -H "Authorization: $TOKEN" localhost:8080/namespaces/processes/instances/$INSTANCE/debug | jq .
+curl -s -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "{\"name\": \"go\", \"instance_id\": \"$INSTANCE\"}" localhost:8080/messages
+curl -s -H "Authorization: $TOKEN" localhost:8080/namespaces/processes/instances/$INSTANCE/variables | jq .
+```
+
+The routes are in `docs/swagger.json`, which API tools such as Postman or Bruno import.
+
+`docker-compose.platform.yml` adds MongoDB, Kafka (on `localhost:29092` for the host), permissions-v2 (8083), device-repository (8084), marshaller (8085), converter, the event role of the engine and `devicesim` (`tools/devicesim`), in the images the platform deploys:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.platform.yml up --build
+```
+
+Sharing then goes through permissions-v2, e.g. `PUT localhost:8083/manage/processes_models/{id}` with the token of the owner; in the namespace `processes` only models are shareable, in `smart-services` all kinds. devauth also takes the messages permissions-v2 sends to developer-notifications and prints them (`docker compose logs devauth`).
+
+Device commands go through the marshaller to the Kafka topic of the protocol handler. `devicesim` answers there in place of platform-connector and the devices: numbers get `NUMBER` (default 21.5), and what a setter receives shows in `docker compose logs devicesim`. `examples/seed-devices.sh` creates a thermostat of alice with a service that reads the room temperature and one that sets the target; `examples/thermostat.bpmn` uses both, with the device selected at deploy:
+
+```sh
+./examples/seed-devices.sh
+TOKEN=$(curl -s localhost:8090/token/alice)
+DEVICE=$(curl -s -H "Authorization: $TOKEN" "localhost:8084/devices/thermostat-1?as=local_id&owner_id=alice" | jq -r .id)
+DEPLOYMENT=$(jq -Rs --arg d "$DEVICE" '{name: "Thermostat", xml: ., selections: {
+    read: {device_id: $d, service_id: "urn:infai:ses:service:local-get-temperature"},
+    set: {device_id: $d, service_id: "urn:infai:ses:service:local-set-temperature"}}}' examples/thermostat.bpmn \
+  | curl -s -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d @- localhost:8080/namespaces/processes/deployments | jq -r .id)
+INSTANCE=$(curl -s -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"deployment_id\": \"$DEPLOYMENT\", \"variables\": {\"target\": \"23\"}}" localhost:8080/namespaces/processes/instances | jq -r .id)
+sleep 3   # two commands, each a round trip through marshaller, Kafka and devicesim
+curl -s -H "Authorization: $TOKEN" localhost:8080/namespaces/processes/instances/$INSTANCE/variables | jq -c 'map({(.name): .value}) | add'
+```
+
+Services that only send events need timescale-wrapper or mgw-last-value and are not part of the setup.
+
+`docker compose down -v` removes the containers with their data.
+
 ## Smart services and modules
 
 Smart services are the namespace `smart-services`. Their task types replace the eight module workers:

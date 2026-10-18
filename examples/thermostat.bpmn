@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Reads the room temperature of a thermostat and sets the target temperature of the start form;
+     the device and its services are selected at deploy; see "Running locally" in README.md -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:senergy="https://senergy.infai.org" id="Definitions_thermostat">
+  <bpmn:process id="thermostat" name="Thermostat" isExecutable="true">
+    <bpmn:startEvent id="start">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="target" label="target temperature" type="string" defaultValue="22.5"/>
+        </camunda:formData>
+      </bpmn:extensionElements>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="read" name="Read temperature" senergy:taskType="device_command" senergy:completionStrategy="pessimistic">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="payload">{"version": 2, "function": {"id": "urn:infai:ses:measuring-function:local-get-temperature", "rdf_type": "https://senergy.infai.org/ontology/MeasuringFunction"}, "characteristic_id": "urn:infai:ses:characteristic:local-celsius", "aspects": [{"id": "urn:infai:ses:aspect:local-room"}], "retries": 1}</camunda:inputParameter>
+          <camunda:outputParameter name="temperature">
+            <camunda:script scriptFormat="javascript">result</camunda:script>
+          </camunda:outputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="set" name="Set target temperature" senergy:taskType="device_command" senergy:completionStrategy="pessimistic">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="payload">{"version": 2, "function": {"id": "urn:infai:ses:controlling-function:local-set-temperature", "rdf_type": "https://senergy.infai.org/ontology/ControllingFunction"}, "characteristic_id": "urn:infai:ses:characteristic:local-celsius", "aspects": [{"id": "urn:infai:ses:aspect:local-room"}], "retries": 1}</camunda:inputParameter>
+          <camunda:inputParameter name="inputs">
+            <camunda:script scriptFormat="javascript">parseFloat(target)</camunda:script>
+          </camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="end"/>
+    <bpmn:sequenceFlow id="f_start_read" sourceRef="start" targetRef="read"/>
+    <bpmn:sequenceFlow id="f_read_set" sourceRef="read" targetRef="set"/>
+    <bpmn:sequenceFlow id="f_set_end" sourceRef="set" targetRef="end"/>
+  </bpmn:process>
+</bpmn:definitions>
