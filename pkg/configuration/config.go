@@ -19,7 +19,9 @@ package configuration
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -104,6 +106,13 @@ type Config struct {
 
 	// live debug streams per user and replica (DBG-10)
 	MaxLiveConnectionsPerUser int `json:"max_live_connections_per_user" env_var:"MAX_LIVE_CONNECTIONS_PER_USER"`
+
+	// CORS headers for browser applications that call the engine directly; in the platform Kong
+	// sets them. Comma separated origins such as https://ui.example.org, "*" for every origin;
+	// empty sets no CORS headers.
+	CorsAllowedOrigins string `json:"cors_allowed_origins" env_var:"CORS_ALLOWED_ORIGINS"`
+	// comma separated request headers a browser may send to an allowed origin
+	CorsAllowedHeaders string `json:"cors_allowed_headers" env_var:"CORS_ALLOWED_HEADERS"`
 
 	// Kafka for device commands, their answers and cache invalidation; empty disables Kafka
 	KafkaUrl           string `json:"kafka_url" env_var:"KAFKA_URL"`
@@ -236,6 +245,7 @@ func Default() Config {
 		MaxIoValuesPerUser:         10000,
 		MaxIoValueBytes:            256 << 10,
 		MaxLiveConnectionsPerUser:  5,
+		CorsAllowedHeaders:         "Authorization, Content-Type",
 		// the values of the former module workers
 		AnalyticsDevicePathPrefix:      "value.",
 		AnalyticsGroupPathPrefix:       "value.",
@@ -345,6 +355,12 @@ func (this Config) validate() error {
 	if this.PermissionsV2Url != "" && (this.AuthEndpoint == "" || this.AuthClientId == "") {
 		return fmt.Errorf("permissions_v2_url needs auth_endpoint and auth_client_id for internal calls")
 	}
+	for _, origin := range List(this.CorsAllowedOrigins) {
+		// an origin with a path or a trailing slash never equals the Origin header of a browser
+		if u, err := url.Parse(origin); origin != "*" && (err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" || u.RawQuery != "") {
+			return fmt.Errorf("cors_allowed_origins: %q is not an origin like https://ui.example.org", origin)
+		}
+	}
 	seen := map[string]bool{}
 	for _, ns := range this.Namespaces {
 		if seen[ns.Name] {
@@ -356,6 +372,17 @@ func (this Config) validate() error {
 		}
 	}
 	return nil
+}
+
+// List splits a comma separated value and drops empty entries.
+func List(value string) []string {
+	var result []string
+	for _, entry := range strings.Split(value, ",") {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			result = append(result, entry)
+		}
+	}
+	return result
 }
 
 func Duration(value string) time.Duration {

@@ -49,3 +49,24 @@ func TestValidateRejectsUnknownRole(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestValidateRejectsCorsOriginWithPath(t *testing.T) {
+	for _, origin := range []string{"https://ui.example.org/", "ui.example.org", "https://ui.example.org/app"} {
+		config := Default()
+		config.CorsAllowedOrigins = "https://ok.example.org, " + origin
+		if err := config.validate(); err == nil {
+			t.Errorf("%v: expected error", origin)
+		}
+	}
+}
+
+func TestValidateAcceptsCorsOrigins(t *testing.T) {
+	config := Default()
+	config.CorsAllowedOrigins = "https://ui.example.org, http://localhost:4200,*"
+	if err := config.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if origins := List(config.CorsAllowedOrigins); len(origins) != 3 || origins[1] != "http://localhost:4200" {
+		t.Fatalf("got %q", origins)
+	}
+}

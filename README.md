@@ -20,6 +20,7 @@ For platform operation, add:
 - `MODE` (`cloud` or `fog`, default `cloud`): selects the policy for HTTP calls from processes.
 - `MAX_IO_VALUES_PER_USER`, `MAX_IO_VALUE_BYTES`: limits for process-io.
 - `MAX_LIVE_CONNECTIONS_PER_USER` (default 5): live debug connections per user and replica.
+- `CORS_ALLOWED_ORIGINS`, `CORS_ALLOWED_HEADERS` (default `Authorization, Content-Type`): CORS headers for browser applications that call the engine directly, without Kong in between. Origins are comma separated, without path or trailing slash, e.g. `https://ui.example.org,http://localhost:4200`; `*` allows every origin. Empty, the default, sets no CORS headers, because in the platform Kong sets them. Credentials are not allowed, since the token travels in the `Authorization` header.
 - `OTEL_ENDPOINT`: OTLP collector (gRPC) for traces. Empty means the default of `gin-middleware/otelx` (`jaeger.logging.svc.cluster.local:4317`), `off` switches tracing off, for example in the fog or locally.
 
 ### Running locally with Docker Compose

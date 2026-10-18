@@ -65,7 +65,7 @@ func New(controller Controller, pinger Pinger, logger *slog.Logger, settings Set
 	if settings.Gateway {
 		handler = gatewayOnly(mux)
 	}
-	return recovery(accessLog(handler, logger), logger)
+	return recovery(accessLog(cors(handler, settings.Cors), logger), logger)
 }
 
 // gatewayAdmin reads the API of a gateway; there is no identity provider on a gateway
@@ -96,6 +96,8 @@ type Settings struct {
 	Gateway bool
 	// serves the old APIs below /deprecated/ (API-02); nil serves none
 	Deprecated http.Handler
+	// CORS headers; without origins none
+	Cors Cors
 }
 
 type handlers struct {

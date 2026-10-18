@@ -355,7 +355,10 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		agent = fogsync.NewGateway(settings, s, e, registry, broker, logger)
 		agent.SetLocal(c)
 	}
-	apiSettings := api.Settings{VerifiesTokens: certs != nil, Gateway: fog}
+	apiSettings := api.Settings{VerifiesTokens: certs != nil, Gateway: fog, Cors: api.Cors{
+		Origins: configuration.List(config.CorsAllowedOrigins),
+		Headers: configuration.List(config.CorsAllowedHeaders),
+	}}
 	if !fog {
 		// the old APIs exist only in the cloud; Kong rewrites their paths (API-08)
 		apiSettings.Deprecated = deprecated.New(c, m)
