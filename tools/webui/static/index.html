@@ -1,0 +1,157 @@
+<!doctype html>
+<!--
+  Copyright 2026 InfAI (CC SES)
+  Licensed under the Apache License, Version 2.0; see LICENSE in the repository root.
+
+  Minimal web interface for trying the engine by hand in the local Docker Compose setup.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Automation-Engine test UI</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Automation-Engine</h1>
+  <label>User
+    <select id="user">
+      <option value="alice">alice</option>
+      <option value="bob">bob</option>
+      <option value="admin|admin">admin (role admin)</option>
+      <option value="custom">other…</option>
+    </select>
+  </label>
+  <input id="custom-user" placeholder="user id" hidden>
+  <label>Namespace <select id="namespace"></select></label>
+  <button id="copy-token" title="copy the Authorization header value">Copy token</button>
+  <span id="status" role="status"></span>
+</header>
+
+<nav>
+  <button data-tab="models">Models</button>
+  <button data-tab="deployments">Deployments</button>
+  <button data-tab="instances">Instances</button>
+  <button data-tab="incidents">Incidents</button>
+  <button data-tab="messages">Messages</button>
+  <button data-tab="console">Request</button>
+</nav>
+
+<main>
+  <section id="models" class="tab">
+    <h2>Models</h2>
+    <form id="model-form">
+      <label>Name <input name="name" placeholder="taken from the BPMN when empty"></label>
+      <label>BPMN <textarea name="xml" rows="8" spellcheck="false"></textarea></label>
+      <div class="row">
+        <input type="file" accept=".bpmn,.xml" data-into="xml">
+        <button type="button" data-sample="xml">Insert sample</button>
+        <button type="button" id="model-validate">Validate</button>
+        <button type="submit">Create model</button>
+      </div>
+    </form>
+    <div class="row"><button data-refresh="models">Refresh</button></div>
+    <table><thead><tr><th>Name</th><th>Id</th><th>Version</th><th>Owner</th><th></th></tr></thead><tbody id="model-list"></tbody></table>
+  </section>
+
+  <section id="deployments" class="tab">
+    <h2>Deployments</h2>
+    <form id="deployment-form">
+      <label>Name <input name="name"></label>
+      <label>Model id <input name="model_id" placeholder="deploy a stored model, or paste BPMN below"></label>
+      <label>BPMN <textarea name="xml" rows="6" spellcheck="false"></textarea></label>
+      <div class="row">
+        <input type="file" accept=".bpmn,.xml" data-into="xml">
+        <button type="button" data-sample="xml">Insert sample</button>
+      </div>
+      <label>Selections (JSON, per element id) <textarea name="selections" rows="3" spellcheck="false" placeholder='{"read": {"device_id": "...", "service_id": "..."}}'></textarea></label>
+      <div class="row"><button type="submit">Deploy</button></div>
+    </form>
+    <div class="row"><button data-refresh="deployments">Refresh</button></div>
+    <table><thead><tr><th>Name</th><th>Id</th><th>Version</th><th>Owner</th><th>State</th><th></th></tr></thead><tbody id="deployment-list"></tbody></table>
+    <pre id="deployment-detail" class="detail" hidden></pre>
+  </section>
+
+  <section id="instances" class="tab">
+    <h2>Instances</h2>
+    <form id="instance-form">
+      <label>Deployment <select name="deployment_id"></select></label>
+      <label>Name <input name="name"></label>
+      <label>Variables (JSON) <textarea name="variables" rows="3" spellcheck="false">{}</textarea></label>
+      <div class="row">
+        <button type="button" id="start-parameters">Show start parameters</button>
+        <button type="submit">Start</button>
+      </div>
+    </form>
+    <div class="row">
+      <label>State
+        <select id="instance-state">
+          <option value="">all</option>
+          <option value="running">running</option>
+          <option value="finished">finished</option>
+          <option value="incident">incident</option>
+        </select>
+      </label>
+      <button data-refresh="instances">Refresh</button>
+      <label><input type="checkbox" id="auto-refresh"> refresh every 2 s</label>
+    </div>
+    <table><thead><tr><th>Deployment</th><th>Id</th><th>State</th><th>Status</th><th>Run</th><th>Started</th><th></th></tr></thead><tbody id="instance-list"></tbody></table>
+
+    <div id="instance-detail" hidden>
+      <h3>Instance <code id="detail-id"></code></h3>
+      <div class="row">
+        <button data-detail="instance">Instance</button>
+        <button data-detail="variables">Variables</button>
+        <button data-detail="activities">Activities</button>
+        <button data-detail="runs">Runs</button>
+        <button data-detail="debug">Debug state</button>
+        <button data-detail="incidents">Incidents</button>
+        <button id="live-toggle">Live</button>
+      </div>
+      <form id="detail-message" class="row">
+        <input name="name" placeholder="message name">
+        <input name="variables" placeholder='variables JSON, e.g. {"x": 1}' spellcheck="false">
+        <button type="submit">Send to this instance</button>
+      </form>
+      <pre id="detail-output" class="detail"></pre>
+    </div>
+  </section>
+
+  <section id="incidents" class="tab">
+    <h2>Incidents</h2>
+    <div class="row"><button data-refresh="incidents">Refresh</button></div>
+    <table><thead><tr><th>Time</th><th>Deployment</th><th>Instance</th><th>Element</th><th>Message</th></tr></thead><tbody id="incident-list"></tbody></table>
+  </section>
+
+  <section id="messages" class="tab">
+    <h2>Messages</h2>
+    <form id="message-form">
+      <label>Name <input name="name" required></label>
+      <label>Instance id <input name="instance_id" placeholder="any waiting instance of the user when empty"></label>
+      <label><input type="checkbox" name="all"> to all waiting instances and start events</label>
+      <label>Variables (JSON) <textarea name="variables" rows="3" spellcheck="false">{}</textarea></label>
+      <div class="row"><button type="submit">Send</button></div>
+    </form>
+    <pre id="message-result" class="detail" hidden></pre>
+  </section>
+
+  <section id="console" class="tab">
+    <h2>Request</h2>
+    <p>Any route of the engine, with the token of the selected user; the routes are in <code>docs/swagger.json</code>.</p>
+    <form id="console-form">
+      <div class="row">
+        <select name="method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
+        <input name="path" value="/namespaces" class="grow" spellcheck="false">
+        <button type="submit">Send</button>
+      </div>
+      <label>Body (JSON) <textarea name="body" rows="6" spellcheck="false"></textarea></label>
+    </form>
+    <pre id="console-result" class="detail"></pre>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

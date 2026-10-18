@@ -1,6 +1,7 @@
 # Local setup for trying the engine by hand; see "Running locally" in README.md.
 #
 #   docker compose up --build
+#   open http://localhost:8088 (test web interface)
 #   TOKEN=$(curl -s localhost:8090/token/alice)
 #   curl -H "Authorization: $TOKEN" localhost:8080/namespaces
 #
@@ -57,6 +58,20 @@ services:
       - "127.0.0.1:8080:8080"
       # metrics and HTTP answers of devices
       - "127.0.0.1:8081:8081"
+
+  # test web interface; passes /api/ to the engine and /auth/ to devauth
+  webui:
+    build:
+      context: .
+      dockerfile: tools/webui/Dockerfile
+    depends_on:
+      engine:
+        condition: service_started
+    environment:
+      ENGINE_URL: http://engine:8080
+      DEVAUTH_URL: http://devauth:8080
+    ports:
+      - "127.0.0.1:8088:8080"
 
 volumes:
   postgres:

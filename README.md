@@ -35,9 +35,14 @@ docker compose up --build
 |---|---|---|
 | engine | 8080, 8081 | API; metrics and device answers |
 | devauth | 8090 | `GET /token/{user}[?roles=admin]` returns a token to paste |
+| webui | 8088 | test web interface (`tools/webui`) |
 | postgres | 5433 | user, password and database `engine` |
 
-The engine does not verify token signatures without `KEYCLOAK_CERT_URL`, so the unsigned tokens of devauth are accepted. Without permissions-v2, only owners and admins have access. A walkthrough with the example model (needs `jq`):
+The engine does not verify token signatures without `KEYCLOAK_CERT_URL`, so the unsigned tokens of devauth are accepted. Without permissions-v2, only owners and admins have access.
+
+The web interface at http://localhost:8088 takes the token of the selected user from devauth and covers models, deployments with their selections, instances with variables, activities, debug state and the live stream, incidents, messages, and a console for any other route. It passes `/api/` to the engine and `/auth/` to devauth, so the browser talks to one origin. For the live stream it takes the token from the query parameter `access_token`, because a browser cannot set headers on a WebSocket; it is meant for this local setup only.
+
+A walkthrough with the example model (needs `jq`):
 
 ```sh
 TOKEN=$(curl -s localhost:8090/token/alice)
