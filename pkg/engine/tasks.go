@@ -72,6 +72,9 @@ type TaskResult struct {
 	// local variables of the task, e.g. "result" (TASK-10); the output mappings read them
 	Output map[string]any
 	Async  bool
+	// with Async from TimeoutHandler.OnTimeout: the task keeps waiting for its answer until
+	// then; zero executes it again at once
+	WaitUntil time.Time
 	// changes besides the output, applied in the transaction that completes the task
 	Effects *Effects
 }
@@ -107,9 +110,13 @@ func IsPermanent(err error) bool {
 	return errors.As(err, &p)
 }
 
-// TimeoutHandler is implemented by task types that can still produce a result when an
-// asynchronous task times out, e.g. a device group command with partial results (TASK-06).
-// A nil result lets the engine count the timeout as failed attempt. It runs inside the
+// TimeoutHandler is implemented by task types that decide what a timeout of an asynchronous
+// task means, e.g. a device group command (TASK-06). The engine calls it on every timeout;
+// Task.Attempt > Task.Retries marks the last attempt. A nil result counts the timeout as failed
+// attempt. A result with Async keeps a waiting task in progress without counting an attempt and
+// without backoff: it waits until WaitUntil, or with a zero WaitUntil the engine executes it
+// again at once in the same attempt with a new lock for Task.Timeout, e.g. to ask the next
+// device of a group. Any other result completes the task. It runs inside the
 // transaction of the engine and must use tx instead of opening its own.
 type TimeoutHandler interface {
 	OnTimeout(ctx context.Context, tx *store.Tx, task Task) (*TaskResult, error)

@@ -208,13 +208,25 @@ func (this *Engine) claim(ctx context.Context, jobId string, now time.Time) (res
 		if err != nil || job == nil || inst.State != model.StateRunning {
 			return err
 		}
+		again := false
 		switch {
 		case job.State == store.JobPending && !job.DueAt.After(now):
 		case job.State != store.JobPending && !job.LockUntil.After(now):
-			if result, handled, err := this.timeoutResult(ctx, tx, inst, *job); err != nil || handled {
-				if err != nil {
-					return err
+			result, err := this.timeoutResult(ctx, tx, inst, *job)
+			if err != nil {
+				return err
+			}
+			if result != nil && result.Async {
+				// still in progress, without a failed attempt and without backoff: the task waits
+				// until WaitUntil or is executed again at once in the same attempt
+				if result.WaitUntil.After(now) {
+					job.LockUntil = result.WaitUntil
+					return tx.SaveJob(*job)
 				}
+				again = true
+				break
+			}
+			if result != nil {
 				r, err := this.newRunner(tx, &inst)
 				if err != nil {
 					return err
@@ -247,7 +259,9 @@ func (this *Engine) claim(ctx context.Context, jobId string, now time.Time) (res
 			return err
 		}
 		job.State = store.JobRunning
-		job.Attempt++
+		if !again {
+			job.Attempt++
+		}
 		job.LockOwner = this.config.ReplicaId + "/" + uuid.NewString()
 		job.LockUntil = now.Add(job.Timeout)
 		if err = tx.SaveJob(*job); err != nil {
@@ -282,26 +296,27 @@ func taskOf(job store.Job, inst store.Instance, version *cachedVersion) Task {
 	}
 }
 
-// timeoutResult asks the task type for a result of a timed out asynchronous task
-func (this *Engine) timeoutResult(ctx context.Context, tx *store.Tx, inst store.Instance, job store.Job) (*TaskResult, bool, error) {
+// timeoutResult asks the task type what a timeout of an asynchronous task means; nil counts
+// it as failed attempt. Async is only kept for a task that waits for its answer: an execution
+// that ran past its timeout counts as failed attempt.
+func (this *Engine) timeoutResult(ctx context.Context, tx *store.Tx, inst store.Instance, job store.Job) (*TaskResult, error) {
 	taskType, ok := this.taskType(job.TaskType)
 	if !ok {
-		return nil, false, nil
+		return nil, nil
 	}
 	handler, ok := taskType.(TimeoutHandler)
-	if !ok || job.Attempt <= job.Retries {
-		// only the last attempt ends with a partial result; earlier ones are retried
-		return nil, false, nil
+	if !ok {
+		return nil, nil
 	}
 	version, err := this.version(tx, inst.DeploymentId, inst.DeploymentVersion)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	result, err := handler.OnTimeout(ctx, tx, taskOf(job, inst, version))
-	if err != nil || result == nil {
-		return nil, false, err
+	if err != nil || result == nil || (result.Async && job.State != store.JobWaiting) {
+		return nil, err
 	}
-	return result, true, nil
+	return result, nil
 }
 
 func (this *Engine) execute(ctx context.Context, c claimed) (err error) {

@@ -96,9 +96,13 @@ func New(config Config, s *store.Store, repo devices.Repository, aspects *device
 	return &Type{config: config, store: s, repo: repo, aspects: aspects, marshaller: m, timescale: ts, producer: producer, metrics: metrics, logger: logger, workerId: uuid.NewString(), now: time.Now}
 }
 
-// SetCompleter connects the type with the engine, which is created after it.
+// SetCompleter connects the type with the engine, which is created after it. The type takes
+// the clock of the engine, since the tries of sub-tasks are compared with its timeouts.
 func (this *Type) SetCompleter(c Completer) {
 	this.completer = c
+	if clock, ok := c.(interface{ Now() time.Time }); ok {
+		this.now = clock.Now
+	}
 }
 
 func strategy(task engine.Task) string {
@@ -108,7 +112,10 @@ func strategy(task engine.Task) string {
 	return Pessimistic
 }
 
-// Defaults takes the retries of the payload, as the external-task-worker did (TASK-07).
+// Defaults takes the retries of the payload, as the external-task-worker did (TASK-07). The
+// sequential and round robin schedulers count the retries of the task per sub-task (TASK-06):
+// a try waits for the answer of one device, so the task timeout is the answer timeout of each
+// try, and a group takes up to sub-tasks × (retries + 1) timeouts (see OnTimeout).
 func (this *Type) Defaults(input map[string]any) (*int, *time.Duration) {
 	var command Command
 	if payload, ok := input["payload"]; ok && decodeJson(payload, &command) == nil && command.Retries > 0 {
@@ -160,7 +167,7 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 		return engine.TaskResult{}, err
 	}
 	// every attempt sends what has no result yet; a retry resends lost commands
-	done, result, err := this.advance(ctx, task.JobId, command.Version, token, true)
+	done, result, err := this.advance(ctx, task.JobId, command.Version, token, true, task.Retries, task.Timeout)
 	if err != nil {
 		return engine.TaskResult{}, err
 	}
@@ -172,8 +179,10 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 
 // advance sends the next sub-tasks without result: all of them in parallel mode, one at a time
 // otherwise. Values read from timescale count as results at once. done reports that every
-// sub-task has a result. Without resend, parallel sub-tasks still in flight are not sent again.
-func (this *Type) advance(ctx context.Context, jobId string, version int64, token devices.Token, resend bool) (done bool, result any, err error) {
+// sub-task has a result, or one at a time, that the others have used up their tries. Without
+// resend, parallel sub-tasks still in flight are not sent again. retries and timeout are those
+// of the task; one at a time they apply to each try.
+func (this *Type) advance(ctx context.Context, jobId string, version int64, token devices.Token, resend bool, retries int, timeout time.Duration) (done bool, result any, err error) {
 	for {
 		var subtasks []store.Subtask
 		err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
@@ -196,10 +205,17 @@ func (this *Type) advance(ctx context.Context, jobId string, version int64, toke
 			return false, nil, nil
 		}
 		if this.config.GroupScheduler != Parallel {
-			if this.config.GroupScheduler == RoundRobin {
-				slices.SortStableFunc(pending, func(a, b store.Subtask) int { return a.Tries - b.Tries })
+			next, waiting := this.next(pending, retries, timeout)
+			if waiting {
+				return false, nil, nil
 			}
-			pending = pending[:1]
+			if next == nil {
+				if len(results(2, subtasks).([]any)) > 0 {
+					return true, results(version, subtasks), nil
+				}
+				return false, nil, &engine.PermanentError{Message: fmt.Sprintf("no answer from any device within %v, %v tries each", timeout, retries+1)}
+			}
+			pending = []store.Subtask{*next}
 		}
 		readValues := false
 		for _, s := range pending {
@@ -232,6 +248,39 @@ func (this *Type) advance(ctx context.Context, jobId string, version int64, toke
 			return false, nil, nil
 		}
 	}
+}
+
+// next picks the pending sub-task to send one at a time, as external-task-worker
+// lib/devicegroups does: waiting while a sent command is not older than timeout, a sub-task is
+// given up after retries + 1 tries, and round robin prefers the fewest tries. nil without
+// waiting means that every pending sub-task is given up.
+func (this *Type) next(pending []store.Subtask, retries int, timeout time.Duration) (next *store.Subtask, waiting bool) {
+	if running(pending, this.now(), timeout) != nil {
+		return nil, true
+	}
+	candidates := []store.Subtask{}
+	for _, s := range pending {
+		if s.Tries <= retries {
+			candidates = append(candidates, s)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, false
+	}
+	if this.config.GroupScheduler == RoundRobin {
+		slices.SortStableFunc(candidates, func(a, b store.Subtask) int { return a.Tries - b.Tries })
+	}
+	return &candidates[0], false
+}
+
+// running returns the last sent pending sub-task whose command still waits for its answer
+func running(pending []store.Subtask, now time.Time, timeout time.Duration) (result *store.Subtask) {
+	for _, s := range pending {
+		if s.Tries > 0 && now.Sub(s.LastTry) <= timeout && (result == nil || s.LastTry.After(result.LastTry)) {
+			result = &s
+		}
+	}
+	return result
 }
 
 type readValue struct {
@@ -312,7 +361,14 @@ func (this *Type) HandleResponse(ctx context.Context, raw []byte) error {
 		return err
 	}
 	var command Command
+	var retries int
+	var timeout time.Duration
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		job, err := tx.GetJob(jobId)
+		if err != nil || job == nil {
+			return err
+		}
+		retries, timeout = job.Retries, job.Timeout
 		subtasks, err := tx.ListSubtasks(jobId)
 		if err != nil || len(subtasks) == 0 {
 			return err
@@ -326,7 +382,7 @@ func (this *Type) HandleResponse(ctx context.Context, raw []byte) error {
 	if err != nil {
 		return err
 	}
-	done, result, err := this.advance(ctx, jobId, command.Version, token, false)
+	done, result, err := this.advance(ctx, jobId, command.Version, token, false, retries, timeout)
 	if err != nil {
 		_, failErr := this.completer.FailTask(ctx, jobId, err.Error())
 		return errors.Join(err, failErr)
@@ -353,12 +409,33 @@ func (this *Type) HandleError(ctx context.Context, raw []byte) error {
 	return err
 }
 
-// OnTimeout completes a device group with the results it has when the last attempt times out;
-// without any result the timeout is a failure (TASK-06).
+// OnTimeout handles the timeout of a task with several sub-tasks (TASK-06). One at a time, the
+// task timeout is the answer timeout of each try and does not count as failed attempt: a command
+// sent after the task was locked, e.g. on the answer of the previous device, gets its full
+// timeout; otherwise the task is executed again and asks the next device or ends with the
+// answers it has. In parallel, the last attempt completes with the results it has; without any
+// result the timeout is a failure.
 func (this *Type) OnTimeout(ctx context.Context, tx *store.Tx, task engine.Task) (*engine.TaskResult, error) {
 	subtasks, err := tx.ListSubtasks(task.JobId)
 	if err != nil || len(subtasks) < 2 {
 		return nil, err
+	}
+	if this.config.GroupScheduler != Parallel {
+		pending := []store.Subtask{}
+		for _, s := range subtasks {
+			if !s.HasResult {
+				pending = append(pending, s)
+			}
+		}
+		result := &engine.TaskResult{Async: true}
+		if s := running(pending, this.now(), task.Timeout); s != nil {
+			// the first instant after the timeout of the try; the store keeps milliseconds
+			result.WaitUntil = s.LastTry.Add(task.Timeout + time.Millisecond)
+		}
+		return result, nil
+	}
+	if task.Attempt <= task.Retries {
+		return nil, nil
 	}
 	var command Command
 	if err = json.Unmarshal(subtasks[0].Command, &command); err != nil {
