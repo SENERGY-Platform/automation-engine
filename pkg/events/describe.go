@@ -158,7 +158,9 @@ func baseDescription(deployment model.Deployment, version int, element *bpmn.Ele
 	}
 	if selection.Path != nil {
 		d.Path = selection.Path.Path
-		if selection.Path.CharacteristicId != "" {
+		// the characteristic of the path is the one the source sends; the condition reads the
+		// value in the characteristic of the event (EVT-04), as event-deployment did
+		if d.CharacteristicId == "" {
 			d.CharacteristicId = selection.Path.CharacteristicId
 		}
 	}

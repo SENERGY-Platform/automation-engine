@@ -146,7 +146,7 @@ func TestDescribeExpandsGroupsDevicesAndImports(t *testing.T) {
 			if name == "import" {
 				var service models.Service
 				_ = json.Unmarshal(result[0].Service, &service)
-				if result[0].Topic != "urn_infai_ses_import_imp" || service.Id != "type" || len(service.Outputs) != 1 || result[0].CharacteristicId != "ci" || result[0].Path != "value" {
+				if result[0].Topic != "urn_infai_ses_import_imp" || service.Id != "type" || len(service.Outputs) != 1 || result[0].CharacteristicId != "c" || result[0].Path != "value" {
 					t.Errorf("import description: %+v %+v", result[0], service)
 				}
 			}
