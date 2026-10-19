@@ -130,6 +130,7 @@ func engineConfig(config configuration.Config) (engine.Config, error) {
 	result.MaxInstanceVariablesBytes = config.MaxInstanceVariablesBytes
 	result.MaxActivities = config.MaxActivities
 	result.ScriptTimeout = configuration.Duration(config.ScriptTimeout)
+	result.MinTimerDuration = configuration.Duration(config.MinTimerDuration)
 	result.TaskTimeout = configuration.Duration(config.TaskTimeout)
 	result.TaskRetries = config.TaskRetries
 	result.PollInterval = configuration.Duration(config.PollInterval)

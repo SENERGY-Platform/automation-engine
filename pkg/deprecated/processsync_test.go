@@ -52,6 +52,7 @@ func newFogEnv(t *testing.T) *env {
 		return cloudBroker.Publish(ctx, "processes/"+hub+"/state/"+strings.TrimPrefix(topic, "processes/state/"), 1, payload)
 	})
 	config := configuration.Default()
+	config.MinTimerDuration = "0s"
 	config.SqlitePath = storetest.MemoryDsn()
 	config.PollInterval = "20ms"
 	config.SyncResendAfter = "300ms"
@@ -75,6 +76,7 @@ func newFogEnv(t *testing.T) *env {
 	}
 	cloud.Start(ctx)
 	gatewayConfig := configuration.Default()
+	gatewayConfig.MinTimerDuration = "0s"
 	gatewayConfig.SqlitePath = storetest.MemoryDsn()
 	gatewayConfig.PollInterval = "20ms"
 	gatewayConfig.Mode, gatewayConfig.MqttBroker = "fog", "memory"

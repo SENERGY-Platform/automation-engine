@@ -138,7 +138,13 @@ func (this *Controller) planSelections(ctx context.Context, user jwt.Token, ns m
 	if err != nil {
 		return plan, err
 	}
-	if issues := bpmn.ApplyParameters(process, input.Parameters); len(issues) > 0 {
+	issues := bpmn.ApplyParameters(process, input.Parameters)
+	for elementId, params := range input.Parameters {
+		if e := process.Element(elementId); e != nil && params.Timer != "" {
+			issues = append(issues, bpmn.CheckTimerMinimum(e, this.engine.Rules(ns).MinTimerDuration)...)
+		}
+	}
+	if len(issues) > 0 {
 		return plan, model.ValidationFailed(issues)
 	}
 	if this.describer == nil {

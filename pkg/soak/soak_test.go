@@ -255,6 +255,7 @@ func newEnv(t *testing.T, ctx context.Context, s settings) *env {
 	this.bridge(ctx, cloudBroker)
 
 	config := configuration.Default()
+	config.MinTimerDuration = "0s"
 	config.SqlitePath = filepath.Join(s.dir, "cloud.db")
 	config.DeviceRepositoryUrl = repo.URL
 	deps, err := client.TestDependencies(ctx)
@@ -280,6 +281,7 @@ func newEnv(t *testing.T, ctx context.Context, s settings) *env {
 	this.cloud.Start(ctx)
 
 	gatewayConfig := configuration.Default()
+	gatewayConfig.MinTimerDuration = "0s"
 	gatewayConfig.Mode = "fog"
 	gatewayConfig.SqlitePath = this.dbPath
 	gatewayConfig.StorageBudget = s.budget

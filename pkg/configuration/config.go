@@ -52,9 +52,11 @@ type Config struct {
 	MaxInstanceVariablesBytes int    `json:"max_instance_variables_bytes" env_var:"MAX_INSTANCE_VARIABLES_BYTES"`
 	MaxActivities             int    `json:"max_activities" env_var:"MAX_ACTIVITIES"`
 	ScriptTimeout             string `json:"script_timeout" env_var:"SCRIPT_TIMEOUT"`
-	TaskTimeout               string `json:"task_timeout" env_var:"TASK_TIMEOUT"`
-	TaskRetries               int    `json:"task_retries" env_var:"TASK_RETRIES"`
-	PollInterval              string `json:"poll_interval" env_var:"POLL_INTERVAL"`
+	// shortest timer duration of a model, as process-deployment had it; "0s" allows every one
+	MinTimerDuration string `json:"min_timer_duration" env_var:"MIN_TIMER_DURATION"`
+	TaskTimeout      string `json:"task_timeout" env_var:"TASK_TIMEOUT"`
+	TaskRetries      int    `json:"task_retries" env_var:"TASK_RETRIES"`
+	PollInterval     string `json:"poll_interval" env_var:"POLL_INTERVAL"`
 
 	RetentionDefaultDays int `json:"retention_default_days" env_var:"RETENTION_DEFAULT_DAYS"`
 	// 0: no global maximum
@@ -211,6 +213,7 @@ func Default() Config {
 		MaxInstanceVariablesBytes:  4 << 20,
 		MaxActivities:              10000,
 		ScriptTimeout:              "2s",
+		MinTimerDuration:           "5s",
 		TaskTimeout:                "2m",
 		TaskRetries:                0,
 		PollInterval:               "1s",
@@ -320,7 +323,7 @@ func Load(path string) (Config, error) {
 const DefaultGatewayStorageBudget = 1 << 30
 
 func (this Config) validate() error {
-	for _, d := range []string{this.ScriptTimeout, this.TaskTimeout, this.PollInterval, this.StalledAfter, this.ConceptRefreshInterval, this.SyncResendAfter, this.SyncOfflineAfter, this.SyncCallTimeout, this.NetworkCleanupMaxAge} {
+	for _, d := range []string{this.ScriptTimeout, this.MinTimerDuration, this.TaskTimeout, this.PollInterval, this.StalledAfter, this.ConceptRefreshInterval, this.SyncResendAfter, this.SyncOfflineAfter, this.SyncCallTimeout, this.NetworkCleanupMaxAge} {
 		if _, err := time.ParseDuration(d); err != nil {
 			return fmt.Errorf("invalid duration %q: %w", d, err)
 		}

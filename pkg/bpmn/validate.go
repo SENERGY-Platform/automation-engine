@@ -22,6 +22,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/script"
@@ -37,6 +38,9 @@ type Rules struct {
 	TaskTypeAvailable func(taskType string) bool
 	// reject cycles in the sequence flow, so that every run ends (SMS-03)
 	ForbidCycles bool
+	// shortest timer duration; 0 allows every duration. process-deployment rejected durations
+	// below 5 s, which keeps loops with a timer from flooding instances and history.
+	MinTimerDuration time.Duration
 }
 
 // ParseAndValidate combines Parse and Validate; issues block a deploy and are hints on a model save.
@@ -124,6 +128,7 @@ func Validate(p *Process, rules Rules) (issues []model.Issue) {
 				}
 			}
 		}
+		issues = append(issues, CheckTimerMinimum(e, rules.MinTimerDuration)...)
 		for _, flow := range e.Outgoing {
 			if flow.Condition != "" && !flow.conditionRejected {
 				checkScript(flow.Id, "condition", flow.Condition)
@@ -304,4 +309,17 @@ func ApplyParameters(p *Process, parameters map[string]model.ElementParameters) 
 		}
 	}
 	return issues
+}
+
+// CheckTimerMinimum reports a literal timer duration shorter than minimum; deploy parameters
+// can set a timer after validation, so the deploy checks it again (DEP-01).
+func CheckTimerMinimum(e *Element, minimum time.Duration) []model.Issue {
+	if minimum <= 0 || e.Timer == nil || e.Timer.Expression || e.Timer.Kind != timer.KindDuration {
+		return nil
+	}
+	d, err := timer.ParseDuration(e.Timer.Value)
+	if err != nil || d.Years > 0 || d.Months > 0 || d.Weeks > 0 || d.Days > 0 || d.Clock >= minimum {
+		return nil
+	}
+	return []model.Issue{{ElementId: e.Id, Message: fmt.Sprintf("timer: duration %v is below the minimum of %v", e.Timer.Value, minimum)}}
 }

@@ -67,6 +67,8 @@ func NewTestServer(ctx context.Context, configure func(config *configuration.Con
 	config.Database = "sqlite"
 	config.SqlitePath = "file:" + uuid.NewString() + "?mode=memory&cache=shared"
 	config.PollInterval = "20ms"
+	// tests wait for timers of a second or less
+	config.MinTimerDuration = "0s"
 	deps, err := TestDependencies(ctx)
 	if err != nil {
 		return nil, err

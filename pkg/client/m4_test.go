@@ -200,6 +200,7 @@ func TestBrowsersSendTheTokenAsFirstMessageOnlyIfTheEngineVerifiesIt(t *testing.
 	streamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	config := configuration.Default()
+	config.MinTimerDuration = "0s"
 	config.SqlitePath = storetest.MemoryDsn()
 	config.PollInterval = "50ms"
 	srv, err := server.New(streamCtx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), server.Dependencies{})
