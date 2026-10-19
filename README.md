@@ -81,7 +81,18 @@ sleep 3   # two commands, each a round trip through marshaller, Kafka and device
 curl -s -H "Authorization: $TOKEN" localhost:8080/namespaces/processes/instances/$INSTANCE/variables | jq -c 'map({(.name): .value}) | add'
 ```
 
-Services that only send events need timescale-wrapper or mgw-last-value and are not part of the setup.
+devicesim also sends an event every 10 seconds for each device in device-repository and each of its services with the interaction `event` or `event+request`, on the device data topic of the service. Numbers swing between 18.5 and 24.5 within two minutes (`NUMBER`, `AMPLITUDE`, `PERIOD`, `EVENT_INTERVAL`); answers to commands carry the same current value. `examples/room-temperature.bpmn` waits until the room is warmer than 23 °C and then until it is cooler than 20 °C; it completes within about two minutes:
+
+```sh
+S=urn:infai:ses:service:local-get-temperature
+DEPLOYMENT=$(jq -Rs --arg d "$DEVICE" --arg s $S '{name: "Room temperature", xml: ., selections: {
+    warm: {device_id: $d, service_id: $s}, cool: {device_id: $d, service_id: $s}}}' examples/room-temperature.bpmn \
+  | curl -s -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d @- localhost:8080/namespaces/processes/deployments | jq -r .id)
+INSTANCE=$(curl -s -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"deployment_id\": \"$DEPLOYMENT\"}" localhost:8080/namespaces/processes/instances | jq -r .id)
+```
+
+Commands to services that only send events need timescale-wrapper or mgw-last-value and are not part of the setup.
 
 `docker compose down -v` removes the containers with their data.
 

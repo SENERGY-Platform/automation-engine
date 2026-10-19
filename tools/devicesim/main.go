@@ -15,24 +15,35 @@
  */
 
 // Command devicesim stands in for a protocol handler and its devices in the local Docker Compose
-// setup: it reads the device commands the engine sends to the Kafka topic of a protocol handler
+// setup. It reads the device commands the engine sends to the Kafka topic of a protocol handler
 // and answers every one on the topic the command names (metadata.response_to), as
-// platform-connector does once the device answered.
+// platform-connector does once the device answered. At a fixed interval it also sends an event
+// of every device in device-repository for each of its services with the interaction event or
+// event+request, to the device data topic of the service, as platform-connector does when a
+// device reports a value.
 //
-// The answer follows the outputs of the service: every protocol segment gets the content its
-// output describes, with the value of a variable if the device type fixes one, NUMBER for
-// numbers, true for booleans and "simulated" for strings, serialised as JSON or plain text.
-// A service without outputs, a setter, gets an empty answer. Inputs are logged, not stored.
+// Answer and event follow the outputs of the service, the answer by protocol segment, the event
+// by the name of the output variable. Values are the value of a variable if the device type
+// fixes one, the current number for numbers, true for booleans and "simulated" for strings. The
+// number swings around NUMBER by AMPLITUDE over PERIOD, so that event conditions turn true and
+// false again. A service without outputs, a setter, gets an empty answer. Inputs are logged,
+// not stored.
 //
 // Environment: KAFKA_URL (default kafka:9092), TOPICS (comma separated, default connector),
-// GROUP (default devicesim), NUMBER (default 21.5).
+// GROUP (default devicesim), NUMBER (default 21.5), AMPLITUDE (default 3), PERIOD (default 2m),
+// EVENT_INTERVAL (default 10s, 0 sends no events), DEVICE_REPOSITORY_URL (default
+// http://device-repository:8080), AUTH_URL (devauth, default http://devauth:8080).
 package main
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"math"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -40,6 +51,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/devicecommand"
 	"github.com/SENERGY-Platform/models/go/models"
 	"github.com/segmentio/kafka-go"
@@ -54,9 +67,26 @@ func env(name string, fallback string) string {
 
 func main() {
 	broker := env("KAFKA_URL", "kafka:9092")
-	number, err := strconv.ParseFloat(env("NUMBER", "21.5"), 64)
+	base, err := strconv.ParseFloat(env("NUMBER", "21.5"), 64)
 	if err != nil {
 		log.Fatal("NUMBER: ", err)
+	}
+	amplitude, err := strconv.ParseFloat(env("AMPLITUDE", "3"), 64)
+	if err != nil {
+		log.Fatal("AMPLITUDE: ", err)
+	}
+	period, err := time.ParseDuration(env("PERIOD", "2m"))
+	if err != nil || period <= 0 {
+		log.Fatal("PERIOD: ", env("PERIOD", "2m"))
+	}
+	interval, err := time.ParseDuration(env("EVENT_INTERVAL", "10s"))
+	if err != nil {
+		log.Fatal("EVENT_INTERVAL: ", err)
+	}
+	// the current number of all simulated devices
+	number := func() float64 {
+		phase := 2 * math.Pi * float64(time.Now().UnixNano()%int64(period)) / float64(period)
+		return math.Round((base+amplitude*math.Sin(phase))*100) / 100
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -77,13 +107,31 @@ func main() {
 					}
 					return
 				}
-				if err = answer(ctx, writer, message.Value, number); err != nil {
+				if err = answer(ctx, writer, message.Value, number()); err != nil {
 					log.Println("answer:", err)
 				}
 			}
 		}()
 	}
 	log.Println("devicesim answers commands on", topics, "at", broker)
+	if interval > 0 {
+		source := eventSource{repository: env("DEVICE_REPOSITORY_URL", "http://device-repository:8080"), auth: env("AUTH_URL", "http://devauth:8080")}
+		go func() {
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := source.send(ctx, writer, number()); err != nil {
+						log.Println("events:", err)
+					}
+				}
+			}
+		}()
+		log.Println("devicesim sends events every", interval)
+	}
 	for range topics {
 		<-done
 	}
@@ -156,4 +204,91 @@ func sample(v models.ContentVariable, number float64) any {
 	default:
 		return "simulated"
 	}
+}
+
+// eventSource finds the devices to send events for in device-repository
+type eventSource struct {
+	repository string
+	auth       string
+}
+
+// send sends one event of every device for each of its event services
+func (this eventSource) send(ctx context.Context, writer *kafka.Writer, number float64) error {
+	messages, err := this.messages(ctx, number)
+	if err != nil || len(messages) == 0 {
+		return err
+	}
+	log.Printf("events of %d device services, number %v", len(messages), number)
+	return writer.WriteMessages(ctx, messages...)
+}
+
+func (this eventSource) messages(ctx context.Context, number float64) ([]kafka.Message, error) {
+	// an admin token sees the devices of every user
+	token, err := this.get(ctx, this.auth+"/token/admin?roles=admin", "")
+	if err != nil {
+		return nil, err
+	}
+	var list []models.Device
+	if err = this.getJSON(ctx, this.repository+"/devices?limit=1000", string(token), &list); err != nil {
+		return nil, err
+	}
+	deviceTypes := map[string]models.DeviceType{}
+	var messages []kafka.Message
+	for _, device := range list {
+		deviceType, ok := deviceTypes[device.DeviceTypeId]
+		if !ok {
+			if err = this.getJSON(ctx, this.repository+"/device-types/"+url.PathEscape(device.DeviceTypeId), string(token), &deviceType); err != nil {
+				return nil, err
+			}
+			deviceTypes[device.DeviceTypeId] = deviceType
+		}
+		for _, service := range deviceType.Services {
+			if service.Interaction != models.EVENT && service.Interaction != models.EVENT_AND_REQUEST {
+				continue
+			}
+			value := map[string]any{}
+			for _, content := range service.Outputs {
+				value[content.ContentVariable.Name] = sample(content.ContentVariable, number)
+			}
+			raw, err := json.Marshal(events.DeviceMessage{DeviceId: device.Id, ServiceId: service.Id, Value: value})
+			if err != nil {
+				return nil, err
+			}
+			messages = append(messages, kafka.Message{Topic: devices.ServiceIdToTopic(service.Id), Key: []byte(device.Id), Value: raw})
+		}
+	}
+	return messages, nil
+}
+
+func (this eventSource) getJSON(ctx context.Context, target string, token string, result any) error {
+	raw, err := this.get(ctx, target, token)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, result)
+}
+
+func (this eventSource) get(ctx context.Context, target string, token string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", strings.TrimSpace(token))
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %v: %v %s", target, resp.StatusCode, body)
+	}
+	return body, nil
 }

@@ -14,8 +14,9 @@
 # limitations under the License.
 
 # Creates a thermostat of alice in the device-repository of docker-compose.platform.yml, with a
-# service that reads the room temperature and one that sets the target temperature, on a
-# protocol whose handler topic devicesim answers. Safe to run again. Needs curl and jq.
+# service that reads the room temperature and also reports it as event, and one that sets the
+# target temperature, on a protocol whose handler topic devicesim answers. devicesim sends the
+# events of the first service. Safe to run again. Needs curl and jq.
 #
 #   ./examples/seed-devices.sh
 
@@ -64,7 +65,7 @@ send POST /device-types "$ADMIN" "$(jq -n \
 	--arg celsius "$CELSIUS" --arg aspect "$ASPECT" '{
 	id: $id, name: "Local Thermostat", description: "", device_class_id: $class, attributes: [],
 	services: [
-		{id: $get, local_id: "get-temperature", name: "Get Temperature", description: "", interaction: "request",
+		{id: $get, local_id: "get-temperature", name: "Get Temperature", description: "", interaction: "event+request",
 		 protocol_id: $protocol, attributes: [], inputs: [], outputs: [
 			{id: ($get + ":out"), protocol_segment_id: $segment, serialization: "json", content_variable:
 				{id: ($get + ":reading"), name: "reading", type: "https://schema.org/StructuredValue", sub_content_variables: [

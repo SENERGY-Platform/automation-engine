@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Waits until the room of the selected thermostat is warmer than 23 °C and then until it is cooler
+     than 20 °C, with the device events devicesim sends; the device is selected at deploy; see
+     "Running locally" in README.md -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:senergy="https://senergy.infai.org" id="Definitions_room_temperature" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="room_temperature" name="Room temperature" isExecutable="true">
+    <bpmn:startEvent id="start"/>
+    <bpmn:intermediateCatchEvent id="warm" name="Warmer than 23 °C" senergy:function="urn:infai:ses:measuring-function:local-get-temperature" senergy:aspect="urn:infai:ses:aspect:local-room" senergy:characteristic="urn:infai:ses:characteristic:local-celsius" senergy:script="x &gt; 23" senergy:value_variable_name="x" senergy:qos="1">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:outputParameter name="warm_temperature">
+            <camunda:script scriptFormat="javascript">event</camunda:script>
+          </camunda:outputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:messageEventDefinition/>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="cool" name="Cooler than 20 °C" senergy:function="urn:infai:ses:measuring-function:local-get-temperature" senergy:aspect="urn:infai:ses:aspect:local-room" senergy:characteristic="urn:infai:ses:characteristic:local-celsius" senergy:script="x &lt; 20" senergy:value_variable_name="x" senergy:qos="1">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:outputParameter name="cool_temperature">
+            <camunda:script scriptFormat="javascript">event</camunda:script>
+          </camunda:outputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:messageEventDefinition/>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="end"/>
+    <bpmn:sequenceFlow id="f_start_warm" sourceRef="start" targetRef="warm"/>
+    <bpmn:sequenceFlow id="f_warm_cool" sourceRef="warm" targetRef="cool"/>
+    <bpmn:sequenceFlow id="f_cool_end" sourceRef="cool" targetRef="end"/>
+  </bpmn:process>
+</bpmn:definitions>

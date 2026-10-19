@@ -50,7 +50,8 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        for topic in device-types protocols devices device-groups concepts characteristics functions aspects user response errors connector;
+        for topic in device-types protocols devices device-groups concepts characteristics functions aspects user response errors connector
+        urn_infai_ses_service_local-get-temperature;
         do /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $$topic --partitions 1 --replication-factor 1 || exit 1;
         done
 
@@ -110,7 +111,7 @@ services:
     ports:
       - "127.0.0.1:8085:8080"
 
-  # answers device commands in place of platform-connector and the devices
+  # answers device commands and sends device events in place of platform-connector and the devices
   devicesim:
     build:
       context: .
@@ -118,11 +119,19 @@ services:
     depends_on:
       kafka-init:
         condition: service_completed_successfully
+      device-repository:
+        condition: service_started
     restart: on-failure
     environment:
       KAFKA_URL: kafka:9092
       TOPICS: connector
+      # the temperature swings between 18.5 and 24.5 within two minutes
       NUMBER: "21.5"
+      AMPLITUDE: "3"
+      PERIOD: 2m
+      EVENT_INTERVAL: 10s
+      DEVICE_REPOSITORY_URL: http://device-repository:8080
+      AUTH_URL: http://devauth:8080
 
   engine:
     depends_on:
