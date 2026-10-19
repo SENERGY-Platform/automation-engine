@@ -210,12 +210,50 @@ func (this *Preparer) prepare(token string, process *bpmn.Process, localDevices 
 			if err != nil {
 				return nil, err
 			}
+			if element.Kind == model.PreparedTask && element.Lane != "" {
+				option.Services = ownServices(option.Services, element.Criteria, s.ServicePathOptions)
+			}
 			options = append(options, option)
 		}
 		sort.SliceStable(options, func(a, b int) bool { return optionName(options[a]) < optionName(options[b]) })
 		result[i].Options = options
 	}
 	return result, nil
+}
+
+// ownServices keeps the services that serve the criteria of the element itself. device-selection
+// answers a lane task with the services of all criteria of the lane, so a task that switches a
+// lamp off would also be offered the service that switches it on. An element outside a lane is
+// asked with its own criteria alone and keeps the answer as it is.
+func ownServices(services []model.NamedRef, criteria model.Criteria, paths map[string][]dsmodel.PathOption) []model.NamedRef {
+	var result []model.NamedRef
+	for _, service := range services {
+		if slices.ContainsFunc(paths[service.Id], func(p dsmodel.PathOption) bool { return pathMatches(p, criteria) }) {
+			result = append(result, service)
+		}
+	}
+	return result
+}
+
+// pathMatches follows serviceMatchesCriteria of process-deployment: the path option carries the
+// function, and every asked aspect is one of its aspect nodes or an ancestor of one, because an
+// aspect covers its subtree. Several aspects are an AND on one path option, as in the
+// device-repository.
+func pathMatches(p dsmodel.PathOption, criteria model.Criteria) bool {
+	if criteria.FunctionId != "" && p.FunctionId != criteria.FunctionId {
+		return false
+	}
+	nodes := p.AspectNodes
+	if len(nodes) == 0 && p.AspectNode.Id != "" {
+		// AspectNode is the deprecated single element alias of AspectNodes
+		nodes = []models.AspectNode{p.AspectNode}
+	}
+	for _, aspectId := range criteria.AspectIds {
+		if !slices.ContainsFunc(nodes, func(n models.AspectNode) bool { return n.Id == aspectId || slices.Contains(n.AncestorIds, aspectId) }) {
+			return false
+		}
+	}
+	return true
 }
 
 func toOption(s dsmodel.Selectable) (result model.SelectionOption, err error) {

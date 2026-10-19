@@ -66,10 +66,19 @@ func (this *fakeSelection) GetBulkSelectablesV2(_ string, bulk dsmodel.BulkReque
 	for _, e := range bulk {
 		device := &dsmodel.PermSearchDevice{DisplayName: "Lamp " + e.Id}
 		device.Id = "device-" + e.Id
+		// like device-selection, the service has a path option for each criteria it serves
+		paths := []dsmodel.PathOption{}
+		for _, c := range e.Criteria {
+			path := dsmodel.PathOption{Path: "value.on", CharacteristicId: "c", FunctionId: c.FunctionId}
+			for _, a := range c.AspectIds {
+				path.AspectNodes = append(path.AspectNodes, models.AspectNode{Id: a})
+			}
+			paths = append(paths, path)
+		}
 		result = append(result, dsmodel.BulkResultElement{Id: e.Id, Selectables: []dsmodel.Selectable{{
 			Device:             device,
 			Services:           []devicemodel.Service{{Id: "s1", Name: "set"}},
-			ServicePathOptions: map[string][]dsmodel.PathOption{"s1": {{Path: "value.on", CharacteristicId: "c", FunctionId: "f"}}},
+			ServicePathOptions: map[string][]dsmodel.PathOption{"s1": paths},
 		}}})
 	}
 	return result, 200, nil
