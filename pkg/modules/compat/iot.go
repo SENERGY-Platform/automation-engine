@@ -33,11 +33,12 @@ func GetDevicesWithService(iotClient client.Interface, token string, entity IotO
 		return getDevicesWithService(iotClient, token, []string{entity.DeviceSelection.DeviceId}, criteria)
 	}
 	if entity.DeviceGroupSelection != nil {
-		groupDevices, err, _ := iotClient.ListHubDeviceIds(entity.DeviceGroupSelection.Id, token, devicemodel.READ, false)
+		// the worker lib asked for the devices of a hub with the id of the group
+		group, err, _ := iotClient.ReadDeviceGroup(entity.DeviceGroupSelection.Id, token, false)
 		if err != nil {
 			return result, err
 		}
-		return getDevicesWithService(iotClient, token, groupDevices, criteria)
+		return getDevicesWithService(iotClient, token, group.DeviceIds, criteria)
 	}
 	return result, ErrNoDeviceOrGroupSelection
 }

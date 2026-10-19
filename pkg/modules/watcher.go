@@ -131,7 +131,11 @@ func (this *watcher) Do(ctx context.Context, task Task) (modules []model.Module,
 // generic request if allowed; the first variable present wins, as with the worker
 func (this *watcher) request(task Task) (model.WatchRequest, error) {
 	selectables := func(raw string, query string) (model.WatchRequest, error) {
-		var criteria []map[string]any
+		// the body goes to device-selection unchanged; aspect_ids is checked like the worker did,
+		// so that a wrong type fails the task and not every later check
+		var criteria []struct {
+			AspectIds []string `json:"aspect_ids"`
+		}
 		if err := json.Unmarshal([]byte(raw), &criteria); err != nil {
 			return model.WatchRequest{}, fmt.Errorf("invalid criteria: %w", err)
 		}
