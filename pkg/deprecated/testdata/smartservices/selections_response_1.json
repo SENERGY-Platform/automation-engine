@@ -1,0 +1,198 @@
+[
+    {
+        "device": {
+            "id": "device_1",
+            "name": "Device 1: one service, no paths"
+        },
+        "services": [
+            {
+                "id": "s1",
+                "name": "Service 1, no paths"
+            }
+        ]
+    },
+
+    {
+        "device": {
+            "id": "device_2",
+            "name": "Device 2: one service, one path"
+        },
+        "services": [
+            {
+                "id": "s2",
+                "name": "Service 2, one path"
+            }
+        ],
+        "servicePathOptions": {
+            "s2": [
+                {"path": "root.value"}
+            ]
+        }
+    },
+
+    {
+        "device": {
+            "id": "device_3",
+            "name": "Device 3: one service, two paths"
+        },
+        "services": [
+            {
+                "id": "s3",
+                "name": "Service 3, two paths"
+            }
+        ],
+        "servicePathOptions": {
+            "s3": [
+                {"path": "root.value1"},
+                {"path": "root.value2"}
+            ]
+        }
+    },
+
+    {
+        "device": {
+            "id": "device_4",
+            "name": "Device 4: two services, no paths"
+        },
+        "services": [
+            {
+                "id": "s4",
+                "name": "Service 4, no paths"
+            },
+            {
+                "id": "s5",
+                "name": "Service 5, no paths"
+            }
+        ],
+        "servicePathOptions": {}
+    },
+
+    {
+        "device": {
+            "id": "device_5",
+            "name": "Device 5: two services, one path"
+        },
+        "services": [
+            {
+                "id": "s6",
+                "name": "Service 6, one path"
+            },
+            {
+                "id": "s7",
+                "name": "Service 7, one path"
+            }
+        ],
+        "servicePathOptions": {
+            "s6": [
+                {"path": "root.value_s6"}
+            ],
+            "s7": [
+                {"path": "root.value_s7"}
+            ]
+        }
+    },
+
+    {
+        "device": {
+            "id": "device_6",
+            "name": "Device 6: two services, two paths"
+        },
+        "services": [
+            {
+                "id": "s8",
+                "name": "Service 8, two paths"
+            },
+            {
+                "id": "s9",
+                "name": "Service 9, two paths"
+            }
+        ],
+        "servicePathOptions": {
+            "s8": [
+                {"path": "root.value_s8.v1"},
+                {"path": "root.value_s8.v2"}
+            ],
+            "s9": [
+                {"path": "root.value_s9.v1"},
+                {"path": "root.value_s9.v2"}
+            ]
+        }
+    },
+
+    {
+        "device": {
+            "id": "device_7",
+            "name": "Device 7: 3 services, mixed paths arrangements"
+        },
+        "services": [
+            {
+                "id": "s10",
+                "name": "Service 10, no paths"
+            },
+            {
+                "id": "s11",
+                "name": "Service 11, one path"
+            },
+            {
+                "id": "s12",
+                "name": "Service 12, two paths"
+            }
+        ],
+        "servicePathOptions": {
+            "s11": [
+                {"path": "root.value_s11.v1"}
+            ],
+            "s12": [
+                {"path": "root.value_s12.v1"},
+                {"path": "root.value_s12.v2"}
+            ]
+        }
+    },
+
+    {
+        "device_group": {
+            "id": "group_1",
+            "name": "Group 1"
+        }
+    },
+    {
+        "device_group": {
+            "id": "group_2",
+            "name": "Group 2"
+        }
+    },
+
+    {
+        "import": {
+            "id": "import_1",
+            "name": "Import 1: without paths",
+            "import_type_id": "import_type_1"
+        }
+    },
+    {
+        "import": {
+            "id": "import_2",
+            "name": "Import 2: with one path",
+            "import_type_id": "import_type_2"
+        },
+        "servicePathOptions": {
+            "import_type_2": [
+                {"path": "root.value"}
+            ]
+        }
+    },
+    {
+        "import": {
+            "id": "import_3",
+            "name": "Import 3: with two paths",
+            "import_type_id": "import_type_3"
+        },
+        "servicePathOptions": {
+            "import_type_3": [
+                {"path": "root.value1"},
+                {"path": "root.value2"}
+            ]
+        }
+    }
+]
+

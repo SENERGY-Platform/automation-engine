@@ -1,0 +1,106 @@
+{
+  "version": 3,
+  "id": "",
+  "name": "ExampleName",
+  "description": "ExampleDesc",
+  "diagram": {
+    "xml_raw": "",
+    "xml_deployed": "",
+    "svg": ""
+  },
+  "elements": [
+    {
+      "bpmn_id": "Task_1nbnl8y",
+      "group": null,
+      "name": "Lighting getColorFunction",
+      "order": 0,
+      "time_event": null,
+      "notification": null,
+      "message_event": null,
+      "task": {
+        "retries": 2,
+        "parameter": {},
+        "configurables": null,
+        "selection": {
+          "filter_criteria": {
+            "characteristic_id":"urn:infai:ses:characteristic:5b4eea52-e8e5-4e80-9455-0382f81a1b43",
+            "function_id":"urn:infai:ses:measuring-function:bdb6a7c8-4a3d-4fe0-bab3-ce02e09b5869",
+            "device_class_id":null,
+            "aspect_id":"urn:infai:ses:aspect:a7470d73-dde3-41fc-92bd-f16bb28f2da6"
+          },
+          "selection_options": [
+            {
+              "device": {"id": "lifx1", "name": "lifx1"},
+              "services": [
+                {"id": "urn:infai:ses:service:137fdd3e-bf55-4129-b71a-f33df8223097", "name": "getStatusService"}
+              ]
+            },
+            {
+              "device": {"id": "lifx2", "name": "lifx2"},
+              "services": [
+                {"id": "urn:infai:ses:service:137fdd3e-bf55-4129-b71a-f33df8223097", "name": "getStatusService"}
+              ]
+            },
+            {
+              "device": {"id": "hue", "name": "hue"},
+              "services": [
+                {"id": "urn:infai:ses:service:99614933-4734-41b6-a131-3f96f134ee69", "name": "getStatusService"}
+              ]
+            }
+          ],
+          "selected_device_id": "hue",
+          "selected_service_id": "urn:infai:ses:service:99614933-4734-41b6-a131-3f96f134ee69"
+        }
+      }
+    },
+    {
+      "bpmn_id": "Task_1lhzy95",
+      "group": null,
+      "name": "Lamp setColorFunction",
+      "order": 0,
+      "time_event": null,
+      "notification": null,
+      "message_event": null,
+      "task": {
+        "retries": 0,
+        "parameter": {
+          "inputs.b":"0",
+          "inputs.g":"255",
+          "inputs.r":"100"
+        },
+        "configurables": null,
+        "selection": {
+          "filter_criteria":{
+            "characteristic_id":"urn:infai:ses:characteristic:5b4eea52-e8e5-4e80-9455-0382f81a1b43",
+            "function_id":"urn:infai:ses:controlling-function:c54e2a89-1fb8-4ecb-8993-a7b40b355599",
+            "device_class_id":"urn:infai:ses:device-class:14e56881-16f9-4120-bb41-270a43070c86",
+            "aspect_id":null
+          },
+          "selection_options": [
+            {
+              "device": {"id": "lifx1", "name": "lifx1"},
+              "services": [
+                {"id": "urn:infai:ses:service:98e7baf9-a0ba-4b43-acdf-2d2b915ac69d", "name": "setColorService"}
+              ]
+            },
+            {
+              "device": {"id": "lifx2", "name": "lifx2"},
+              "services": [
+                {"id": "urn:infai:ses:service:98e7baf9-a0ba-4b43-acdf-2d2b915ac69d", "name": "setColorService"}
+              ]
+            },
+            {
+              "device": {"id": "hue", "name": "hue"},
+              "services": [
+                {"id": "urn:infai:ses:service:67789396-d1ca-4ea9-9147-0614c6d68a2f", "name": "setColorService"}
+              ]
+            }
+          ],
+          "selected_device_id": "hue",
+          "selected_service_id": "urn:infai:ses:service:67789396-d1ca-4ea9-9147-0614c6d68a2f"
+        }
+      }
+    }
+  ],
+  "executable": true
+}

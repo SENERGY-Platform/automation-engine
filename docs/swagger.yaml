@@ -233,6 +233,20 @@ definitions:
         type: integer
       value: {}
     type: object
+  deprecated.IotDescription:
+    properties:
+      criteria:
+        items: {}
+        type: array
+      entity_only:
+        type: boolean
+      needs_same_entity_id_in_parameter:
+        type: string
+      type_filter:
+        items:
+          type: string
+        type: array
+    type: object
   deprecated.MaintenanceProcedure:
     properties:
       bpmn_id:
@@ -378,6 +392,8 @@ definitions:
         type: string
       id:
         type: string
+      iot_description:
+        $ref: '#/definitions/deprecated.IotDescription'
       label:
         type: string
       multiple:

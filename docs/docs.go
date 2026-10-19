@@ -10281,6 +10281,27 @@ const docTemplate = `{
                 "value": {}
             }
         },
+        "deprecated.IotDescription": {
+            "type": "object",
+            "properties": {
+                "criteria": {
+                    "type": "array",
+                    "items": {}
+                },
+                "entity_only": {
+                    "type": "boolean"
+                },
+                "needs_same_entity_id_in_parameter": {
+                    "type": "string"
+                },
+                "type_filter": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "deprecated.MaintenanceProcedure": {
             "type": "object",
             "properties": {
@@ -10502,6 +10523,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "iot_description": {
+                    "$ref": "#/definitions/deprecated.IotDescription"
                 },
                 "label": {
                     "type": "string"

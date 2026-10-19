@@ -148,7 +148,8 @@ func schemaType(t string) string {
 func defaultValue(f bpmn.FormField) any {
 	switch f.Type {
 	case "string":
-		if f.DefaultValue != "" {
+		// defaultValue="" is a default, as in smart-service-repository
+		if f.HasDefault || f.DefaultValue != "" {
 			return f.DefaultValue
 		}
 	case "long":

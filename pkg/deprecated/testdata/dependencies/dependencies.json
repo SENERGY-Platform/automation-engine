@@ -1,0 +1,15 @@
+{
+  "devices": [
+    {
+      "device_id": "hue",
+      "name": "hue",
+      "bpmn_resources": [{"id": "Task_1nbnl8y"}]
+    },
+    {
+      "device_id": "hue",
+      "name": "hue",
+      "bpmn_resources": [{"id": "Task_1lhzy95"}]
+    }
+  ],
+  "events": []
+}

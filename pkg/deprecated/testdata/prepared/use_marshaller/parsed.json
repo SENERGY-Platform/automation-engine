@@ -1,0 +1,44 @@
+{
+    "version":3,
+    "id":"",
+    "name":"use_marshaller_test",
+    "description":"",
+    "diagram":{
+        "xml_raw":"",
+        "xml_deployed":"",
+        "svg":""
+    },
+    "elements":[
+        {
+            "bpmn_id":"IntermediateThrowEvent_01fl1l6",
+            "group":null,
+            "name":"Get Battery Level Percentage",
+            "order":0,
+            "time_event":null,
+            "notification":null,
+            "message_event":{
+                "value":"",
+                "flow_id":"",
+                "event_id":"",
+                "use_marshaller":true,
+                "selection":{
+                    "filter_criteria":{
+                        "characteristic_id":"urn:infai:ses:characteristic:46f808f4-bb9e-4cc2-bd50-dc33ca74f273",
+                        "function_id":"urn:infai:ses:measuring-function:00549f18-88b5-44c7-adb1-f558e8d53d1d",
+                        "device_class_id":null,
+                        "aspect_id":"urn:infai:ses:aspect:d4625151-ce27-4620-9b7e-93ded78484f8"
+                    },
+                    "selection_options":null,
+                    "selected_device_id":null,
+                    "selected_service_id":null,
+                    "selected_device_group_id":null,
+                    "selected_import_id":null,
+                    "selected_generic_event_source":null,
+                    "selected_path":null
+                }
+            },
+            "task":null
+        }
+    ],
+    "executable":false
+}

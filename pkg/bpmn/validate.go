@@ -306,6 +306,7 @@ func ApplyParameters(p *Process, parameters map[string]model.ElementParameters) 
 				continue
 			}
 			e.FormFields[i].DefaultValue = params.Defaults[id]
+			e.FormFields[i].HasDefault = true
 		}
 	}
 	return issues

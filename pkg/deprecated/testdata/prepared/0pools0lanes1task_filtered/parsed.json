@@ -1,0 +1,41 @@
+{
+  "version": 3,
+  "id":"",
+  "name":"test_deployment_device_filter",
+  "description":"",
+  "diagram":{
+    "xml_raw":"",
+    "xml_deployed":"",
+    "svg":""
+  },
+  "elements":[
+    {
+      "bpmn_id":"Task_11qei58",
+      "group":null,
+      "name":"Device getEnergyConsumptionFunction",
+      "order":0,
+      "time_event":null,
+      "notification":null,
+      "message_event":null,
+      "task":{
+        "retries":0,
+        "parameter":{
+
+        },
+        "configurables":null,
+        "selection":{
+          "filter_criteria":{
+            "characteristic_id":"urn:infai:ses:characteristic:3febed55-ba9b-43dc-8709-9c73bae3716e",
+            "function_id":"urn:infai:ses:measuring-function:57dfd369-92db-462c-aca4-a767b52c972e",
+            "device_class_id":null,
+            "aspect_id":"urn:infai:ses:aspect:861227f6-1523-46a7-b8ab-a4e76f0bdd32"
+          },
+          "selection_options":null,
+          "selected_device_id": null,
+          "selected_service_id": null
+        }
+      }
+    }
+  ],
+  "executable":false
+}

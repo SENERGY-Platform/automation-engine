@@ -1,0 +1,66 @@
+{
+  "version": 3,
+  "id": "",
+  "name": "Events Example",
+  "description": "",
+  "diagram": {
+    "xml_raw": "",
+    "xml_deployed": "",
+    "svg": ""
+  },
+  "elements": [
+    {
+      "bpmn_id": "IntermediateThrowEvent_1cypyy9",
+      "group": null,
+      "name": "5 Minuten",
+      "order": 0,
+      "time_event": {
+        "type": "timeDuration",
+        "time": "PT5M"
+      },
+      "notification": null,
+      "message_event": null,
+      "task": null
+    },
+    {
+      "bpmn_id": "IntermediateThrowEvent_1gein4s",
+      "group": null,
+      "name": "13.5.2020, 01:13:00",
+      "order": 0,
+      "time_event": {
+        "type": "timeDate",
+        "time": "2020-05-12T23:13:00.000Z"
+      },
+      "notification": null,
+      "message_event": null,
+      "task": null
+    },
+    {
+      "bpmn_id": "IntermediateThrowEvent_1qm1az0",
+      "group": null,
+      "name": "* * * * * ?",
+      "order": 0,
+      "time_event": {
+        "type": "timeCycle",
+        "time": "* * * * * ?"
+      },
+      "notification": null,
+      "message_event": null,
+      "task": null
+    },
+    {
+      "bpmn_id": "IntermediateThrowEvent_0y8pjps",
+      "group": null,
+      "name": "",
+      "order": 0,
+      "time_event": {
+        "type": "timeDuration",
+        "time": ""
+      },
+      "notification": null,
+      "message_event": null,
+      "task": null
+    }
+  ],
+  "executable": false
+}

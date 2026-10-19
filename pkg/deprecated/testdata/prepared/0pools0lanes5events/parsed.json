@@ -1,0 +1,91 @@
+{
+  "version": 3,
+  "id": "",
+  "name": "Events Example",
+  "description": "",
+  "diagram": {
+    "xml_raw": "",
+    "xml_deployed": "",
+    "svg": ""
+  },
+  "elements": [
+    {
+      "bpmn_id": "StartEvent_1",
+      "group": null,
+      "name": "StartEvent_1",
+      "order": 0,
+      "time_event": null,
+      "notification": null,
+      "task": null,
+      "message_event": {
+        "value": "",
+        "flow_id": "",
+        "event_id": "",
+        "selection": {
+          "filter_criteria": {
+            "characteristic_id": "urn:infai:ses:characteristic:5b4eea52-e8e5-4e80-9455-0382f81a1b43",
+            "function_id": "urn:infai:ses:measuring-function:bdb6a7c8-4a3d-4fe0-bab3-ce02e09b5869",
+            "device_class_id": null,
+            "aspect_id": "urn:infai:ses:aspect:a7470d73-dde3-41fc-92bd-f16bb28f2da6"
+          },
+          "selection_options": null,
+          "selected_device_id": null,
+          "selected_service_id": null
+        }
+      }
+    },
+    {
+      "bpmn_id": "IntermediateThrowEvent_1cypyy9",
+      "group": null,
+      "name": "5 Minuten",
+      "order": 0,
+      "time_event": {
+        "type": "timeDuration",
+        "time": "PT5M"
+      },
+      "notification": null,
+      "message_event": null,
+      "task": null
+    },
+    {
+      "bpmn_id": "IntermediateThrowEvent_1gein4s",
+      "group": null,
+      "name": "13.5.2020, 01:13:00",
+      "order": 0,
+      "time_event": {
+        "type": "timeDate",
+        "time": "2020-05-12T23:13:00.000Z"
+      },
+      "notification": null,
+      "message_event": null,
+      "task": null
+    },
+    {
+      "bpmn_id": "IntermediateThrowEvent_1qm1az0",
+      "group": null,
+      "name": "* * * * * ?",
+      "order": 0,
+      "time_event": {
+        "type": "timeCycle",
+        "time": "* * * * * ?"
+      },
+      "notification": null,
+      "message_event": null,
+      "task": null
+    },
+    {
+      "bpmn_id": "IntermediateThrowEvent_0y8pjps",
+      "group": null,
+      "name": "",
+      "order": 0,
+      "time_event": {
+        "type": "timeDuration",
+        "time": ""
+      },
+      "notification": null,
+      "message_event": null,
+      "task": null
+    }
+  ],
+  "executable": false
+}

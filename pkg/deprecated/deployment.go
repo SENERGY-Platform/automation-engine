@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -242,7 +243,12 @@ var timerKinds = map[string]string{"duration": "timeDuration", "date": "timeDate
 func elements(process *bpmn.Process, selections map[string]model.Selection, options map[string][]model.SelectionOption) []models.Element {
 	result := []models.Element{}
 	for _, e := range process.Ordered() {
-		element := models.Element{BpmnId: e.Id, Name: e.Name, Group: ptr(e.Lane)}
+		// process-deployment named tasks, events and notifications without name by their id,
+		// timers not
+		element := models.Element{BpmnId: e.Id, Name: firstNonEmpty(e.Name, e.Id), Group: ptr(e.Lane)}
+		if e.Timer != nil || e.Kind == bpmn.EventTimer {
+			element.Name = e.Name
+		}
 		element.Order, _ = strconv.ParseInt(e.Attributes["order"], 10, 64)
 		criteria, device := prepare.CriteriaOf(e)
 		switch {
@@ -263,7 +269,8 @@ func elements(process *bpmn.Process, selections map[string]model.Selection, opti
 			}
 			element.Task = task
 		case device:
-			event := &models.ConditionalEvent{Script: e.Attributes["script"], ValueVariable: e.Attributes["value_variable_name"], Variables: map[string]string{},
+			// the event is evaluated with "value" without a name of its own (events.baseDescription)
+			event := &models.ConditionalEvent{Script: e.Attributes["script"], ValueVariable: firstNonEmpty(e.Attributes["value_variable_name"], "value"), Variables: map[string]string{},
 				Selection: oldSelection(criteria, selections[e.Id], options[e.Id])}
 			_ = json.Unmarshal([]byte(e.Attributes["variables"]), &event.Variables)
 			event.Qos, _ = strconv.Atoi(e.Attributes["qos"])
@@ -292,7 +299,11 @@ func oldStartParameters(process *bpmn.Process) []models.ProcessStartParameter {
 
 // prepared answers a deployment that is yet to be made, as process-deployment did
 func (this *Handler) prepared(r *http.Request, name string, xml string, svg string) (models.Deployment, error) {
-	conversion, process, err := this.convert(r, processes, xml)
+	filled, emptyTimers, err := fillEmptyTimers(xml, nil, emptyTimerPlaceholder)
+	if err != nil {
+		return models.Deployment{}, model.BadRequest("%v", err)
+	}
+	conversion, process, err := this.convert(r, processes, filled)
 	if err != nil {
 		return models.Deployment{}, err
 	}
@@ -303,9 +314,25 @@ func (this *Handler) prepared(r *http.Request, name string, xml string, svg stri
 	if name == "" {
 		name = firstNonEmpty(process.Name, process.Id)
 	}
-	return models.Deployment{Version: 3, Name: name, Diagram: models.Diagram{XmlRaw: xml, XmlDeployed: conversion.Xml, Svg: svg},
+	result := models.Deployment{Version: 3, Name: name, Diagram: models.Diagram{XmlRaw: xml, XmlDeployed: conversion.Xml, Svg: svg},
 		Elements: elements(process, map[string]model.Selection{}, options), Executable: len(conversion.Issues) == 0,
-		IncidentHandling: &models.IncidentHandling{Restart: false, Notify: true}, StartParameter: oldStartParameters(process)}, nil
+		IncidentHandling: &models.IncidentHandling{Restart: false, Notify: true}, StartParameter: oldStartParameters(process)}
+	for i, element := range result.Elements {
+		if element.TimeEvent != nil && slices.Contains(emptyTimers, element.BpmnId) {
+			// the dialog fills it in; the placeholder only let the model be prepared
+			result.Elements[i].TimeEvent = &models.TimeEvent{Type: "timeDuration"}
+		}
+	}
+	if withOptions(r) {
+		// a device task nothing can be selected for cannot run, as in process-deployment
+		// (SetExecutableFlag); without options asked for, there is nothing to judge by
+		for _, element := range result.Elements {
+			if element.Task != nil && len(element.Task.Selection.SelectionOptions) == 0 {
+				result.Executable = false
+			}
+		}
+	}
+	return result, nil
 }
 
 func firstNonEmpty(values ...string) string {
@@ -419,7 +446,18 @@ func DeploymentInput(ctx context.Context, c Converter, token string, namespace s
 	if old.Version != 3 {
 		return model.DeploymentInput{}, model.BadRequest("expected deployment version 3")
 	}
-	conversion, err := c.Convert(ctx, token, namespace, old.Diagram.XmlRaw)
+	times := map[string]string{}
+	for _, element := range old.Elements {
+		if element.TimeEvent != nil {
+			times[element.BpmnId] = element.TimeEvent.Time
+		}
+	}
+	// a timer left empty in the model gets the time of the dialog; one still empty is reported
+	xml, _, err := fillEmptyTimers(old.Diagram.XmlRaw, times, "")
+	if err != nil {
+		return model.DeploymentInput{}, model.BadRequest("%v", err)
+	}
+	conversion, err := c.Convert(ctx, token, namespace, xml)
 	if err != nil {
 		return model.DeploymentInput{}, err
 	}

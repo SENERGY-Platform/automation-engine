@@ -1,0 +1,86 @@
+{
+  "version": 3,
+  "id": "",
+  "name": "ExampleName",
+  "description": "ExampleDesc",
+  "diagram": {
+    "xml_raw": "",
+    "xml_deployed": "",
+    "svg": ""
+  },
+  "start_parameter": [
+    {
+      "id": "foo",
+      "label": "Foo",
+      "type": "string",
+      "default": "13",
+      "properties": {
+        "ignore_on_start": "true"
+      }
+    },
+    {
+      "id": "bar",
+      "label": "Bar",
+      "type": "string",
+      "default": "42",
+      "properties": {}
+    }
+  ],
+  "elements": [
+    {
+      "bpmn_id": "Task_1nbnl8y",
+      "group": null,
+      "name": "Lighting getColorFunction",
+      "order": 0,
+      "time_event": null,
+      "notification": null,
+      "message_event": null,
+      "task": {
+        "retries": 2,
+        "parameter": {},
+        "configurables": null,
+        "selection": {
+          "filter_criteria": {
+            "characteristic_id":"urn:infai:ses:characteristic:5b4eea52-e8e5-4e80-9455-0382f81a1b43",
+            "function_id":"urn:infai:ses:measuring-function:bdb6a7c8-4a3d-4fe0-bab3-ce02e09b5869",
+            "device_class_id":null,
+            "aspect_id":"urn:infai:ses:aspect:a7470d73-dde3-41fc-92bd-f16bb28f2da6"
+          },
+          "selection_options": null,
+          "selected_device_id": null,
+          "selected_service_id": null
+        }
+      }
+    },
+    {
+      "bpmn_id": "Task_1lhzy95",
+      "group": null,
+      "name": "Lamp setColorFunction",
+      "order": 0,
+      "time_event": null,
+      "notification": null,
+      "message_event": null,
+      "task": {
+        "retries": 0,
+        "parameter": {
+          "inputs.b":"100",
+          "inputs.g":"200",
+          "inputs.r":"0"
+        },
+        "configurables": null,
+        "selection": {
+          "filter_criteria":{
+            "characteristic_id":"urn:infai:ses:characteristic:5b4eea52-e8e5-4e80-9455-0382f81a1b43",
+            "function_id":"urn:infai:ses:controlling-function:c54e2a89-1fb8-4ecb-8993-a7b40b355599",
+            "device_class_id":"urn:infai:ses:device-class:14e56881-16f9-4120-bb41-270a43070c86",
+            "aspect_id":null
+          },
+          "selection_options": null,
+          "selected_device_id": null,
+          "selected_service_id": null
+        }
+      }
+    }
+  ],
+  "executable": false
+}

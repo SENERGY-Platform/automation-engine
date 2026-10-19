@@ -114,10 +114,11 @@ func innerText(e *etree.Element) string {
 
 func (this *parser) process(e *etree.Element) *Process {
 	result := &Process{
-		Id:       e.SelectAttrValue("id", ""),
-		Name:     e.SelectAttrValue("name", ""),
-		Elements: map[string]*Element{},
-		Flows:    map[string]*Flow{},
+		Id:          e.SelectAttrValue("id", ""),
+		Name:        e.SelectAttrValue("name", ""),
+		Description: attrValue(e, NsSenergy, "description"),
+		Elements:    map[string]*Element{},
+		Flows:       map[string]*Flow{},
 	}
 	var flows []*etree.Element
 	lanes := map[string]string{}
@@ -342,6 +343,7 @@ func (this *parser) message(e *Element, definition *etree.Element) {
 			// without a message reference, the event is addressed by its engine-assigned name
 			ref.DeviceEvent = true
 		} else {
+			ref.Id = messageId
 			name, ok := this.messages[messageId]
 			switch {
 			case !ok:
@@ -438,6 +440,7 @@ func formField(e *etree.Element) FormField {
 		Label:        e.SelectAttrValue("label", ""),
 		Type:         e.SelectAttrValue("type", "string"),
 		DefaultValue: e.SelectAttrValue("defaultValue", ""),
+		HasDefault:   e.SelectAttr("defaultValue") != nil,
 		Properties:   map[string]string{},
 	}
 	for _, child := range e.ChildElements() {

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+    <bpmn:process id="deviceGroupExample" isExecutable="true">
+        <bpmn:startEvent id="StartEvent_1">
+            <bpmn:outgoing>SequenceFlow_1stinn1</bpmn:outgoing>
+        </bpmn:startEvent>
+        <bpmn:sequenceFlow id="SequenceFlow_1stinn1" sourceRef="StartEvent_1" targetRef="Task_1hnxs1s"/>
+        <bpmn:endEvent id="EndEvent_11705n3">
+            <bpmn:incoming>SequenceFlow_1jb6p35</bpmn:incoming>
+        </bpmn:endEvent>
+        <bpmn:sequenceFlow id="SequenceFlow_1jb6p35" sourceRef="Task_1hnxs1s" targetRef="EndEvent_11705n3"/>
+        <bpmn:serviceTask id="Task_1hnxs1s" name="Lamp setOnStateFunction" camunda:type="external" camunda:topic="optimistic">
+            <bpmn:extensionElements>
+                <camunda:inputOutput>
+                    <camunda:inputParameter name="payload">{
+                        "version": 2,
+                        "function": {
+                        "id": "urn:infai:ses:controlling-function:79e7914b-f303-4a7d-90af-dee70db05fd9",
+                        "name": "setOnStateFunction",
+                        "concept_id": "",
+                        "rdf_type": "https://senergy.infai.org/ontology/ControllingFunction"
+                        },
+                        "device_class": {
+                        "id": "urn:infai:ses:device-class:14e56881-16f9-4120-bb41-270a43070c86",
+                        "image": "",
+                        "name": "Lamp",
+                        "rdf_type": "https://senergy.infai.org/ontology/DeviceClass"
+                        },
+                        "aspect": null,
+                        "label": "setOnStateFunction",
+                        "retries": 0
+                        }</camunda:inputParameter>
+                </camunda:inputOutput>
+            </bpmn:extensionElements>
+            <bpmn:incoming>SequenceFlow_1stinn1</bpmn:incoming>
+            <bpmn:outgoing>SequenceFlow_1jb6p35</bpmn:outgoing>
+        </bpmn:serviceTask>
+    </bpmn:process>
+</bpmn:definitions>

@@ -95,10 +95,12 @@ func (this ElementType) IsEvent() bool {
 }
 
 type Process struct {
-	Id       string
-	Name     string
-	Elements map[string]*Element
-	Flows    map[string]*Flow
+	Id   string
+	Name string
+	// senergy:description of the process, which the designer of smart services writes
+	Description string
+	Elements    map[string]*Element
+	Flows       map[string]*Flow
 	// element ids in document order, for deterministic iteration
 	Order []string
 }
@@ -187,6 +189,8 @@ func (this *Element) HasMappings() bool {
 }
 
 type MessageRef struct {
+	// id of the bpmn:message the event refers to, if any
+	Id string
 	// literal message name; empty for device events, whose name the engine assigns per deployment
 	Name        string
 	DeviceEvent bool
@@ -250,5 +254,7 @@ type FormField struct {
 	Label        string
 	Type         string
 	DefaultValue string
-	Properties   map[string]string
+	// the field declares a default; tells defaultValue="" from no default at all
+	HasDefault bool
+	Properties map[string]string
 }

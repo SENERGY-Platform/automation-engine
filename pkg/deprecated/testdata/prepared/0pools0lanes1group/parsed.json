@@ -1,0 +1,38 @@
+{
+  "version": 3,
+  "id": "",
+  "name": "deviceGroupExample",
+  "description": "",
+  "diagram": {
+    "xml_raw": "",
+    "xml_deployed": "",
+    "svg": ""
+  },
+  "elements": [
+    {
+      "bpmn_id": "Task_1hnxs1s",
+      "group": null,
+      "name": "Lamp setOnStateFunction",
+      "order": 0,
+      "time_event": null,
+      "notification": null,
+      "message_event": null,
+      "task": {
+        "retries": 0,
+        "parameter": {},
+        "configurables": null,
+        "selection": {
+          "filter_criteria": {
+            "characteristic_id": "",
+            "function_id": "urn:infai:ses:controlling-function:79e7914b-f303-4a7d-90af-dee70db05fd9",
+            "device_class_id": "urn:infai:ses:device-class:14e56881-16f9-4120-bb41-270a43070c86",
+            "aspect_id":null
+          },
+          "selection_options": null,
+          "selected_device_group_id": null
+        }
+      }
+    }
+  ],
+  "executable": false
+}

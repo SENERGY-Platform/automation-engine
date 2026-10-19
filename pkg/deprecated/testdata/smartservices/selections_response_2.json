@@ -1,0 +1,102 @@
+[
+    {
+        "device": {
+            "id": "device_4",
+            "name": "Device 4: two services, no paths"
+        },
+        "services": [
+            {
+                "id": "s4",
+                "name": "Service 4, no paths"
+            },
+            {
+                "id": "s5",
+                "name": "Service 5, no paths"
+            }
+        ],
+        "servicePathOptions": {}
+    },
+
+    {
+        "device": {
+            "id": "device_5",
+            "name": "Device 5: two services, one path"
+        },
+        "services": [
+            {
+                "id": "s6",
+                "name": "Service 6, one path"
+            },
+            {
+                "id": "s7",
+                "name": "Service 7, one path"
+            }
+        ],
+        "servicePathOptions": {
+            "s6": [
+                {"path": "root.value_s6"}
+            ],
+            "s7": [
+                {"path": "root.value_s7"}
+            ]
+        }
+    },
+
+    {
+        "device": {
+            "id": "device_6",
+            "name": "Device 6: two services, two paths"
+        },
+        "services": [
+            {
+                "id": "s8",
+                "name": "Service 8, two paths"
+            },
+            {
+                "id": "s9",
+                "name": "Service 9, two paths"
+            }
+        ],
+        "servicePathOptions": {
+            "s8": [
+                {"path": "root.value_s8.v1"},
+                {"path": "root.value_s8.v2"}
+            ],
+            "s9": [
+                {"path": "root.value_s9.v1"},
+                {"path": "root.value_s9.v2"}
+            ]
+        }
+    },
+
+    {
+        "device": {
+            "id": "device_7",
+            "name": "Device 7: 3 services, mixed paths arrangements"
+        },
+        "services": [
+            {
+                "id": "s10",
+                "name": "Service 10, no paths"
+            },
+            {
+                "id": "s11",
+                "name": "Service 11, one path"
+            },
+            {
+                "id": "s12",
+                "name": "Service 12, two paths"
+            }
+        ],
+        "servicePathOptions": {
+            "s11": [
+                {"path": "root.value_s11.v1"}
+            ],
+            "s12": [
+                {"path": "root.value_s12.v1"},
+                {"path": "root.value_s12.v2"}
+            ]
+        }
+    }
+]
+

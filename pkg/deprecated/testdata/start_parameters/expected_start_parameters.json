@@ -1,0 +1,24 @@
+[
+    {
+        "id": "location",
+        "label": "Location",
+        "type": "string",
+        "default": "",
+        "properties": {
+            "characteristic_id": "urn:infai:ses:characteristic:0b041ea3-8efd-4ce4-8130-d8af320326a4",
+            "description": "Location of the PV",
+            "order": "0"
+        }
+    },
+    {
+        "id": "pv",
+        "label": "Photovoltaik",
+        "type": "string",
+        "default": "",
+        "properties": {
+            "criteria_list": "[{\"interaction\":\"event\",\"function_id\":\"urn:infai:ses:measuring-function:1c7c90fb-73b6-4690-aac2-72e9735e68d0\",\"aspect_id\":\"urn:infai:ses:aspect:fa09fdeb-3dbe-42ca-9404-1ee9380bce2f\"}]",
+            "iot": "device",
+            "order": "0"
+        }
+    }
+]

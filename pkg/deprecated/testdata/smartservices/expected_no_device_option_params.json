@@ -1,0 +1,15 @@
+[
+    {
+        "id": "discharge_power",
+        "value": null,
+        "label": "Battery Discharge Power",
+        "description": "If your system displays discharge as negative charge value, make no selection here.",
+        "default_value": "",
+        "type": "https://schema.org/Text",
+        "options": [],
+        "multiple": false,
+        "order": 0,
+        "optional": true,
+        "has_no_valid_option": false
+    }
+]

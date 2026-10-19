@@ -92,17 +92,27 @@ type ReleaseInfo struct {
 }
 
 type ReleaseParameter struct {
-	Id               string         `json:"id"`
-	Label            string         `json:"label"`
-	Description      string         `json:"description"`
-	Type             string         `json:"type"`
-	DefaultValue     any            `json:"default_value"`
-	Multiple         bool           `json:"multiple"`
-	AutoSelectAll    bool           `json:"auto_select_all"`
-	Options          map[string]any `json:"options,omitempty"`
-	Order            int            `json:"order"`
-	CharacteristicId *string        `json:"characteristic_id,omitempty"`
-	Optional         bool           `json:"optional"`
+	Id               string          `json:"id"`
+	Label            string          `json:"label"`
+	Description      string          `json:"description"`
+	Type             string          `json:"type"`
+	DefaultValue     any             `json:"default_value"`
+	Multiple         bool            `json:"multiple"`
+	AutoSelectAll    bool            `json:"auto_select_all"`
+	Options          map[string]any  `json:"options,omitempty"`
+	IotDescription   *IotDescription `json:"iot_description"`
+	Order            int             `json:"order"`
+	CharacteristicId *string         `json:"characteristic_id,omitempty"`
+	Optional         bool            `json:"optional"`
+}
+
+// IotDescription is what an iot parameter asks to be filled with; the device replace dialog of
+// the web-ui reads its criteria
+type IotDescription struct {
+	TypeFilter                   []string `json:"type_filter"`
+	Criteria                     []any    `json:"criteria"`
+	EntityOnly                   bool     `json:"entity_only"`
+	NeedsSameEntityIdInParameter string   `json:"needs_same_entity_id_in_parameter"`
 }
 
 type MaintenanceProcedure struct {
@@ -330,6 +340,12 @@ func (this *Handler) saveDesign(w http.ResponseWriter, r *http.Request, save fun
 		writeError(w, err)
 		return
 	}
+	if d.Description == "" {
+		// as smart-service-repository did; the name falls back to the process in the controller
+		if process, _, err := bpmn.Parse(d.BpmnXml); err == nil {
+			d.Description = process.Description
+		}
+	}
 	m, err := save(model.ModelInput{Name: d.Name, Description: d.Description, Xml: d.BpmnXml, Svg: d.SvgXml})
 	if err != nil {
 		writeError(w, err)
@@ -535,14 +551,52 @@ func (this *Handler) getRelease(w http.ResponseWriter, r *http.Request) {
 // releaseParameter describes a form field of the start event with its properties, as the
 // release info of smart-service-repository did
 func releaseParameter(f bpmn.FormField) ReleaseParameter {
-	result := ReleaseParameter{Id: f.Id, Label: firstNonEmpty(f.Label, f.Id), Description: f.Properties["description"], Type: f.Type, DefaultValue: f.DefaultValue,
+	result := ReleaseParameter{Id: f.Id, Label: firstNonEmpty(f.Label, f.Id), Description: f.Properties["description"], Type: f.Type, DefaultValue: releaseDefault(f),
 		Multiple: f.Properties["multiple"] == "true", AutoSelectAll: f.Properties["auto_select_all"] == "true", Optional: f.Properties["optional"] == "true",
 		CharacteristicId: ptr(f.Properties["characteristic_id"])}
 	result.Order, _ = strconv.Atoi(f.Properties["order"])
 	if raw := f.Properties["options"]; raw != "" {
 		result.Options = via[map[string]any](jsonRaw(raw))
 	}
+	if iot, ok := f.Properties["iot"]; ok {
+		description := &IotDescription{TypeFilter: []string{}, Criteria: []any{}, NeedsSameEntityIdInParameter: f.Properties["same_entity"]}
+		if iot = strings.ReplaceAll(iot, " ", ""); iot != "" {
+			description.TypeFilter = strings.Split(iot, ",")
+		}
+		// criteria pass as written, with aspect_id or aspect_ids
+		if raw, ok := f.Properties["criteria"]; ok {
+			description.Criteria = []any{jsonRaw(raw)}
+		}
+		if raw, ok := f.Properties["criteria_list"]; ok {
+			if list, ok := jsonRaw(raw).([]any); ok {
+				description.Criteria = list
+			}
+		}
+		description.EntityOnly, _ = strconv.ParseBool(f.Properties["entity_only"])
+		result.IotDescription = description
+	}
 	return result
+}
+
+// releaseDefault is the default of a form field typed as smart-service-repository read it; null
+// without defaultValue or for other types
+func releaseDefault(f bpmn.FormField) any {
+	if !f.HasDefault && f.DefaultValue == "" {
+		return nil
+	}
+	switch f.Type {
+	case "string":
+		return f.DefaultValue
+	case "long":
+		if v, err := strconv.ParseFloat(f.DefaultValue, 64); err == nil {
+			return v
+		}
+	case "boolean":
+		if v, err := strconv.ParseBool(f.DefaultValue); err == nil {
+			return v
+		}
+	}
+	return nil
 }
 
 func jsonRaw(text string) any {
@@ -565,7 +619,7 @@ func releaseInfo(xml string) ReleaseInfo {
 				result.ParameterDescriptions = append(result.ParameterDescriptions, releaseParameter(f))
 			}
 		case e.Type == bpmn.StartEvent && e.Kind == bpmn.EventMessage && e.Message != nil:
-			procedure := MaintenanceProcedure{BpmnId: e.Id, PublicEventId: e.Message.Name, InternalEventId: e.Message.Name, ParameterDescriptions: []ReleaseParameter{}}
+			procedure := MaintenanceProcedure{BpmnId: e.Id, MessageRef: e.Message.Id, PublicEventId: e.Message.Name, InternalEventId: e.Message.Name, ParameterDescriptions: []ReleaseParameter{}}
 			for _, f := range e.FormFields {
 				procedure.ParameterDescriptions = append(procedure.ParameterDescriptions, releaseParameter(f))
 			}
