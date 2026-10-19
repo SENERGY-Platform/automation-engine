@@ -11,7 +11,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
 const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_sample">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_sample" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:message id="m" name="go"/>
   <bpmn:process id="wait_for_message" name="Wait for go" isExecutable="true">
     <bpmn:startEvent id="start">

@@ -35,7 +35,7 @@ func Process(parts ...string) string {
 		}
 	}
 	return `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:senergy="https://senergy.infai.org" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_1">` +
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:senergy="https://senergy.infai.org" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">` +
 		defs.String() + `<bpmn:process id="test_process" name="test process" isExecutable="true">` + body.String() + `</bpmn:process></bpmn:definitions>`
 }
 

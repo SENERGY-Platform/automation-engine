@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Reads the room temperature of a thermostat and sets the target temperature of the start form;
      the device and its services are selected at deploy; see "Running locally" in README.md -->
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:senergy="https://senergy.infai.org" id="Definitions_thermostat">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:senergy="https://senergy.infai.org" id="Definitions_thermostat" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="thermostat" name="Thermostat" isExecutable="true">
     <bpmn:startEvent id="start">
       <bpmn:extensionElements>
