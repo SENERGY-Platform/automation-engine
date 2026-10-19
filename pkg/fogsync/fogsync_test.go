@@ -60,6 +60,8 @@ type env struct {
 	gateway *server.Server
 	// the connector between both brokers; false drops everything, as the connector does offline
 	online atomic.Bool
+	// the broker of the cloud, for a gateway that replaces the first one
+	cloudBroker *mqtt.Memory
 }
 
 // bridge forwards like mgw-device-cloud-connector: processes/{network}/cmd/# of the cloud to
@@ -86,6 +88,7 @@ func newEnv(t *testing.T, configure ...func(*configuration.Config)) *env {
 	this := &env{t: t}
 	this.online.Store(true)
 	cloudBroker, gatewayBroker := mqtt.NewMemory(), mqtt.NewMemory()
+	this.cloudBroker = cloudBroker
 	this.bridge(cloudBroker, gatewayBroker)
 
 	config := configuration.Default()

@@ -268,6 +268,15 @@ func (this *Tx) SetDesiredApplied(networkId string, kind string, id string, vers
 	return err
 }
 
+// LowerDesiredApplied takes back what a gateway acknowledged but no longer reports, e.g. after
+// it lost its database: the applied version falls to the reported one and the resource is due
+// again. A gateway that reports as much or more changes nothing.
+func (this *Tx) LowerDesiredApplied(networkId string, kind string, id string, version int64, message string) error {
+	_, err := this.exec("UPDATE network_desired SET applied_version = ?, error = ?, sent_at = 0 WHERE network_id = ? AND kind = ? AND id = ? AND applied_version > ?",
+		version, message, networkId, kind, id, version)
+	return err
+}
+
 // ForgetEndedInstance removes the start or stop of an instance the gateway reported as ended;
 // both are done, and the gateway forgets them once the instance is gone there.
 func (this *Tx) ForgetEndedInstance(networkId string, id string) error {

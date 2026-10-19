@@ -146,8 +146,71 @@ func (this *Cloud) Wake() {
 // that causes it; the reconciler sends it (SYNC-01).
 func (this *Cloud) Desire(tx *store.Tx, networkId string, resource Resource) error {
 	spec := Resource{Namespace: resource.Namespace, Deployment: resource.Deployment, Instance: resource.Instance}
-	_, err := tx.Desire(networkId, resource.Kind, resource.Id, resource.Deleted, spec, this.now())
-	return err
+	if _, err := tx.Desire(networkId, resource.Kind, resource.Id, resource.Deleted, spec, this.now()); err != nil {
+		return err
+	}
+	if resource.Kind == ResourceDeployment && resource.Deleted {
+		return forgetInstancesOf(tx, networkId, resource.Id)
+	}
+	return nil
+}
+
+// forgetInstancesOf removes the starts and stops of the instances of a deployment the gateway
+// deletes: it removes the instances with the deployment, as the cloud does, so they are done;
+// a start the gateway never got would fail there
+func forgetInstancesOf(tx *store.Tx, networkId string, deploymentId string) error {
+	desired, err := tx.ListDesired(networkId, ResourceInstance)
+	if err != nil {
+		return err
+	}
+	for _, d := range desired {
+		if d.Deleted || len(d.Spec) == 0 {
+			continue
+		}
+		var spec Resource
+		if err = json.Unmarshal(d.Spec, &spec); err != nil {
+			return err
+		}
+		if spec.Instance == nil || spec.Instance.DeploymentId != deploymentId {
+			continue
+		}
+		if err = tx.ForgetEndedInstance(networkId, d.Id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// settle ends an instance that is still pending in the cloud when the gateway applied its stop:
+// the gateway either stopped it or never got its start and will not run it; the change stream
+// corrects the state if the instance ended otherwise. Its start is done then.
+func (this *Cloud) settle(tx *store.Tx, networkId string, d store.Desired) error {
+	if d.Kind != ResourceInstance || d.Deleted || d.AppliedVersion < d.Version || d.Error != "" || len(d.Spec) == 0 {
+		return nil
+	}
+	var spec Resource
+	if err := json.Unmarshal(d.Spec, &spec); err != nil {
+		return err
+	}
+	if spec.Instance == nil || !spec.Instance.Stopped {
+		return nil
+	}
+	inst, err := tx.GetInstance(d.Id, true)
+	if errors.Is(err, model.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if inst.NetworkId != networkId || inst.State != model.StatePending {
+		return nil
+	}
+	ended := this.now().UTC()
+	inst.State, inst.EndReason, inst.EndedAt = model.StateTerminated, "stopped", &ended
+	if err = tx.UpsertReplicatedInstance(networkId, inst.Instance); err != nil {
+		return err
+	}
+	return tx.ForgetEndedInstance(networkId, d.Id)
 }
 
 // Handle processes a message of a gateway; it returns an error only when the message should be
@@ -233,10 +296,21 @@ func (this *Cloud) status(ctx context.Context, networkId string, status Status) 
 			return err
 		}
 		for _, d := range desired {
-			if r, ok := reported[d.Kind+"|"+d.Id]; !ok || r.Version < d.Version {
-				if err = tx.MarkDesiredSent(networkId, d.Kind, d.Id, d.Version, time.Time{}); err != nil {
+			r, ok := reported[d.Kind+"|"+d.Id]
+			if ok && r.Version >= d.Version {
+				// an acknowledgement may have been lost
+				if err = this.settle(tx, networkId, d); err != nil {
 					return err
 				}
+				continue
+			}
+			// what the gateway no longer has, e.g. after it lost its database, is due again; an
+			// unreported resource counts as version 0
+			if err = tx.LowerDesiredApplied(networkId, d.Kind, d.Id, r.Version, r.Error); err != nil {
+				return err
+			}
+			if err = tx.MarkDesiredSent(networkId, d.Kind, d.Id, d.Version, time.Time{}); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -261,6 +335,18 @@ func (this *Cloud) applied(ctx context.Context, networkId string, results []Resu
 		for _, r := range results {
 			if err = tx.SetDesiredApplied(networkId, r.Kind, r.Id, r.Version, r.Error, r.At); err != nil {
 				return err
+			}
+			if r.Kind != ResourceInstance {
+				continue
+			}
+			d, found, err := tx.GetDesired(networkId, r.Kind, r.Id)
+			if err != nil {
+				return err
+			}
+			if found {
+				if err = this.settle(tx, networkId, d); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
