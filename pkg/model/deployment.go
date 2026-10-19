@@ -110,6 +110,9 @@ type DeploymentInput struct {
 	NetworkId string `json:"network_id,omitempty"`
 }
 
+// DefaultDeploymentSource is the source of a deployment without one, as the engine wrapper set it
+const DefaultDeploymentSource = "sepl"
+
 type DeploymentListOptions struct {
 	PageOptions
 	Search  string   `json:"search,omitempty"`

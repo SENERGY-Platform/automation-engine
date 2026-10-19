@@ -434,12 +434,19 @@ func (this *where) access(prefix string, access Access) {
 	this.add("("+prefix+"owner = ? OR "+prefix+"id IN ("+placeholders+"))", args...)
 }
 
-func (this *where) search(column string, term string) {
+// search finds the term in any of the columns, ignoring case
+func (this *where) search(term string, columns ...string) {
 	if term == "" {
 		return
 	}
 	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(term))
-	this.add("LOWER("+column+") LIKE ? ESCAPE '\\'", "%"+escaped+"%")
+	conditions := make([]string, 0, len(columns))
+	args := make([]any, 0, len(columns))
+	for _, column := range columns {
+		conditions = append(conditions, "LOWER("+column+") LIKE ? ESCAPE '\\'")
+		args = append(args, "%"+escaped+"%")
+	}
+	this.add("("+strings.Join(conditions, " OR ")+")", args...)
 }
 
 func (this *where) String() string {

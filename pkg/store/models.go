@@ -68,7 +68,8 @@ func (this *Tx) ListModels(namespace string, options model.ModelListOptions, acc
 	w := &where{}
 	w.add("namespace = ?", namespace)
 	w.access("", access)
-	w.search("name", options.Search)
+	// name or description, as /v2/processes of process-model-repository (MOD-01)
+	w.search(options.Search, "name", "description")
 	if len(options.Ids) > 0 {
 		w.in("id", options.Ids)
 	}

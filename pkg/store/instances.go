@@ -144,7 +144,7 @@ func (this *Tx) ListInstances(namespace string, options model.InstanceListOption
 	if options.DeploymentId != "" {
 		w.add("deployment_id = ?", options.DeploymentId)
 	}
-	w.search("deployment_name", options.DeploymentName)
+	w.search(options.DeploymentName, "deployment_name")
 	if options.ModelId != "" {
 		w.add("model_id = ?", options.ModelId)
 	}

@@ -143,7 +143,7 @@ func (this *Handler) engine() {
 func camundaDeployment(d model.Deployment) CamundaDeployment {
 	source := d.Source
 	if source == "" {
-		source = "sepl"
+		source = model.DefaultDeploymentSource
 	}
 	return CamundaDeployment{Id: d.Id, Name: d.Name, Source: source, DeploymentTime: formatTime(&d.CreatedAt), TenantId: d.Owner}
 }
@@ -215,7 +215,8 @@ func (this *Handler) listDeployments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	options := model.DeploymentListOptions{NetworkId: "cloud", Search: strings.Trim(q.Get("nameLike"), "%"),
+	// the web-ui asks for source=sepl and so hides the deployments of widgets (source=generated)
+	options := model.DeploymentListOptions{NetworkId: "cloud", Search: strings.Trim(q.Get("nameLike"), "%"), Source: q.Get("source"),
 		Sort: sort(q.Get("sortBy")+"."+q.Get("sortOrder"), map[string]string{"name": "name", "deploymentTime": "created_at"})}
 	deployments, _, err := paged(limit, offset, func(page model.PageOptions) (model.Page[model.Deployment], error) {
 		options.PageOptions = page

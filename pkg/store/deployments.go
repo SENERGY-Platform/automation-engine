@@ -85,7 +85,7 @@ func (this *Tx) ListDeployments(namespace string, options model.DeploymentListOp
 	w := &where{}
 	w.add("namespace = ?", namespace)
 	w.access("", access)
-	w.search("name", options.Search)
+	w.search(options.Search, "name")
 	if len(options.Ids) > 0 {
 		w.in("id", options.Ids)
 	}
@@ -95,7 +95,12 @@ func (this *Tx) ListDeployments(namespace string, options model.DeploymentListOp
 	if options.Owner != "" {
 		w.add("owner = ?", options.Owner)
 	}
-	if options.Source != "" {
+	switch options.Source {
+	case "":
+	case model.DefaultDeploymentSource:
+		// the wrapper stored deployments without source as sepl; migrated ones keep it
+		w.add("(source = ? OR source = '')", options.Source)
+	default:
 		w.add("source = ?", options.Source)
 	}
 	w.network(options.NetworkId)
