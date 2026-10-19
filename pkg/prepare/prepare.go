@@ -22,15 +22,18 @@ package prepare
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
 	dsmodel "github.com/SENERGY-Platform/device-selection/v2/pkg/model"
 	"github.com/SENERGY-Platform/device-selection/v2/pkg/model/devicemodel"
+	"github.com/SENERGY-Platform/models/go/models"
 )
 
 // Config mirrors the options of process-deployment; groups and imports are off there by default.
@@ -39,6 +42,8 @@ type Config struct {
 	GroupsForEvents  bool
 	ImportsForEvents bool
 	ModifiedDevices  bool
+	// device-repository, for the devices of a hub when preparing for a gateway
+	DeviceRepositoryUrl string
 }
 
 type Preparer struct {
@@ -130,6 +135,31 @@ func filter(c model.Criteria, interaction string) devicemodel.FilterCriteria {
 // Prepare lists the elements that need a device selection with their options. Device tasks
 // of one lane share the criteria of all of them, so that one device serves the whole lane.
 func (this *Preparer) Prepare(token string, process *bpmn.Process) ([]model.PreparedElement, error) {
+	return this.prepare(token, process, nil)
+}
+
+// PrepareForHub offers only the devices of the hub, for a deployment to its gateway; the local
+// ids of the hub go to device-selection as process-fog-deployment sent them.
+func (this *Preparer) PrepareForHub(token string, process *bpmn.Process, hubId string) ([]model.PreparedElement, error) {
+	if this.client == nil {
+		return this.prepare(token, process, nil)
+	}
+	if this.config.DeviceRepositoryUrl == "" {
+		return nil, model.Unavailable("device-repository is needed to offer the devices of a gateway")
+	}
+	var hub models.Hub
+	if err := devices.Token(token).GetJSON(this.config.DeviceRepositoryUrl+"/hubs/"+url.PathEscape(hubId), &hub); err != nil {
+		return nil, model.Unavailable("device-repository: hub %v: %v", hubId, err)
+	}
+	if len(hub.DeviceLocalIds) == 0 {
+		// device-selection would read an empty list as no restriction; a hub without devices
+		// offers none
+		return (&Preparer{config: this.config}).prepare(token, process, nil)
+	}
+	return this.prepare(token, process, hub.DeviceLocalIds)
+}
+
+func (this *Preparer) prepare(token string, process *bpmn.Process, localDevices []string) ([]model.PreparedElement, error) {
 	result := []model.PreparedElement{}
 	laneCriteria := map[string][]devicemodel.FilterCriteria{}
 	for _, e := range process.Ordered() {
@@ -151,7 +181,7 @@ func (this *Preparer) Prepare(token string, process *bpmn.Process) ([]model.Prep
 	}
 	bulk := dsmodel.BulkRequestV2{}
 	for _, element := range result {
-		request := dsmodel.BulkRequestElementV2{Id: element.ElementId, IncludeDevices: true, IncludeIdModifiedDevices: this.config.ModifiedDevices}
+		request := dsmodel.BulkRequestElementV2{Id: element.ElementId, IncludeDevices: true, IncludeIdModifiedDevices: this.config.ModifiedDevices, LocalDevices: localDevices}
 		if element.Kind == model.PreparedTask {
 			request.IncludeGroups = this.config.GroupsForTasks
 			request.Criteria = dsmodel.FilterCriteriaAndSet{filter(element.Criteria, "")}

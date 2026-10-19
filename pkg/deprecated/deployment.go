@@ -112,7 +112,8 @@ func (this *Handler) options(r *http.Request, xml string, with bool) (map[string
 	if !with {
 		return result, nil
 	}
-	prepared, err := this.c.PrepareDeployment(r.Context(), token(r), processes, model.PrepareInput{Xml: xml})
+	// the fog routes name the gateway, whose devices alone are offered
+	prepared, err := this.c.PrepareDeployment(r.Context(), token(r), processes, model.PrepareInput{Xml: xml, NetworkId: r.PathValue("networkId")})
 	if err != nil {
 		return nil, err
 	}

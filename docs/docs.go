@@ -13039,6 +13039,10 @@ const docTemplate = `{
                 "model_version": {
                     "type": "integer"
                 },
+                "network_id": {
+                    "description": "a gateway: devices are offered only if they are devices of its hub, as\nprocess-fog-deployment did",
+                    "type": "string"
+                },
                 "xml": {
                     "type": "string"
                 }

@@ -53,6 +53,13 @@ func (this *Controller) PrepareDeployment(ctx context.Context, token string, nam
 		// without device-selection the elements are listed without options
 		preparer = prepare.New(nil, prepare.Config{})
 	}
-	result.Elements, err = preparer.Prepare(user.Jwt(), process)
+	if input.NetworkId == "" {
+		result.Elements, err = preparer.Prepare(user.Jwt(), process)
+		return result, err
+	}
+	if _, err = this.GetNetwork(ctx, token, input.NetworkId); err != nil {
+		return result, err
+	}
+	result.Elements, err = preparer.PrepareForHub(user.Jwt(), process, input.NetworkId)
 	return result, err
 }

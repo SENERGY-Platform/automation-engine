@@ -23,6 +23,9 @@ type PrepareInput struct {
 	ModelId      string `json:"model_id,omitempty"`
 	ModelVersion int    `json:"model_version,omitempty"`
 	Xml          string `json:"xml,omitempty"`
+	// a gateway: devices are offered only if they are devices of its hub, as
+	// process-fog-deployment did
+	NetworkId string `json:"network_id,omitempty"`
 }
 
 // PreparedDeployment lists what a deploy dialog needs: start parameters and, per device task

@@ -277,7 +277,8 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		selection = dsclient.NewClient(config.DeviceSelectionUrl)
 	}
 	c.SetPreparation(
-		prepare.New(selection, prepare.Config{GroupsForTasks: config.DeviceGroupsForTasks, GroupsForEvents: config.DeviceGroupsForEvents, ImportsForEvents: config.ImportsForEvents, ModifiedDevices: config.ModifiedDevices}),
+		prepare.New(selection, prepare.Config{GroupsForTasks: config.DeviceGroupsForTasks, GroupsForEvents: config.DeviceGroupsForEvents, ImportsForEvents: config.ImportsForEvents, ModifiedDevices: config.ModifiedDevices,
+			DeviceRepositoryUrl: config.DeviceRepositoryUrl}),
 		prepare.NewAccess(permissionsClient, config.ImportDeployUrl),
 	)
 	if repo != nil {
