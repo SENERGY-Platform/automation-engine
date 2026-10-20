@@ -2091,6 +2091,9 @@
             },
             "ModelNamespace": {
                 "properties": {
+                    "cloud_only": {
+                        "type": "boolean"
+                    },
                     "created_at": {
                         "format": "date-time",
                         "type": "string"

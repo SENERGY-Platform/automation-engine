@@ -12636,6 +12636,10 @@ const docTemplate = `{
         "model.Namespace": {
             "type": "object",
             "properties": {
+                "cloud_only": {
+                    "description": "deployments run only in the cloud: a deployment for a gateway (network_id) is rejected,\nand modules that deploy into this namespace keep their deployments in the cloud (NS-10)",
+                    "type": "boolean"
+                },
                 "created_at": {
                     "type": "string"
                 },

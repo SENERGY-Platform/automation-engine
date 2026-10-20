@@ -33,6 +33,9 @@ func (this *Controller) PrepareDeployment(ctx context.Context, token string, nam
 	if err != nil {
 		return result, err
 	}
+	if err = ns.CheckGateway(input.NetworkId); err != nil {
+		return result, err
+	}
 	var source resolvedDeployment
 	err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
 		source, err = this.source(ctx, tx, user, ns, input.ModelId, input.ModelVersion, input.Xml, "")

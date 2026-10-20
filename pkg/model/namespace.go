@@ -144,6 +144,9 @@ type Namespace struct {
 	// reject sequence flow cycles at deploy, so that every run ends; for namespaces whose task
 	// types create modules, which are removed with every new run (SMS-03)
 	ForbidCycles bool `json:"forbid_cycles,omitempty"`
+	// deployments run only in the cloud: a deployment for a gateway (network_id) is rejected,
+	// and modules that deploy into this namespace keep their deployments in the cloud (NS-10)
+	CloudOnly bool `json:"cloud_only,omitempty"`
 
 	Models      LevelSettings `json:"models"`
 	Deployments LevelSettings `json:"deployments"`
@@ -181,6 +184,14 @@ func (this Namespace) Topic(kind Kind) string {
 
 func Topic(namespace string, kind Kind) string {
 	return namespace + "_" + string(kind)
+}
+
+// CheckGateway rejects a deployment for the gateway networkId if the namespace runs only in the cloud.
+func (this Namespace) CheckGateway(networkId string) error {
+	if networkId != "" && this.CloudOnly {
+		return BadRequest("namespace %v runs only in the cloud, not on gateways (network_id %v)", this.Name, networkId)
+	}
+	return nil
 }
 
 var namespaceNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)

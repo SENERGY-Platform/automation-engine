@@ -310,9 +310,10 @@ func TestDesiredStateIsSentAgainAfterLosses(t *testing.T) {
 	})
 }
 
-// A smart service deploys with prefer_fog_deployment to the first gateway that carries every
-// selected device, as smart-service-module-worker-process did (TASK-20, DEP-09).
-func TestProcessDeploymentChoosesTheGatewayOfTheDevices(t *testing.T) {
+// deployPreferringTheGateway runs a smart service that deploys a process with an event of a
+// device of the gateway and prefer_fog_deployment; it returns the outputs of the module
+func deployPreferringTheGateway(t *testing.T, configure ...func(*configuration.Config)) (*env, map[string]any) {
+	t.Helper()
 	output := []models.Content{{ContentVariable: models.ContentVariable{Name: "value", FunctionId: measuring, AspectId: "air"}}}
 	answers := map[string]any{
 		"/hubs/" + network:  models.Hub{Id: network, DeviceIds: []string{"d1"}},
@@ -327,8 +328,8 @@ func TestProcessDeploymentChoosesTheGatewayOfTheDevices(t *testing.T) {
 		}
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
-	defer repository.Close()
-	e := newEnv(t, func(c *configuration.Config) { c.DeviceRepositoryUrl = repository.URL })
+	t.Cleanup(repository.Close)
+	e := newEnv(t, append([]func(*configuration.Config){func(c *configuration.Config) { c.DeviceRepositoryUrl = repository.URL }}, configure...)...)
 	c := e.cloud.Controller
 	m, err := c.CreateModel(ctx, alice, "processes", model.ModelInput{Xml: b.Process(
 		b.Start("start"),
@@ -364,9 +365,18 @@ func TestProcessDeploymentChoosesTheGatewayOfTheDevices(t *testing.T) {
 		}
 		return current.State != model.StateRunning
 	})
+	if incidents, _ := c.ListIncidents(ctx, alice, "smart-services", model.IncidentListOptions{InstanceId: inst.Id}); len(incidents.Items) > 0 {
+		t.Fatalf("the smart service has incidents: %+v", incidents.Items)
+	}
+	return e, values
+}
+
+// A smart service deploys with prefer_fog_deployment to the first gateway that carries every
+// selected device, as smart-service-module-worker-process did (TASK-20, DEP-09).
+func TestProcessDeploymentChoosesTheGatewayOfTheDevices(t *testing.T) {
+	e, values := deployPreferringTheGateway(t)
 	if values["fog"] != true || values["hub"] != network {
-		incidents, _ := c.ListIncidents(ctx, alice, "smart-services", model.IncidentListOptions{InstanceId: inst.Id})
-		t.Fatalf("the module reports the gateway: %v %+v", values, incidents.Items)
+		t.Fatalf("the module reports the gateway: %v", values)
 	}
 	deploymentId, _ := values["deployment"].(string)
 	e.waitFor("the deployment on the gateway", func() bool { _, err := e.gatewayDeployment(deploymentId); return err == nil })

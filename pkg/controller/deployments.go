@@ -203,6 +203,9 @@ func (this *Controller) createDeployment(ctx context.Context, token string, name
 	if err != nil {
 		return result, err
 	}
+	if err = ns.CheckGateway(input.NetworkId); err != nil {
+		return result, err
+	}
 	if input.NetworkId != "" {
 		if err = this.checkNetwork(ctx, user, input.NetworkId, Administrate); err != nil {
 			return result, err
@@ -279,6 +282,13 @@ func (this *Controller) PutDeployment(ctx context.Context, token string, namespa
 	}
 	if err == nil && input.NetworkId != "" && input.NetworkId != existing.NetworkId {
 		return result, model.BadRequest("the network of a deployment cannot change")
+	}
+	// a gateway deployment from before the namespace became cloud only keeps running, but is
+	// not updated; a new deployment is checked by createDeployment
+	if err == nil && existing.Namespace == namespace {
+		if checkErr := ns.CheckGateway(existing.NetworkId); checkErr != nil {
+			return result, checkErr
+		}
 	}
 	if err == nil && existing.NetworkId != "" {
 		if err = this.checkNetwork(ctx, user, existing.NetworkId, Administrate); err != nil {

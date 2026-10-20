@@ -296,6 +296,8 @@ func DefaultNamespaces() []model.Namespace {
 			ForbidCycles:               true,
 			MessageStartsAreProcedures: true,
 			JsonStringParameters:       true,
+			// smart services run on the platform only; the processes they deploy may go to gateways
+			CloudOnly: true,
 		},
 	}
 }

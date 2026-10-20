@@ -352,6 +352,15 @@ Decided by the user: models stay as they are submitted, through the new API as t
 - **Events:** `senergy:use_marshaller` stays an unknown attribute without effect; process-deployment read it only for message events of analytics pipelines, which the engine dropped (EVT-03), not for conditional events with a script.
 - **Migration:** every migrated process model reports what the conversion would do, as items of kind `model`; the stored XML stays.
 
+## Namespaces kept from gateways (2026-10-20)
+
+Decided by the user: a namespace can be excluded from gateways, configured per namespace. Smart services never run on a gateway, only on the platform; the processes they deploy may. This supersedes the earlier statements that any deployment can be created with `network_id` (M6 c) and that `prefer_fog_deployment` always takes the gateway that carries the devices (M6 c).
+
+- **Setting:** `cloud_only` (bool, `omitempty`) on the namespace. The zero value allows gateways, so `processes`, custom namespaces and every namespace from a database or a `NAMESPACES` list without the field behave as before; the shipped `smart-services` sets it. Rejected: a field with `allowed` semantics such as `gateways.allowed`, whose zero value would have excluded every stored namespace; a defaulting rule by the name `smart-services`, which an admin could not override and which ties behaviour to a name instead of the configuration (NS-02).
+- **Older databases:** the seed does not overwrite stored namespaces, so a stored `smart-services` would have stayed allowed. Schema migration 12 prepends `"cloud_only":true` to its JSON once, in plain SQL that SQLite and Postgres both run (`||`, `substr`), and only if the key is missing; afterwards the admin API decides, and a later `cloud_only: false` stays. An own `NAMESPACES` list on a new database replaces the defaults and has to set the field itself.
+- **Enforcement:** in the cloud, on create and update of a deployment with `network_id` (`Controller.createDeployment`, `PutDeployment`, also for the old fog routes and the migration, which use `processes` only) and on `prepare` with `network_id`: 400 naming the namespace. `process_deployment` with `prefer_fog_deployment` into a `cloud_only` namespace deploys in the cloud without an error, because the input is a preference. The gateway does not check the setting: it applies what the cloud sends, and the field is additive in the replicated namespace, which gateways of the same protocol version ignore (`json.Unmarshal` without `DisallowUnknownFields`); no protocol change.
+- **Changing a namespace to `cloud_only`** while it has deployments on gateways: accepted, consistent with NS-03, where a changed namespace does not check existing deployments again. They keep running and can be started, stopped and deleted; an update is rejected like a new deployment; the registry logs their ids with the change. Rejected: answering the change with 409 and the list, which would make the admin delete user deployments before a rule can change, unlike every other rule of a namespace; deleting them.
+
 ## Audit against the requirements (2026-10-20)
 
 Every requirement id of `docs/requirements.md` (242) was checked against code and tests, together with the gaps of the milestones above and the engine items of `OPEN-ITEMS.md`. None is missing entirely: 186 are implemented, 47 partly, 3 differ by a decision recorded above, 6 are tasks of other repos or of operations. Defects 1, 2, 5, 6 and 7 were reproduced with tests in a copy of the repository, the others read from the code.
@@ -423,6 +432,7 @@ Recorded here so that it is a decision; changing it would be a new task.
 - M3 status: `GROUP_SCHEDULER` also knows `round_robin`, and the timeout is no longer the job timeout for groups (`docs/device-command-groups.md`).
 - M4 decisions name `pkg/live.Hub`; it is `pkg/debug.Hub` (see "Cleanup").
 - README: instances with modules are exempt from deletion by retention, not from trimming their history; on a full disk `/ready` reports the error, `/health` does not. Both corrected on 2026-10-20.
+- M6 c: deployments with `network_id` and `prefer_fog_deployment` apply only to namespaces without `cloud_only`; `smart-services` never runs on a gateway ("Namespaces kept from gateways").
 
 ### Before this file is removed
 

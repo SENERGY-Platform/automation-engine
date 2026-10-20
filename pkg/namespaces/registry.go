@@ -124,6 +124,7 @@ func (this *Registry) Put(ctx context.Context, ns model.Namespace) (result model
 			return ns, false, model.Unavailable("unable to write permissions-v2 topics: %v", err)
 		}
 	}
+	var onGateways []string
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		now := this.now()
 		old, existed := this.Get(ns.Name)
@@ -141,10 +142,18 @@ func (this *Registry) Put(ctx context.Context, ns model.Namespace) (result model
 				}
 			}
 		}
-		return nil
+		if existed && !old.CloudOnly && ns.CloudOnly {
+			// as with other rules (NS-03), existing deployments are not checked again; those on
+			// gateways keep running and can be started, stopped and deleted, but not updated
+			onGateways, err = tx.GatewayDeploymentIds(ns.Name)
+		}
+		return err
 	})
 	if err != nil {
 		return ns, false, err
+	}
+	if len(onGateways) > 0 {
+		this.logger.Warn("namespace runs only in the cloud now, but has deployments on gateways; they keep running until deleted", "namespace", ns.Name, "deployments", onGateways)
 	}
 	this.markEnsured(ns)
 	if err = this.Reload(ctx); err != nil {

@@ -356,7 +356,16 @@ func (this *Tx) NetworkInstanceIds(networkId string) (result []string, err error
 }
 
 func (this *Tx) networkDeploymentIds(networkId string) (result []string, err error) {
-	rows, err := this.query("SELECT id FROM deployments WHERE network_id = ? ORDER BY id", networkId)
+	return this.ids("SELECT id FROM deployments WHERE network_id = ? ORDER BY id", networkId)
+}
+
+// GatewayDeploymentIds lists the deployments of a namespace that run on gateways.
+func (this *Tx) GatewayDeploymentIds(namespace string) (result []string, err error) {
+	return this.ids("SELECT id FROM deployments WHERE namespace = ? AND network_id <> '' ORDER BY id", namespace)
+}
+
+func (this *Tx) ids(query string, args ...any) (result []string, err error) {
+	rows, err := this.query(query, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -177,7 +177,10 @@ func (this *deployHandler) Do(ctx context.Context, task Task) (modules []model.M
 		return nil, nil, err
 	}
 	if prefer, ok := boolInput(task, deployPrefix+"prefer_fog_deployment"); ok && prefer {
-		if deployment.NetworkId, err = this.gatewayFor(ctx, p.token, deployment.Selections); err != nil {
+		if target, _ := this.namespaces.Get(p.namespace); target.CloudOnly {
+			// a preference, not a demand: the deployment stays in the cloud (NS-10)
+			this.runtime.logger.InfoContext(ctx, "a process deployment stays in the cloud, its namespace runs only there", "namespace", p.namespace)
+		} else if deployment.NetworkId, err = this.gatewayFor(ctx, p.token, deployment.Selections); err != nil {
 			return nil, nil, err
 		}
 	}
