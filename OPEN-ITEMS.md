@@ -15,6 +15,7 @@ Every item names its occasion (requirement id or milestone) and is either a **ta
 - [ ] **Task:** Routes and Ladon rules for the paths from M5: `/namespaces/*/modules[/*]`, `/namespaces/*/deployments/*/parameters`, `/namespaces/*/instances/*/parameters`, `/namespaces/*/instances/*/maintenance-procedures[/...]`, `DELETE /namespaces/*/instances/*/variables/*`.
 - [ ] **Task:** Ladon rules for the admin endpoints `/users` and `PUT` and `DELETE /namespaces/{ns}` (SEC-14, NS-02, M2) and for the debug paths `debug`, `live`, `history`, `event-evaluations`, `variables/{name}` under `/namespaces/*/instances/*` (M4).
 - [ ] **Task:** Remove the dead routes `/api-aggregator` and `/eventmanager`.
+- [ ] **Task:** Routes and Ladon rules for the paths added after M5 (audit 2026-10-20): `/namespaces/*/convert`, `/networks[/*]`, `/namespaces/*/deployments/*/disabled`, `/namespaces/*/deployments/*/instance-count`, `/namespaces/*/resource-usage/*/*`, `/namespaces/*/instances/*/info`, `/namespaces/*/prepared-deployments`.
 
 ### Keycloak
 
@@ -106,6 +107,7 @@ Every item names its occasion (requirement id or milestone) and is either a **ta
 - [ ] **Task:** Live and historical debugging (section 13, M4): WebSocket `live` with the token as first message `{"type":"auth","token":"..."}`, close codes 4000 plus HTTP status (4401 means: get a new token and resume with `after`), apply deltas as described in `model.DebugMessage`, steps through `history`, event reconstruction through `event-evaluations`. Taken sequence flows are now in `element-stats` (DBG-07).
 - [ ] **Task (operations):** If the web-ui sends the token as the first message, the engine needs `KEYCLOAK_CERT_URL`, because the token then does not pass Kong (DBG-08, M4).
 - [ ] **Task:** Switch the widgets `data-table` and `device-status`, which today create hidden deployments (`source=generated`), over to the new API.
+- [ ] **Note:** `POST /namespaces/{ns}/prepared-deployments` with `network_id` offers only the devices of the hub of that gateway, as process-fog-deployment did (`25d45ad`); the deploy dialog of a gateway should pass it.
 
 ### dashboard
 
@@ -137,6 +139,8 @@ Every item names its occasion (requirement id or milestone) and is either a **ta
 
 ## Gateway (M6)
 
+- [ ] **Task (operations):** Alerts on `automation_engine_network_last_contact_seconds` for gateways without contact, replacing the ping self-test of process-sync (SYNC-12), and the switch of today's process alerts to the metrics of the engine (OPS-05); neither exists yet (audit 2026-10-20).
+
 - [ ] **Task (acceptance):** Soak test on an arm64 gateway with `pkg/soak` for at least 72 h, file the report (CSV) (LONG-15). Locally it ran for 30 min on amd64; whether flash storage, a slower CPU and the real broker change anything only the gateway shows.
 - [ ] **Task (operations):** Create the workflow for prod images (`prod.yml` with tagging as in the other repositories) once the engine is to be released; until then there is only `dev.yml`. The secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` and `CR_PAT` have to be available to the repository (FOG-02).
 
@@ -151,6 +155,6 @@ Every item names its occasion (requirement id or milestone) and is either a **ta
 
 ### mgw-module-repository (`process/Modfile.yaml`)
 
-- [ ] **Task:** Switch the process module `main/process` (today v1.5.4 with seven containers: Camunda and Postgres, mgw-process-sync-client, mgw-external-task-worker, event-worker, process-io-worker and its Postgres) over to one container of the engine: `MODE=fog`, `MQTT_BROKER=tcp://{broker}:1881`, `DEVICE_REPOSITORY_URL=http://{device-repo-mirror}:8080`, `LAST_VALUE_URL=http://{mgw-last-value}:8080`, `NOTIFIER_URL=http://{gateway}/notifications-v2/notifications`, `MQTT_CLIENT_ID` unique per gateway, a volume for `SQLITE_PATH`, optionally `STORAGE_BUDGET`. Dependencies stay mirror, cloud proxy, broker and mgw-last-value (M6). On the update to the engine, keep the Postgres of process-io-worker reachable for the first start and set `LEGACY_IO_POSTGRES` and `LEGACY_IO_OWNER` (owner of the network), so that the IO values are taken over; afterwards Camunda, its Postgres and that of process-io can go (MIG-06).
+- [ ] **Task:** Switch the process module `main/process` (today v1.5.4 with seven containers: Camunda and Postgres, mgw-process-sync-client, mgw-external-task-worker, event-worker, process-io-worker and its Postgres) over to one container of the engine: `MODE=fog`, `MQTT_BROKER=tcp://{broker}:1881`, `DEVICE_REPOSITORY_URL=http://{device-repo-mirror}:8080`, `LAST_VALUE_URL=http://{mgw-last-value}:8080`, `NOTIFIER_URL=http://{gateway}/notifications-v2` (the engine appends `/notifications`; corrected 2026-10-20, FOG-08), `MQTT_CLIENT_ID` unique per gateway, a volume for `SQLITE_PATH`, optionally `STORAGE_BUDGET`. Dependencies stay mirror, cloud proxy, broker and mgw-last-value (M6). On the update to the engine, keep the Postgres of process-io-worker reachable for the first start and set `LEGACY_IO_POSTGRES` and `LEGACY_IO_OWNER` (owner of the network), so that the IO values are taken over; afterwards Camunda, its Postgres and that of process-io can go (MIG-06).
 - [ ] **Note:** Local topics use the `LocalId` from device-repository unchanged. If mgw-device-cloud-connector sets `LDH_ID_PREFIX`, they do not match the topics of the connectors; that applies to mgw-external-task-worker and the event-worker today as well.
 - [ ] **Question:** The cloud proxy authenticates with the certificate of the network. The engine sets the `userId` of the owner of the instance in notifications; does notifier reject a `userId` that is not the user of the certificate? Warnings about the storage budget go without `userId` and reach the user of the network.

@@ -108,7 +108,7 @@ Smart services are the namespace `smart-services`. Their task types replace the 
 Configuration: `DEVICE_MANAGER_URL`, `DEVICE_SELECTION_URL`, `FLOW_ENGINE_URL`, `FLOW_PARSER_URL`, `IMPORT_DEPLOY_URL`, `SERVING_SERVICE_URL`, `DEVICE_REPOSITORY_URL`, plus the options of the workers (`ANALYTICS_*`, `DEVICE_GROUP_*`, `INFO_ADDITIONAL_MODULE_DATA_FIELDS`, `WATCHER_MIN_INTERVAL`, `WATCHER_DEFAULT_INTERVAL`, `MODULE_HEALTH_CHECK_INTERVAL`). A task type is registered only when its services are configured; otherwise a deploy rejects it.
 
 API:
-- Modules: `GET .../modules?instance_id=&module_type=&key=`, `GET|DELETE .../modules/{id}`. Resources are deleted through an outbox with retries; instances with modules are exempt from retention.
+- Modules: `GET .../modules?instance_id=&module_type=&key=`, `GET|DELETE .../modules/{id}`. Resources are deleted through an outbox with retries; retention does not delete instances with modules, but trims their history like any other.
 - Status of every instance (`status`, `status_message`): `running`, `ready`, `error`, from the run state and the module errors of the hourly health check.
 - Start parameters with options: `GET .../deployments/{id}/parameters`; the engine fills `auto_select_all` fields on start.
 - Changing parameters: `PUT .../instances/{id}/parameters`. Every new run removes the modules of the previous one; `smart-services` therefore rejects loops in the sequence flow (`forbid_cycles`).
@@ -150,8 +150,8 @@ With `MODE=fog`, the same binary runs on a gateway, as the only container of the
 - Device events come from `event/#`; the event role runs in the same process.
 - `DEVICE_REPOSITORY_URL` is the device-repository mirror of the gateway, without a token; marshalling happens in the process.
 - `LAST_VALUE_URL` is mgw-last-value, for services that only send events.
-- `NOTIFIER_URL` points to the cloud proxy (`http://{gateway}/notifications-v2/notifications`).
-- `STORAGE_BUDGET` limits the database in bytes (default in the fog 1 GiB, negative means unlimited). From 80 %, the history is trimmed beyond retention, oldest entries first, down to 70 %, with one warning per day. If the disk is full, execution stops and `/health` reports an error until writing succeeds again.
+- `NOTIFIER_URL` points to the cloud proxy (`http://{gateway}/notifications-v2`; the engine appends `/notifications`).
+- `STORAGE_BUDGET` limits the database in bytes (default in the fog 1 GiB, negative means unlimited). From 80 %, the history is trimmed beyond retention, oldest entries first, down to 70 %, with one warning per day. If the disk is full, execution stops and `/ready` reports an error until writing succeeds again.
 - The local API is read-only and needs no token; deployments, starts and stops come from the cloud through the synchronisation.
 - `LEGACY_IO_POSTGRES` (DSN of the Postgres of process-io-worker of the old process module) takes over its values once on the first start; values of instances are dropped, because the instances from Camunda do not continue. `LEGACY_IO_OWNER` sets the owner of the values, because the Camunda of the gateway knew no platform users. Deployments and starts of the gateway come from the cloud, which takes them over from process-sync during the migration.
 

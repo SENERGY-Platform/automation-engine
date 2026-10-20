@@ -1,6 +1,6 @@
 # Plan: Automation-Engine
 
-Basis: `docs/requirements.md` (status 2026-10-12). The IDs in parentheses refer to it.
+Basis: `docs/requirements.md` (status 2026-10-12). The IDs in parentheses refer to it. Decisions recorded here take precedence over the text of the requirements where the two differ; the requirements are not rewritten for them. What is still open after the milestones is in "Audit against the requirements (2026-10-20)" at the end.
 
 The requirements describe a programme, not a single change. They are implemented in milestones, each of which runs and is tested on its own.
 
@@ -340,3 +340,63 @@ Packages that had only one user or shared the same task were merged; older entri
 - Test servers are started by `client.NewTestServer`; five test packages had copied the setup.
 
 Deliberately kept as separate packages: `auth`, `tracing`, `script`, `mqtt`, `timer`, `devices` (used by many packages; merged they would create cycles or catch-all packages), `namespaces` (own rules, used by controller and gateway through interfaces), `migrate/legacyio` (runs in the server; `migrate` imports the server), `migrate/rewrite` (also used by the controller, without the dependencies of the migration), `tasks/httpcall` and `tasks/processio` (one task type each, `processio` also the store behind the IO API), `scriptdoc/generate` (program for `go generate`), `bpmn/bpmntest` and `store/storetest` (test helpers, not in production code), `client`, `model`, `api` (interface for consumers).
+
+## Audit against the requirements (2026-10-20)
+
+Every requirement id of `docs/requirements.md` (242) was checked against code and tests, together with the gaps of the milestones above and the engine items of `OPEN-ITEMS.md`. None is missing entirely: 186 are implemented, 47 partly, 3 differ by a decision recorded above, 6 are tasks of other repos or of operations. Defects 1, 2, 5, 6 and 7 were reproduced with tests in a copy of the repository, the others read from the code.
+
+### Defects
+
+To be fixed next, each with a test that fails before the fix.
+
+1. **The cloud runs the restarts of gateway instances (FOG-07).** `store.Tx.UpsertReplicatedInstance` copies the `restart_at` of the gateway into the cloud row, and `Tx.DueRestarts` has no `network_id` filter, so `Engine.restartInstance` executes the instance in the cloud as well. The comments in `pkg/fogsync/protocol.go` and `gateway.go` ("restarts are the gateway's own") describe the intent, not the behaviour.
+2. **Removed modules leave their resources on the gateway (SMS-12, SMS-06).** `modules.Remover` deletes deployments and instances through `store.Tx.RemoveResource`, which removes only the cloud rows; the desired state of the gateway (`network_desired`) never learns of the deletion, unlike `Controller.desireDeletedDeployment` and `desireInstance(..., true)`.
+3. **A gateway offline for more than an hour can lose the end of an instance (LONG-07, LONG-10).** The protection of not yet synchronised instances (`unsynced`, `pkg/store/sync.go`) rests on rows in `changes`, which `PurgeChanges` removes after `ChangeRetention` (1 h) whether the cloud acknowledged them or not. Retention or storage budget may then delete an ended instance whose end never reached the cloud, and the snapshot after the reconnect makes the cloud delete its copy, which it still holds as running. `TestTheCloudLearnsTheEndBeforeTheGatewayTrims` covers only short offline periods.
+4. **A gateway one protocol version behind gets nothing from the cloud (SYNC-11).** The cloud accepts gateways in `[Version-window, Version]`, but stamps its own `Version` on every downward message (`cloud.go`), and the gateway drops every message whose version is not its own (`gateway.go`). After a protocol change, `SYNC_PROTOCOL_WINDOW` therefore does not let cloud and gateways be updated one after the other.
+5. **An update that changes only the deploy parameters is ignored (DEP-04, DEP-01).** The "nothing changed" check of `Controller.PutDeployment` compares XML, SVG, name, description, model version, incident handling, retention and selections, not `Parameters`. It also hits updates through `deprecated/deployment`, which turn changed timers and inputs into parameters, and the updates of `process_deployment` modules.
+6. **An update with `restart` fails as a whole if a running instance cannot be restarted (RUN-11, DEP-04).** `Engine.restartInstance` restarts at the start event without definition; an instance of a process that starts only through a message or a timer makes the whole update fail with 400. A restart after an incident fails the same way and only notifies the owner.
+7. **The migration checks business keys per Camunda deployment, not per tenant (MIG-02).** `pkg/migrate/process.go` counts the uniqueness of a key per deployment; two running instances of one user in different deployments with the same key get the same id, the second is reported as existing, not restarted, and its IO values attach to the first.
+8. **Deleting a user leaves their deployments and instances on gateways (SEC-08).** `Tx.DeleteOwned` deletes the cloud rows directly, without the desired deletions on the gateways.
+9. **Cleaning up a network leaves its rights in permissions-v2 (SYNC-07).** `Tx.DeleteNetwork` removes rows with plain SQL, past `queueRemovals` and the change stream.
+10. **The migration report drops rewritten and to-be-checked findings (MIG-04).** Only `Unsupported` is kept (`deprecated/deployment.go`, `migrate/process.go`), so rewrites such as `R/P1D` → `P1D` or five-field cron pass silently; only `POST /namespaces/{ns}/convert` returns the full report.
+
+A documentation defect was corrected right away: `NOTIFIER_URL` on a gateway is `http://{gateway}/notifications-v2`, the notifier client appends `/notifications` itself (FOG-08); README and `OPEN-ITEMS.md` named the full path.
+
+### Partly implemented
+
+Open tasks of the engine, not yet decided whether and when. The id says where the requirement is.
+
+- **Validation:** the condition of a device or import event (`senergy:script`) is neither syntax- nor JUEL-checked on save or deploy, only at evaluation (BPMN-18, EXPR-01). The sandbox has no memory limit (EXPR-03, known since M1). The join semantics of the inclusive gateway are not compared with Camunda, in particular with loops (BPMN-15, known since M1).
+- **Namespaces:** a changed namespace does not mark deployments that no longer fit (NS-03); there is no default update strategy per namespace (NS-07); the setting `device_selection` is stored but enforced nowhere (NS-11).
+- **Models and deployments:** no rights filter `p` on model lists as in `/v2/processes` (MOD-01); no version distance (MOD-06, known since M1); old deployment versions are never removed when their last instance ends, and `drain` uses the event descriptions of the new version for the old instances (DEP-04, the latter known since M3); `task_info` has no `deployment_id` field yet, `{{DefinitionId}}` is not rewritten but accepted as alias at runtime, untested (DATA-04).
+- **Tasks and incidents:** module workers' flags `allow_msg_events_in_fog_processes` and `allow_imports_in_fog_processes` were not taken over; processes with device events now always go to the gateway (TASK-29); incident variables above 4 KiB are cut like the history (INC-06).
+- **Events:** offline periods of a gateway are not marked in the reconstruction, and on a gateway `evaluate_events` evaluates nothing, because event debugging is wired only with Timescale (EVT-13).
+- **History and long-lived operation:** incidents, runs and element statistics are limited by age only, not by count per instance (LONG-03); the storage report counts rows instead of sizes, misses IO values, runs, element statistics and subtasks, and the top instances do not reach the cloud (LONG-14).
+- **Debugging:** the wait of a device command lacks the completion strategy, module tasks show no progress (DBG-02); wait reasons at historical steps are thinner than live ones, without event sources and subtasks (DBG-13); no search by variable value (DBG-16, known since M4).
+- **Rights and users:** module-managed deployments of others are not counted as dependants on user deletion (SEC-13, known since M2); the owner right is restored only with `PERMISSIONS_KAFKA_TOPIC` (SEC-10); signatures are verified only with `KEYCLOAK_CERT_URL`, and that path has no test (SEC-04).
+- **API:** paging is not uniform, activities use `after_seq` without total, several lists return plain arrays (API-06; the comment in `pkg/model/common.go` claims otherwise).
+- **Synchronisation:** a deployment the gateway marks faulty is not reported upwards (SYNC-02); no "offline since" and no alert for gateways without contact (SYNC-12).
+- **Smart services:** stop and restart in an update apply only to running instances, so instances whose setup has finished are drained (SMS-03).
+- **Operations:** no metric of the response time of device commands (OPS-05); spans carry no run id (OPS-07); no release pipeline (`prod.yml`, CLI-06, FOG-02); acceptance on an arm64 gateway open (LONG-15, FOG-04).
+- **Migration:** watches of smart-service instances are not migrated, maintenance procedures of migrated instances stop with the old watcher (MIG-01); owners can be assigned only per old owner value, not per resource (MIG-09).
+
+### Behaviour that differs from the requirements without a recorded decision
+
+Recorded here so that it is a decision; changing it would be a new task.
+
+- Optimistic device commands send first and complete afterwards; a failed send is retried or becomes an incident instead of being only logged (TASK-01).
+- Groups with `sequential` or `round_robin` take the task timeout as the answer window of one try and count retries per device (TASK-06, TASK-07; `docs/device-command-groups.md`).
+- `MIN_TIMER_DURATION` (default 5 s) restores the minimum of process-deployment.
+- A timer that the old designer leaves empty gets the time of the old deploy dialog written into the model on deploy (`pkg/deprecated/timers.go`), instead of becoming a parameter.
+
+### Superseded statements above
+
+- M1 gaps: CI with the drift check exists (`.github/workflows/tests.yml`), the client covers the whole API (`client.Client` embeds `api.Controller`), EVT-08 has its metric, the MIG-05 comparison exists; open from that list are the memory limit, the BPMN-15 comparison and MOD-06.
+- M2 gaps: the ongoing repair of the owner right came with M3 (only with `PERMISSIONS_KAFKA_TOPIC`); dependants via modules did not come with M5 and are open (SEC-13 above).
+- M3 status: `GROUP_SCHEDULER` also knows `round_robin`, and the timeout is no longer the job timeout for groups (`docs/device-command-groups.md`).
+- M4 decisions name `pkg/live.Hub`; it is `pkg/debug.Hub` (see "Cleanup").
+- README: instances with modules are exempt from deletion by retention, not from trimming their history; on a full disk `/ready` reports the error, `/health` does not. Both corrected on 2026-10-20.
+
+### Before this file is removed
+
+This file is to be dissolved once the open items above are settled. Its decisions and rejected alternatives move to `docs/` or the README first; recorded only here are, among others: Postgres and SQLite from the start (millisecond `BIGINT`, JSON as `TEXT`, Mongo rejected), variable scopes after Camunda's `AbstractVariableScope`, globally unique instance ids, the NS-05 interpretation of permissions-v2 (`shareable`, `initial_rights`, `topic_default_permissions`), the event worker coupled through the database instead of Kafka or the API, the library choices with their licences (coder/websocket ISC, paho EDL-1.0, mongo-driver Apache-2.0, modernc SQLite without cgo), the rejected per-namespace module policy, the deviations of device commands from the workers, the rejected old sync protocol and sync role with leader election, the read-only gateway API, command correlation in the database, the dropped internal worker routes, the rejected migration through the old APIs, the rejected deployment per release, and the package consolidation. README and `OPEN-ITEMS.md` point to this file in their first lines.

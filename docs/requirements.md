@@ -14,6 +14,8 @@ What is described here is today's usage, not the feature set of Camunda.
 
 Priorities: **M** = must, **S** = should, **K** = may. Each requirement briefly states what it follows from.
 
+This document is not updated for the decisions taken during the implementation. They are recorded in [`PLAN.md`](../PLAN.md), in the sections "Decisions" of each milestone; **where a decision there differs from a requirement here, `PLAN.md` takes precedence.** The audit of 2026-10-20 in `PLAN.md` lists the requirements whose text no longer matches the engine.
+
 ---
 
 ## 0. Starting point in brief
