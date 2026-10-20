@@ -22,7 +22,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/rewrite"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
@@ -75,7 +75,11 @@ func (this *migration) designs(ctx context.Context) error {
 			continue
 		}
 		if this.options.Apply {
-			_, issues, _ := bpmn.ParseAndValidate(d.BpmnXml, this.target.Engine.Rules(ns))
+			// the issues of a save; the conversion is reported with the releases
+			var issues []model.Issue
+			if checked, err := rewrite.Check(d.BpmnXml, this.target.Engine.Rules(ns)); err == nil {
+				issues = append(checked.Issues, checked.Hints()...)
+			}
 			updated := unix(d.UpdatedAt)
 			err = this.target.Store.Tx(ctx, func(tx *store.Tx) error {
 				if err := tx.InsertModel(model.Model{Id: d.Id, Namespace: smartServices, Name: d.Name, Description: d.Description, Owner: owner, Version: 1,

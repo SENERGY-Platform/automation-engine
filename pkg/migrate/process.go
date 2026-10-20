@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -78,7 +79,9 @@ func parseTime(millis int64) time.Time {
 }
 
 // processModels takes the models of process-model-repository with their ids into the namespace
-// processes, as version 1 with the BPMN as it is; the designer keeps working on them (MIG-01)
+// processes, as version 1 with the BPMN as it is; the designer keeps working on them (MIG-01).
+// Their issues are those of a save, and the report names what the conversion at deploy would
+// do with each, as items of kind model (MIG-04).
 func (this *migration) processModels(ctx context.Context) error {
 	const step = "process-models"
 	models, err := this.sources.ProcessModels(ctx)
@@ -105,8 +108,12 @@ func (this *migration) processModels(ctx context.Context) error {
 			this.result(step, "model", pm.Id, owner, Existing, "")
 			continue
 		}
+		checked, err := rewrite.Check(pm.BpmnXml, this.target.Engine.Rules(ns))
+		var issues []model.Issue
+		if err == nil {
+			issues = append(checked.Issues, checked.Hints()...)
+		}
 		if this.options.Apply {
-			_, issues, _ := bpmn.ParseAndValidate(pm.BpmnXml, this.target.Engine.Rules(ns))
 			created, updated := parseTime(pm.Date), parseTime(pm.LastUpdatedUnix)
 			m := model.Model{Id: pm.Id, Namespace: processes, Name: pm.Name, Description: pm.Description, Owner: owner, Version: 1,
 				Published: pm.Publish, CreatedAt: created, UpdatedAt: updated, Issues: issues}
@@ -129,6 +136,7 @@ func (this *migration) processModels(ctx context.Context) error {
 			}
 		}
 		this.result(step, "model", pm.Id, owner, Migrated, "")
+		this.findings(step, pm.Id, owner, checked.Report.Rewritten, checked.Report.Check, checked.Report.Unsupported)
 	}
 	return nil
 }
@@ -169,6 +177,7 @@ func (this *migration) processDeployments(ctx context.Context) error {
 			}
 			if !this.options.Apply {
 				issues, err := this.target.Controller.Validate(ctx, this.target.token(), processes, input.Xml)
+				issues = slices.DeleteFunc(issues, func(i model.Issue) bool { return i.Hint })
 				if err == nil && len(issues) > 0 {
 					err = model.ValidationFailed(issues)
 				}
@@ -187,8 +196,8 @@ func (this *migration) processDeployments(ctx context.Context) error {
 	return nil
 }
 
-// findings reports, after the item of a deployment, what the rewrite of its model changed,
-// what is to be checked by hand and what is not supported (MIG-04)
+// findings reports, after the item of a model or deployment, what the rewrite of its model
+// changed, what is to be checked by hand and what is not supported (MIG-04)
 func (this *migration) findings(step string, id string, owner string, rewritten []model.Issue, check []model.Issue, unsupported []model.Issue) {
 	for _, kind := range []struct {
 		status Status

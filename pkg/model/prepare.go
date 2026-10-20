@@ -38,6 +38,9 @@ type PreparedDeployment struct {
 	Elements        []PreparedElement `json:"elements"`
 	// validation findings; with issues the deployment would be rejected (BPMN-18)
 	Issues []Issue `json:"issues,omitempty"`
+	// what the deploy converts from the format of Camunda 7 or the old designer; elements,
+	// start parameters and issues are those of the converted model (MIG-04)
+	Conversion *ConversionReport `json:"conversion,omitempty"`
 }
 
 const (

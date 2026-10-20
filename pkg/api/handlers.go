@@ -58,16 +58,17 @@ type ValidateInput struct {
 
 // validate godoc
 //
-//	@Summary	validate BPMN against the rules of a namespace
-//	@Tags		namespaces
-//	@Security	Bearer
-//	@Accept		json
-//	@Produce	json
-//	@Param		ns		path		string			true	"namespace"
-//	@Param		body	body		ValidateInput	true	"BPMN"
-//	@Success	200		{array}		model.Issue
-//	@Failure	400		{object}	model.Error
-//	@Router		/namespaces/{ns}/validate [post]
+//	@Summary		validate BPMN against the rules of a namespace
+//	@Description	BPMN of Camunda 7 or the old designer is validated as converted at deploy; a hint says so. Issues other than hints keep the BPMN from deploying.
+//	@Tags			namespaces
+//	@Security		Bearer
+//	@Accept			json
+//	@Produce		json
+//	@Param			ns		path		string			true	"namespace"
+//	@Param			body	body		ValidateInput	true	"BPMN"
+//	@Success		200		{array}		model.Issue
+//	@Failure		400		{object}	model.Error
+//	@Router			/namespaces/{ns}/validate [post]
 func (h *handlers) validate(w http.ResponseWriter, r *http.Request) {
 	input, ok := decode[ValidateInput](w, r)
 	if !ok {
@@ -80,7 +81,7 @@ func (h *handlers) validate(w http.ResponseWriter, r *http.Request) {
 // convert godoc
 //
 //	@Summary		rewrite a model written for Camunda 7
-//	@Description	JUEL becomes JavaScript, external task topics become task types, the http-connector becomes a notification or HTTP call; nothing is stored. The result lists what was rewritten, what to check by hand, what is unsupported and the issues under the rules of the namespace.
+//	@Description	JUEL becomes JavaScript, external task topics become task types, the http-connector becomes a notification or HTTP call; nothing is stored. The result lists what was rewritten, what to check by hand, what is unsupported and the issues under the rules of the namespace. Deploy and prepare convert on their own; BPMN in the format of the engine comes back unchanged with empty lists.
 //	@Tags			namespaces
 //	@Security		Bearer
 //	@Accept			json
@@ -130,7 +131,7 @@ func (h *handlers) listModels(w http.ResponseWriter, r *http.Request) {
 // createModel godoc
 //
 //	@Summary		create a model
-//	@Description	Validation findings are returned as issues; a model with issues is stored but cannot be deployed.
+//	@Description	Validation findings are returned as issues; a model with issues other than hints is stored but cannot be deployed. The BPMN is stored as given; BPMN of Camunda 7 or the old designer is validated as converted at deploy, which a hint says.
 //	@Tags			models
 //	@Security		Bearer
 //	@Accept			json
@@ -274,7 +275,7 @@ func (h *handlers) getModelVersion(w http.ResponseWriter, r *http.Request) {
 // prepareDeployment godoc
 //
 //	@Summary		prepare a deployment
-//	@Description	Lists start parameters, validation findings and, per device task and device event, the devices, device groups and imports that can be selected.
+//	@Description	Lists start parameters, validation findings and, per device task and device event, the devices, device groups and imports that can be selected. BPMN of Camunda 7 or the old designer is prepared as converted at deploy; conversion names what is converted.
 //	@Tags			deployments
 //	@Security		Bearer
 //	@Accept			json
@@ -326,7 +327,7 @@ func (h *handlers) listDeployments(w http.ResponseWriter, r *http.Request) {
 // createDeployment godoc
 //
 //	@Summary		deploy a model version or own BPMN
-//	@Description	Rejected with a validation error naming the elements if the BPMN is outside the supported subset or the rules of the namespace.
+//	@Description	Rejected with a validation error naming the elements if the BPMN is outside the supported subset or the rules of the namespace. BPMN of Camunda 7 or the old designer is converted first and the version holds the result; conversion in the answer names what was rewritten and what to check, parts that cannot be converted reject the deploy.
 //	@Tags			deployments
 //	@Security		Bearer
 //	@Accept			json
@@ -364,7 +365,7 @@ func (h *handlers) getDeployment(w http.ResponseWriter, r *http.Request) {
 // putDeployment godoc
 //
 //	@Summary		create a deployment with this id or update it
-//	@Description	An update creates a new version and needs update_strategy (stop, drain or restart) for the running instances.
+//	@Description	An update creates a new version and needs update_strategy (stop, drain or restart) for the running instances. BPMN of Camunda 7 or the old designer is converted as on create.
 //	@Tags			deployments
 //	@Security		Bearer
 //	@Accept			json

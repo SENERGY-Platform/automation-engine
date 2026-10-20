@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/rewrite"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
@@ -40,13 +41,15 @@ func (this *Controller) PrepareDeployment(ctx context.Context, token string, nam
 	if err != nil {
 		return result, err
 	}
-	process, issues, err := bpmn.ParseAndValidate(source.xml, this.engine.Rules(ns))
+	// options, criteria and issues are those of the model as it would be deployed (MIG-04)
+	checked, err := rewrite.Check(source.xml, this.engine.Rules(ns))
 	if err != nil {
 		return result, model.ValidationFailed([]model.Issue{{Message: err.Error()}})
 	}
+	process := checked.Process
 	result = model.PreparedDeployment{
 		Name: firstNonEmpty(source.name, process.Name, process.Id), ModelId: source.modelId, ModelVersion: source.modelVersion,
-		StartParameters: bpmn.StartParameters(process.NoneStartEvent()), Issues: issues,
+		StartParameters: bpmn.StartParameters(process.NoneStartEvent()), Issues: checked.Issues, Conversion: conversionOf(checked.Report),
 	}
 	preparer := this.preparer
 	if preparer == nil {

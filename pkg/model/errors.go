@@ -54,6 +54,27 @@ var (
 type Issue struct {
 	ElementId string `json:"element_id,omitempty"`
 	Message   string `json:"message"`
+	// a note that does not keep the model from deploying, e.g. that it is converted at deploy
+	Hint bool `json:"hint,omitempty"`
+}
+
+// ConversionReport names what the conversion of a model written for Camunda 7 or the old
+// designer rewrote, what should be checked by hand and what it cannot rewrite (MIG-04). It is
+// empty for a model in the format of this engine.
+type ConversionReport struct {
+	Rewritten   []Issue `json:"rewritten,omitempty"`
+	Check       []Issue `json:"check,omitempty"`
+	Unsupported []Issue `json:"unsupported,omitempty"`
+}
+
+// Complete reports whether the converted model can be deployed.
+func (this ConversionReport) Complete() bool {
+	return len(this.Unsupported) == 0
+}
+
+// Empty reports whether there was nothing to convert.
+func (this ConversionReport) Empty() bool {
+	return len(this.Rewritten) == 0 && len(this.Check) == 0 && len(this.Unsupported) == 0
 }
 
 // Conversion is a model written for Camunda 7 rewritten into the format of this engine

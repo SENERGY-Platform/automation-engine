@@ -33,14 +33,11 @@ func (this *Controller) Validate(ctx context.Context, token string, namespace st
 	if err != nil {
 		return nil, err
 	}
-	_, issues, err := bpmn.ParseAndValidate(xml, this.engine.Rules(ns))
+	checked, err := rewrite.Check(xml, this.engine.Rules(ns))
 	if err != nil {
 		return nil, model.ValidationFailed([]model.Issue{{Message: err.Error()}})
 	}
-	if issues == nil {
-		issues = []model.Issue{}
-	}
-	return issues, nil
+	return append(checked.Issues, checked.Hints()...), nil
 }
 
 // Convert rewrites a model written for Camunda 7 and validates the result against the rules of
@@ -68,20 +65,19 @@ func nonNil(issues []model.Issue) []model.Issue {
 	return issues
 }
 
-// modelIssues validates a model on save; issues are hints, the model is stored anyway (MOD-04)
+// modelIssues validates a model on save as it would be deployed, converted where it is in the
+// format of Camunda 7 or the old designer, which a hint then says; issues are hints as well,
+// the model is stored anyway and unchanged (MOD-04, MIG-04)
 func (this *Controller) modelIssues(ns model.Namespace, xml string) (processName string, issues []model.Issue, err error) {
 	if strings.TrimSpace(xml) == "" {
 		return "", nil, model.BadRequest("xml is required")
 	}
-	process, issues, err := bpmn.ParseAndValidate(xml, this.engine.Rules(ns))
+	checked, err := rewrite.Check(xml, this.engine.Rules(ns))
 	if err != nil {
 		// unreadable XML is rejected even on save
 		return "", nil, model.ValidationFailed([]model.Issue{{Message: err.Error()}})
 	}
-	if issues == nil {
-		issues = []model.Issue{}
-	}
-	return firstNonEmpty(process.Name, process.Id), issues, nil
+	return firstNonEmpty(checked.Process.Name, checked.Process.Id), append(checked.Issues, checked.Hints()...), nil
 }
 
 func firstNonEmpty(values ...string) string {

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/rewrite"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
@@ -38,25 +39,37 @@ type resolvedDeployment struct {
 	name         string
 	modelId      string
 	modelVersion int
+	// what was converted from the format of Camunda 7 or the old designer
+	conversion model.ConversionReport
 }
 
-// resolve takes the BPMN from a model version or from the input and validates it; a model
-// that does not pass is rejected naming the elements (BPMN-18)
+// resolve takes the BPMN from a model version or from the input, converts it where it is in
+// the format of Camunda 7 or the old designer (MIG-04) and validates it; a model that does not
+// pass, or has parts the conversion cannot rewrite, is rejected naming the elements (BPMN-18)
 func (this *Controller) resolve(ctx context.Context, tx *store.Tx, user jwt.Token, ns model.Namespace, input model.DeploymentInput) (result resolvedDeployment, err error) {
 	result, err = this.source(ctx, tx, user, ns, input.ModelId, input.ModelVersion, input.Xml, input.Svg)
 	if err != nil {
 		return result, err
 	}
-	process, issues, err := bpmn.ParseAndValidate(result.xml, this.engine.Rules(ns))
+	checked, err := rewrite.Check(result.xml, this.engine.Rules(ns))
 	if err != nil {
 		return result, model.ValidationFailed([]model.Issue{{Message: err.Error()}})
 	}
-	issues = append(issues, prepare.ValidateSelections(process, input.Selections)...)
+	issues := append(checked.Issues, prepare.ValidateSelections(checked.Process, input.Selections)...)
 	if len(issues) > 0 {
 		return result, model.ValidationFailed(issues)
 	}
-	result.name = firstNonEmpty(input.Name, result.name, process.Name, process.Id)
+	result.xml, result.conversion = checked.Xml, checked.Report
+	result.name = firstNonEmpty(input.Name, result.name, checked.Process.Name, checked.Process.Id)
 	return result, nil
+}
+
+// conversionOf is the conversion for an answer; nil if there was nothing to convert
+func conversionOf(report model.ConversionReport) *model.ConversionReport {
+	if report.Empty() {
+		return nil
+	}
+	return &report
 }
 
 // source reads the BPMN of a model version or takes the given BPMN
@@ -199,11 +212,13 @@ func (this *Controller) createDeployment(ctx context.Context, token string, name
 	if err != nil {
 		return result, err
 	}
+	var conversion model.ConversionReport
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		resolved, err := this.resolve(ctx, tx, user, ns, input)
 		if err != nil {
 			return err
 		}
+		conversion = resolved.conversion
 		if err = this.checkRetention(tx, namespace, deploymentOwner, input.RetentionDays); err != nil {
 			return err
 		}
@@ -237,6 +252,9 @@ func (this *Controller) createDeployment(ctx context.Context, token string, name
 	})
 	if err == nil && result.NetworkId != "" {
 		this.networks.Wake()
+	}
+	if err == nil {
+		result.Conversion = conversionOf(conversion)
 	}
 	return result, err
 }
@@ -274,6 +292,7 @@ func (this *Controller) PutDeployment(ctx context.Context, token string, namespa
 		}
 	}
 	created := false
+	var conversion model.ConversionReport
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		result, err = tx.GetDeployment(id, true)
 		if isNotFound(err) {
@@ -297,6 +316,7 @@ func (this *Controller) PutDeployment(ctx context.Context, token string, namespa
 		if err != nil {
 			return err
 		}
+		conversion = resolved.conversion
 		if err = this.checkRetention(tx, namespace, result.Owner, input.RetentionDays); err != nil {
 			return err
 		}
@@ -355,6 +375,9 @@ func (this *Controller) PutDeployment(ctx context.Context, token string, namespa
 	}
 	if err == nil && created {
 		return this.createDeployment(ctx, token, namespace, id, input)
+	}
+	if err == nil {
+		result.Conversion = conversionOf(conversion)
 	}
 	return result, err
 }

@@ -59,6 +59,9 @@ type Deployment struct {
 	Disabled  bool      `json:"disabled,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// what this create or update converted from the format of Camunda 7 or the old designer;
+	// only in its answer, not stored; the version holds the converted BPMN (MIG-04)
+	Conversion *ConversionReport `json:"conversion,omitempty"`
 }
 
 // DisabledInput switches a deployment off or on (DEP-12).

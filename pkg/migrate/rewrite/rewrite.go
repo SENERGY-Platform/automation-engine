@@ -41,16 +41,7 @@ type Finding = model.Issue
 
 // Report lists what the rewrite changed (Rewritten), what runs but may behave differently and
 // should be checked (Check), and what keeps the model from running (Unsupported).
-type Report struct {
-	Rewritten   []Finding `json:"rewritten,omitempty"`
-	Check       []Finding `json:"check,omitempty"`
-	Unsupported []Finding `json:"unsupported,omitempty"`
-}
-
-// Complete reports whether the rewritten model can be deployed.
-func (this Report) Complete() bool {
-	return len(this.Unsupported) == 0
-}
+type Report = model.ConversionReport
 
 // external task topics of the platform and their task types
 var topics = map[string]string{
@@ -63,6 +54,9 @@ var topics = map[string]string{
 // prefix the camunda-engine-wrapper put in front of every script
 const securedScriptPrefix = "var java = {}; var execution = {}; "
 
+// the Camunda and Java API in a script; a name merely ending in execution is not meant
+var camundaApi = regexp.MustCompile(`(^|[^\w$.])execution\.|Java\.type`)
+
 var repeating = regexp.MustCompile(`^R\d*/`)
 
 type rewriter struct {
@@ -74,6 +68,11 @@ type rewriter struct {
 }
 
 // Rewrite rewrites a model. An error means the XML could not be read at all.
+//
+// It is also the detector of the format: a model in the format of this engine has nothing the
+// rewrite looks for, so it comes back unchanged, byte for byte, with an empty report and
+// without validation, which is then up to the caller. Only the parts of a mixed model that are
+// written for Camunda are rewritten; rewriting a result again finds nothing.
 func Rewrite(xml string) (string, Report, error) {
 	doc := etree.NewDocument()
 	doc.ReadSettings.PreserveCData = true
@@ -96,6 +95,9 @@ func Rewrite(xml string) (string, Report, error) {
 		if is(child, bpmn.NsBpmn, "process") {
 			this.walk(child)
 		}
+	}
+	if this.report.Empty() {
+		return xml, this.report, nil
 	}
 	result, err := doc.WriteToString()
 	if err != nil {
@@ -205,7 +207,7 @@ func (this *rewriter) script(src string, format string, id string) (string, bool
 	}
 	switch format {
 	case "javascript", "js":
-		if strings.Contains(src, "execution.") || strings.Contains(src, "Java.type") {
+		if camundaApi.MatchString(src) {
 			this.unsupported(id, "the script uses the Camunda or Java API")
 		}
 		return src, true

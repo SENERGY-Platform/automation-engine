@@ -197,3 +197,42 @@ func TestFindingsToCheckDoNotMakeTheRunPartial(t *testing.T) {
 		t.Errorf("exit code %v, findings %+v\n%v", report.ExitCode(), f, out.String())
 	}
 }
+
+// Models are taken over as they are; the report names per model what the conversion at deploy
+// would do, in a dry run as with apply, and the stored issues are those of a save: a hint
+// instead of the findings of the old format (MIG-04).
+func TestTheReportListsWhatTheConversionWouldDoPerModel(t *testing.T) {
+	e := newEnv(t)
+	s := &sources{PermissionsV2: e.rights}
+	engineModel := b.Process(b.Start("start"), b.End("end"), b.Flow("start", "end"))
+	s.models = []migrate.ProcessModel{
+		{Id: "m-daily", Name: "Daily", Owner: "alice", BpmnXml: dailyModel()},
+		{Id: "m-engine", Name: "Engine", Owner: "alice", BpmnXml: engineModel},
+		{Id: "m-mail", Name: "Mail", Owner: "alice", BpmnXml: mailModel()},
+	}
+	for _, apply := range []bool{false, true} {
+		report := migrate.Run(ctx, migrate.Options{Apply: apply}, s, e.target)
+		f := findings(report, "process-models", "m-daily")
+		if !slices.Contains(f[migrate.Rewritten], "wait: timer: JUEL became JavaScript") ||
+			!slices.Equal(f[migrate.Check], []string{"daily: timer: the duration R/P1D became P1D; Camunda waited once as well"}) || len(f[migrate.Unsupported]) != 0 {
+			t.Errorf("apply %v: the model lists the conversion: %+v", apply, f)
+		}
+		if f := findings(report, "process-models", "m-engine"); len(f[migrate.Rewritten])+len(f[migrate.Check])+len(f[migrate.Unsupported]) != 0 {
+			t.Errorf("apply %v: a model of the engine has nothing to convert: %+v", apply, f)
+		}
+		if f := findings(report, "process-models", "m-mail"); len(f[migrate.Unsupported]) != 1 || statusOf(report, "process-models", "m-mail") == migrate.Manual {
+			t.Errorf("apply %v: an unsupported part is a finding, the model is taken over anyway: %+v", apply, f)
+		}
+		if report.ExitCode() != 0 {
+			t.Errorf("apply %v: findings of models leave the run complete", apply)
+		}
+	}
+	v, err := e.srv.Controller.GetModelVersion(ctx, alice, "processes", "m-daily", 1)
+	if err != nil || v.Xml != dailyModel() {
+		t.Fatalf("the model keeps its BPMN: %v", err)
+	}
+	if len(v.Issues) != 2 || !v.Issues[0].Hint || !strings.Contains(v.Issues[0].Message, "converted when deployed") ||
+		!v.Issues[1].Hint || v.Issues[1].ElementId != "daily" {
+		t.Errorf("the issues are hints of the conversion: %+v", v.Issues)
+	}
+}

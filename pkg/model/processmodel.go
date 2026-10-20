@@ -31,7 +31,9 @@ type Model struct {
 	PublishedAt        *time.Time `json:"published_at,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
-	// validation hints of the latest version; a model with issues can be saved but not deployed (MOD-04)
+	// validation hints of the latest version; a model with issues other than hints can be saved
+	// but not deployed (MOD-04). A model of Camunda 7 or the old designer is validated as
+	// converted at deploy, which a hint says (MIG-04).
 	Issues []Issue `json:"issues,omitempty"`
 }
 

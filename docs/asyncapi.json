@@ -1558,8 +1558,34 @@
                 },
                 "type": "object"
             },
+            "ModelConversionReport": {
+                "properties": {
+                    "check": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelIssue"
+                        },
+                        "type": "array"
+                    },
+                    "rewritten": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelIssue"
+                        },
+                        "type": "array"
+                    },
+                    "unsupported": {
+                        "items": {
+                            "$ref": "#/components/schemas/ModelIssue"
+                        },
+                        "type": "array"
+                    }
+                },
+                "type": "object"
+            },
             "ModelDeployment": {
                 "properties": {
+                    "conversion": {
+                        "$ref": "#/components/schemas/ModelConversionReport"
+                    },
                     "created_at": {
                         "format": "date-time",
                         "type": "string"
@@ -1999,6 +2025,9 @@
                 "properties": {
                     "element_id": {
                         "type": "string"
+                    },
+                    "hint": {
+                        "type": "boolean"
                     },
                     "message": {
                         "type": "string"
