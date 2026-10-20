@@ -130,10 +130,28 @@ func (this *Tx) StaleNetworks(before time.Time) (result []string, err error) {
 }
 
 // DeleteNetwork removes a network with its deployments, instances and desired state (SYNC-07).
+// Instances and deployments go the way of every deletion, so that their rights are removed
+// from permissions-v2 and the change stream reports the deleted instances.
 func (this *Tx) DeleteNetwork(id string) error {
+	instances, err := this.NetworkInstanceIds(id)
+	if err != nil {
+		return err
+	}
+	for _, instanceId := range instances {
+		if err = this.DeleteInstance(instanceId); err != nil {
+			return err
+		}
+	}
+	deployments, err := this.networkDeploymentIds(id)
+	if err != nil {
+		return err
+	}
+	for _, deploymentId := range deployments {
+		if err = this.DeleteDeployment(deploymentId); err != nil {
+			return err
+		}
+	}
 	for _, statement := range []string{
-		"DELETE FROM instances WHERE network_id = ?",
-		"DELETE FROM deployments WHERE network_id = ?",
 		"DELETE FROM network_desired WHERE network_id = ?",
 		"DELETE FROM networks WHERE id = ?",
 	} {
@@ -323,6 +341,22 @@ func (this *Tx) ReplaceReplicatedIncidents(instanceId string, run int, incidents
 // NetworkInstanceIds lists the instances of a gateway, for its snapshot (LONG-10).
 func (this *Tx) NetworkInstanceIds(networkId string) (result []string, err error) {
 	rows, err := this.query("SELECT id FROM instances WHERE network_id = ? ORDER BY id", networkId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result = append(result, id)
+	}
+	return result, rows.Err()
+}
+
+func (this *Tx) networkDeploymentIds(networkId string) (result []string, err error) {
+	rows, err := this.query("SELECT id FROM deployments WHERE network_id = ? ORDER BY id", networkId)
 	if err != nil {
 		return nil, err
 	}
