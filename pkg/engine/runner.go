@@ -538,9 +538,12 @@ func (this *runner) subscribe(element *bpmn.Element, t *store.Token, group strin
 		if err != nil {
 			return err
 		}
-		due, err := timer.Next(element.Timer.Kind, value, this.now, this.e.config.Location)
+		due, limited, err := timer.NextNotBefore(element.Timer.Kind, value, this.now, this.e.earliestDue(this.now, nil), this.e.config.Location)
 		if err != nil {
 			return incidentf(element.Id, "timer: %v", err)
+		}
+		if limited {
+			data["minimum"] = this.e.config.MinTimerDuration.String()
 		}
 		s.Kind = store.SubscriptionTimer
 		s.DueAt = &due

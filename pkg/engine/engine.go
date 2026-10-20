@@ -47,7 +47,8 @@ type Config struct {
 	// values in the activity log are truncated to this JSON size
 	MaxActivityValueBytes int
 	ScriptTimeout         time.Duration
-	// shortest timer duration a model may use; 0 allows every duration
+	// shortest timer duration a model may use; cycles, schedules and computed values are
+	// limited to it at runtime; 0 allows every duration
 	MinTimerDuration time.Duration
 	// task defaults if the element sets no senergy:retries and senergy:timeout (TASK-07)
 	TaskTimeout time.Duration

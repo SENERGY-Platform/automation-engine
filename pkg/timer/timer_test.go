@@ -125,3 +125,77 @@ func TestCronReportsNoOccurrenceForPastYears(t *testing.T) {
 		t.Fatalf("expected ErrNoNextOccurrence, got %v", err)
 	}
 }
+
+func TestNextNotBeforeLimitsDurationsAndCycles(t *testing.T) {
+	from := time.Date(2026, 10, 12, 10, 30, 0, 300_000_000, time.UTC)
+	earliest := from.Add(5 * time.Second)
+	cases := []struct {
+		kind     Kind
+		value    string
+		expected time.Time
+		limited  bool
+	}{
+		{KindDuration, "PT1S", earliest, true},
+		{KindDuration, "PT10S", from.Add(10 * time.Second), false},
+		{KindCycle, "R/PT1S", earliest, true},
+		{KindCycle, "R5/PT1M", from.Add(time.Minute), false},
+		// the first cron time at or after earliest, still on the second
+		{KindCycle, "* * * * * ?", time.Date(2026, 10, 12, 10, 30, 6, 0, time.UTC), true},
+		{KindCycle, "*/5 * * * * ?", time.Date(2026, 10, 12, 10, 30, 10, 0, time.UTC), true},
+		{KindCycle, "0 * * * * ?", time.Date(2026, 10, 12, 10, 31, 0, 0, time.UTC), false},
+		{KindDate, "2026-10-12T10:30:01Z", time.Date(2026, 10, 12, 10, 30, 1, 0, time.UTC), false},
+	}
+	for _, c := range cases {
+		got, limited, err := NextNotBefore(c.kind, c.value, from, earliest, time.UTC)
+		if err != nil {
+			t.Errorf("%v: %v", c.value, err)
+			continue
+		}
+		if !got.Equal(c.expected) || limited != c.limited {
+			t.Errorf("%v: expected %v (limited %v), got %v (limited %v)", c.value, c.expected, c.limited, got, limited)
+		}
+	}
+}
+
+func TestNextNotBeforeKeepsACronAtTheBoundary(t *testing.T) {
+	previous := time.Date(2026, 10, 12, 10, 30, 0, 0, time.UTC)
+	got, _, err := NextNotBefore(KindCycle, "* * * * * ?", previous.Add(300*time.Millisecond), previous.Add(5*time.Second), time.UTC)
+	if err != nil || !got.Equal(previous.Add(5*time.Second)) {
+		t.Fatalf("expected %v, got %v %v", previous.Add(5*time.Second), got, err)
+	}
+}
+
+func TestNextNotBeforeWithoutEarliestIsNext(t *testing.T) {
+	from := time.Date(2026, 10, 12, 10, 30, 0, 0, time.UTC)
+	for kind, value := range map[Kind]string{KindDuration: "PT1S", KindCycle: "* * * * * ?"} {
+		expected, _ := Next(kind, value, from, time.UTC)
+		got, limited, err := NextNotBefore(kind, value, from, time.Time{}, time.UTC)
+		if err != nil || limited || !got.Equal(expected) {
+			t.Errorf("%v: expected %v, got %v %v %v", value, expected, got, limited, err)
+		}
+	}
+}
+
+func TestNextScheduledLimitsCronAndEvery(t *testing.T) {
+	from := time.Date(2026, 10, 12, 10, 30, 0, 0, time.UTC)
+	earliest := from.Add(5 * time.Second)
+	cases := map[string]time.Time{
+		"* * * * * *":   earliest,
+		"*/2 * * * * *": from.Add(6 * time.Second),
+		"@every 1s":     earliest,
+		"* * * * *":     from.Add(time.Minute),
+		"@every 1m":     from.Add(time.Minute),
+	}
+	for expr, expected := range cases {
+		schedule, err := ParseSchedule(expr, time.UTC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := NextScheduled(schedule, from, earliest); !got.Equal(expected) {
+			t.Errorf("%v: expected %v, got %v", expr, expected, got)
+		}
+		if got, unlimited := NextScheduled(schedule, from, time.Time{}), schedule.Next(from); !got.Equal(unlimited) {
+			t.Errorf("%v without earliest: expected %v, got %v", expr, unlimited, got)
+		}
+	}
+}

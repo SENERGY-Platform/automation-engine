@@ -171,3 +171,18 @@ func ParseSchedule(expr string, loc *time.Location) (cron.Schedule, error) {
 	}
 	return schedule, nil
 }
+
+// NextScheduled returns the first start of a schedule after from and not before earliest
+// (MIN_TIMER_DURATION): a cron at its first time at or after earliest, @every at earliest.
+// Zero if there is none.
+func NextScheduled(schedule cron.Schedule, from, earliest time.Time) time.Time {
+	next := schedule.Next(from)
+	if next.IsZero() || !next.Before(earliest) {
+		return next
+	}
+	if _, ok := schedule.(cron.ConstantDelaySchedule); ok {
+		return earliest
+	}
+	// cron finds times strictly after its argument
+	return schedule.Next(earliest.Add(-time.Nanosecond))
+}

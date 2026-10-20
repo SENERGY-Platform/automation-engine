@@ -26,7 +26,8 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/timer"
 )
 
-// NextScheduleDue computes the next start of a schedule after from; nil if disabled.
+// NextScheduleDue computes the next start of a schedule after from; nil if disabled. Starts are
+// at least MinTimerDuration apart, counted from the due time s had if it has passed.
 func (this *Engine) NextScheduleDue(s model.Schedule, from time.Time) (*time.Time, error) {
 	if s.Disabled {
 		return nil, nil
@@ -35,7 +36,7 @@ func (this *Engine) NextScheduleDue(s model.Schedule, from time.Time) (*time.Tim
 	if err != nil {
 		return nil, model.BadRequest("%v", err)
 	}
-	next := schedule.Next(from)
+	next := timer.NextScheduled(schedule, from, this.earliestDue(from, s.NextDue))
 	if next.IsZero() {
 		return nil, nil
 	}

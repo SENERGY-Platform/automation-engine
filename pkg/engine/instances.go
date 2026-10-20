@@ -268,7 +268,8 @@ func (this *Engine) beginRun(tx *store.Tx, inst *store.Instance, version int, st
 
 // startTimerDue computes the next due time of a timer start event after from; nil if the
 // timer has no further occurrence. Expressions see no variables, there is no instance yet.
-func (this *Engine) startTimerDue(start *bpmn.Element, from time.Time) (*time.Time, error) {
+// previous is the due time that fired, nil at activation.
+func (this *Engine) startTimerDue(start *bpmn.Element, from time.Time, previous *time.Time) (*time.Time, error) {
 	value := start.Timer.Value
 	if start.Timer.Expression {
 		result, err := this.sandbox.Run(start.Timer.Value, nil)
@@ -281,7 +282,7 @@ func (this *Engine) startTimerDue(start *bpmn.Element, from time.Time) (*time.Ti
 		}
 		value = s
 	}
-	due, err := timer.Next(start.Timer.Kind, value, from, this.config.Location)
+	due, _, err := timer.NextNotBefore(start.Timer.Kind, value, from, this.earliestDue(from, previous), this.config.Location)
 	if errors.Is(err, timer.ErrNoNextOccurrence) {
 		return nil, nil
 	}
@@ -293,6 +294,21 @@ func (this *Engine) startTimerDue(start *bpmn.Element, from time.Time) (*time.Ti
 		return nil, nil
 	}
 	return &due, nil
+}
+
+// earliestDue is the earliest due time of a timer, timer start or schedule (MIN_TIMER_DURATION):
+// the minimum after the previous due time, or after now if there is none or it lies ahead.
+// Taking the previous due time keeps a cycle of exactly the minimum in its rhythm when the
+// scheduler fires late. Zero without minimum.
+func (this *Engine) earliestDue(now time.Time, previous *time.Time) time.Time {
+	if this.config.MinTimerDuration <= 0 {
+		return time.Time{}
+	}
+	base := now
+	if previous != nil && !previous.After(now) {
+		base = *previous
+	}
+	return base.Add(this.config.MinTimerDuration)
 }
 
 func sortedKeys(m map[string]any) []string {
@@ -584,7 +600,7 @@ func (this *Engine) ActivateVersion(tx *store.Tx, deploymentId string, version i
 			}
 			events = append(events, store.StartEvent{Version: version, ElementId: start.Id, Kind: string(bpmn.EventMessage), MessageName: messageName(deploymentId, start)})
 		case bpmn.EventTimer:
-			due, err := this.startTimerDue(start, now)
+			due, err := this.startTimerDue(start, now, nil)
 			if err != nil {
 				return model.ValidationFailed([]model.Issue{{ElementId: start.Id, Message: err.Error()}})
 			}

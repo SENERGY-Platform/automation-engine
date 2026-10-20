@@ -136,6 +136,27 @@ func Next(kind Kind, value string, from time.Time, loc *time.Location) (time.Tim
 	}
 }
 
+// NextNotBefore is Next for a timer that must not be due before earliest (MIN_TIMER_DURATION).
+// A duration or repeating interval due earlier is due at earliest, a cron expression at its
+// first time at or after earliest; a date is never moved. limited reports a moved due time.
+func NextNotBefore(kind Kind, value string, from, earliest time.Time, loc *time.Location) (due time.Time, limited bool, err error) {
+	due, err = Next(kind, value, from, loc)
+	if err != nil || kind == KindDate || !due.Before(earliest) {
+		return due, false, err
+	}
+	value = strings.TrimSpace(value)
+	if kind == KindCycle && !strings.HasPrefix(value, "R") {
+		schedule, err := ParseCron(value, loc)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		// cron finds times strictly after its argument
+		due, err = schedule.Next(earliest.Add(-time.Nanosecond))
+		return due, err == nil, err
+	}
+	return earliest, true, nil
+}
+
 // Validate checks a literal timer value without computing a due time.
 func Validate(kind Kind, value string) error {
 	_, err := Next(kind, value, time.Now(), time.UTC)

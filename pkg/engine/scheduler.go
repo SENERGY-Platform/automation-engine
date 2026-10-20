@@ -121,7 +121,7 @@ func (this *Engine) fireStartTimers(ctx context.Context, now time.Time) error {
 				return tx.SetStartEventDue(deployment.Id, current.ElementId, nil)
 			}
 			// missed cycles fire once, not once per missed cycle (LONG-12)
-			next, err := this.startTimerDue(start, now)
+			next, err := this.startTimerDue(start, now, current.DueAt)
 			if err != nil || start.Timer.Kind != timer.KindCycle {
 				next = nil
 			}
