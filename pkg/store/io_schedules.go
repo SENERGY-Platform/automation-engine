@@ -176,7 +176,9 @@ func (this *Tx) ListSchedules(namespace string, options model.ScheduleListOption
 }
 
 func (this *Tx) DueSchedules(now time.Time, limit int) (result []model.Schedule, err error) {
-	rows, err := this.query("SELECT "+scheduleColumns+" FROM schedules WHERE disabled = 0 AND next_due IS NOT NULL AND next_due <= ? ORDER BY next_due LIMIT ?", millis(now), limit)
+	rows, err := this.query("SELECT "+scheduleColumns+" FROM schedules WHERE disabled = 0 AND next_due IS NOT NULL AND next_due <= ? "+
+		// a deployment of a gateway runs only there; the cloud starts nothing for it (FOG-05)
+		"AND deployment_id NOT IN (SELECT id FROM deployments WHERE network_id <> '') ORDER BY next_due LIMIT ?", millis(now), limit)
 	if err != nil {
 		return nil, err
 	}

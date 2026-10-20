@@ -68,7 +68,11 @@ func (this *Controller) CreateSchedule(ctx context.Context, token string, namesp
 		return result, err
 	}
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
-		if _, err := this.readDeployment(ctx, tx, token, namespace, input.DeploymentId, Execute, false); err != nil {
+		d, err := this.readDeployment(ctx, tx, token, namespace, input.DeploymentId, Execute, false)
+		if err != nil {
+			return err
+		}
+		if err := schedulable(d); err != nil {
 			return err
 		}
 		now := time.Now().UTC()
@@ -92,7 +96,11 @@ func (this *Controller) UpdateSchedule(ctx context.Context, token string, namesp
 			return err
 		}
 		if input.DeploymentId != "" && input.DeploymentId != result.DeploymentId {
-			if _, err := this.readDeployment(ctx, tx, token, namespace, input.DeploymentId, Execute, false); err != nil {
+			d, err := this.readDeployment(ctx, tx, token, namespace, input.DeploymentId, Execute, false)
+			if err != nil {
+				return err
+			}
+			if err := schedulable(d); err != nil {
 				return err
 			}
 			result.DeploymentId = input.DeploymentId
@@ -173,4 +181,13 @@ func (this *Controller) IoBulk(ctx context.Context, token string, bulk model.IoB
 		return nil, err
 	}
 	return this.io.Bulk(ctx, user, admin, bulk)
+}
+
+// schedulable rejects a deployment of a gateway: schedules start instances in the cloud, and a
+// gateway runs its deployments alone (FOG-05)
+func schedulable(d model.Deployment) error {
+	if d.NetworkId != "" {
+		return model.BadRequest("deployment %v runs on gateway %v; schedules start instances in the cloud only", d.Id, d.NetworkId)
+	}
+	return nil
 }
