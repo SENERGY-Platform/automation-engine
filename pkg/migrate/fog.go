@@ -18,11 +18,13 @@ package migrate
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/deprecated"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/google/uuid"
 )
 
 // the topic of hubs in permissions-v2
@@ -86,60 +88,89 @@ func (this *migration) fogDeployments(ctx context.Context) error {
 			continue
 		}
 		fd.Deployment.Version = 3
-		input, err := deprecated.DeploymentInput(ctx, this.target.Controller, this.target.token(), processes, fd.Deployment, "")
-		if err != nil {
-			this.result(step, "deployment", id, owner, Manual, "%v", describe(err))
-			continue
-		}
+		input, conversion, err := deprecated.DeploymentInput(ctx, this.target.Controller, this.target.token(), processes, fd.Deployment, "")
 		input.Owner, input.NetworkId = owner, fd.NetworkId
-		if !this.options.Apply {
+		switch {
+		case err != nil:
+			this.result(step, "deployment", id, owner, Manual, "%v", describe(err))
+		case !this.options.Apply:
 			this.planned[id] = input.Xml
-		} else if _, err = this.target.Controller.PutDeployment(ctx, this.target.token(), processes, id, input); err != nil {
-			this.result(step, "deployment", id, owner, Failed, "%v", describe(err))
-			continue
+		default:
+			if _, err = this.target.Controller.PutDeployment(ctx, this.target.token(), processes, id, input); err != nil {
+				this.result(step, "deployment", id, owner, Failed, "%v", describe(err))
+			}
 		}
-		this.result(step, "deployment", id, owner, Migrated, "network %v", fd.NetworkId)
+		if err == nil {
+			this.result(step, "deployment", id, owner, Migrated, "network %v", fd.NetworkId)
+		}
+		this.findings(step, id, owner, conversion.Rewritten, conversion.Check, conversion.Unsupported)
 	}
 	return nil
 }
 
 // fogStarts takes the starts process-sync watched over as instances of the network; they run
-// once the gateway runs the engine (MIG-02, MIG-06)
+// once the gateway runs the engine. The business key is the instance id where it is
+// unambiguous, also against the instances of the cloud (MIG-02, MIG-06, see assign).
 func (this *migration) fogStarts(ctx context.Context) error {
 	const step = "fog-instances"
 	starts, err := this.sources.FogStarts(ctx)
 	if err != nil {
 		return err
 	}
+	var accepted []FogStart
+	var candidates []candidate
+	seen := map[string]bool{}
 	for _, s := range starts {
-		id := strings.TrimPrefix(s.BusinessKey, "wardened:")
+		key := strings.TrimPrefix(s.BusinessKey, "wardened:")
 		deploymentId, ok := this.fogIds[s.DeploymentId]
 		if !ok || !this.known(ctx, deploymentId) {
-			this.result(step, "instance", id, "", Skipped, "deployment %v of network %v is not migrated", s.DeploymentId, s.NetworkId)
+			this.result(step, "instance", key, "", Skipped, "deployment %v of network %v is not migrated", s.DeploymentId, s.NetworkId)
 			continue
 		}
 		owner, problem := this.networkOwner(ctx, s.NetworkId)
 		if owner == "" {
-			this.result(step, "instance", id, "", Manual, "%v", problem)
+			this.result(step, "instance", key, "", Manual, "%v", problem)
 			continue
 		}
-		exists, err := this.target.instanceExists(ctx, id)
+		origin := s.NetworkId + "/" + deploymentId + "/" + key
+		if seen[origin] {
+			this.result(step, "instance", key, owner, Skipped, "the same start as another one of process-sync in network %v (RUN-09)", s.NetworkId)
+			continue
+		}
+		seen[origin] = true
+		accepted = append(accepted, s)
+		candidates = append(candidates, candidate{oldId: key, origin: "the start of " + key + " in network " + s.NetworkId, key: key,
+			generated: uuid.NewSHA1(instanceNamespace, []byte("fog/"+origin)).String(), owner: owner, deploymentId: deploymentId, networkId: s.NetworkId})
+	}
+	ids := this.assign(ctx, candidates)
+	for n, s := range accepted {
+		c, a := candidates[n], ids[n]
+		switch {
+		case a.err != nil:
+			this.result(step, "instance", c.key, c.owner, Failed, "%v", a.err)
+			continue
+		case a.manual != "":
+			this.result(step, "instance", c.key, c.owner, Manual, "%v", a.manual)
+			continue
+		}
+		exists, err := this.target.instanceExists(ctx, a.id)
 		switch {
 		case err != nil:
-			this.result(step, "instance", id, owner, Failed, "%v", err)
+			this.result(step, "instance", a.id, c.owner, Failed, "%v", err)
 			continue
 		case exists:
-			this.result(step, "instance", id, owner, Existing, "")
+			this.result(step, "instance", a.id, c.owner, Existing, "")
 			continue
 		}
 		if this.options.Apply {
-			_, err = this.target.Controller.PutInstance(ctx, this.target.token(), processes, id, model.StartInstanceInput{DeploymentId: deploymentId, Variables: s.Parameters, Owner: owner})
+			_, err = this.target.Controller.PutInstance(ctx, this.target.token(), processes, a.id, model.StartInstanceInput{DeploymentId: c.deploymentId, Variables: s.Parameters, Owner: c.owner})
 			if err != nil {
-				this.result(step, "instance", id, owner, Failed, "%v", describe(err))
+				this.result(step, "instance", a.id, c.owner, Failed, "%v", describe(err))
 				continue
 			}
 		}
-		this.result(step, "instance", id, owner, Migrated, "network %v; it starts once the gateway runs the engine", s.NetworkId)
+		message := fmt.Sprintf("network %v; it starts once the gateway runs the engine", s.NetworkId)
+		this.result(step, "instance", a.id, c.owner, Migrated, "%v", strings.Join(append([]string{message}, a.notes...), "; "))
 	}
 	return nil
 }

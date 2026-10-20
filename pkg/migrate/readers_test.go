@@ -199,6 +199,9 @@ func TestCamundaReaderReadsDeploymentsAndRunningInstances(t *testing.T) {
 	}
 	i := instances[0]
 	data, _ := json.Marshal(i.Variables["data"])
+	if i.StartTime.IsZero() || time.Since(i.StartTime) > time.Hour {
+		t.Errorf("the start time comes from the history: %v", i.StartTime)
+	}
 	if i.BusinessKey != "wardened:k1" || i.TenantId != "alice" || i.Variables["level"] != "9" || i.Variables["count"] != 3.0 || string(data) != `{"a":1}` {
 		t.Errorf("instance: %+v %v", i, fmt.Sprintf("%s", data))
 	}

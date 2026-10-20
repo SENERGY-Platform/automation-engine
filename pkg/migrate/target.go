@@ -77,6 +77,16 @@ func (this *Target) deploymentExists(ctx context.Context, id string) (bool, erro
 	return this.exists(ctx, func(tx *store.Tx) error { _, err := tx.GetDeployment(id, false); return err })
 }
 
+// instance reads an instance of the engine; found is false if there is none
+func (this *Target) instance(ctx context.Context, id string) (result model.Instance, found bool, err error) {
+	found, err = this.exists(ctx, func(tx *store.Tx) error {
+		i, err := tx.GetInstance(id, false)
+		result = i.Instance
+		return err
+	})
+	return result, found, err
+}
+
 func (this *Target) instanceExists(ctx context.Context, id string) (bool, error) {
 	return this.exists(ctx, func(tx *store.Tx) error { _, err := tx.GetInstance(id, false); return err })
 }

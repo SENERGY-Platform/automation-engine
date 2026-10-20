@@ -71,6 +71,14 @@ const (
 	Failed  Status = "failed"
 )
 
+// Findings of the model rewrite of a deployment (MIG-04), as items of kind model; the item of
+// the deployment carries its outcome.
+const (
+	Rewritten   Status = "rewritten"
+	Check       Status = "check"
+	Unsupported Status = "unsupported"
+)
+
 type Item struct {
 	Step    string `json:"step"`
 	Kind    string `json:"kind"`
@@ -98,7 +106,8 @@ func (this *Report) Count(status Status) int {
 	return n
 }
 
-// ExitCode is 0 for a complete run, 1 if anything needs a decision or failed
+// ExitCode is 0 for a complete run, 1 if anything needs a decision or failed; findings of the
+// model rewrite do not count, an unsupported part makes its deployment manual
 func (this *Report) ExitCode() int {
 	if this.Count(Failed) > 0 || this.Count(Manual) > 0 {
 		return 1
@@ -106,7 +115,9 @@ func (this *Report) ExitCode() int {
 	return 0
 }
 
-// Write prints the report: a summary per step and kind, then every item that is not done
+// Write prints the report: a summary per step and kind, then every item that is not done and
+// the rewritten parts and those to check of the models; the unsupported ones are named by the
+// item of their deployment
 func (this *Report) Write(w io.Writer) {
 	type key struct{ step, kind string }
 	counts := map[key]map[Status]int{}
@@ -122,7 +133,7 @@ func (this *Report) Write(w io.Writer) {
 	sort.SliceStable(keys, func(a, b int) bool { return keys[a].step < keys[b].step })
 	for _, k := range keys {
 		var parts []string
-		for _, s := range []Status{Migrated, Planned, Existing, Skipped, Manual, Failed} {
+		for _, s := range []Status{Migrated, Planned, Existing, Skipped, Manual, Failed, Rewritten, Check, Unsupported} {
 			if n := counts[k][s]; n > 0 {
 				parts = append(parts, fmt.Sprintf("%v %v", n, s))
 			}
@@ -130,7 +141,7 @@ func (this *Report) Write(w io.Writer) {
 		_, _ = fmt.Fprintf(w, "%-24v %-20v %v\n", k.step, k.kind, strings.Join(parts, ", "))
 	}
 	for _, i := range this.Items {
-		if i.Status == Manual || i.Status == Failed || (i.Status == Skipped && i.Message != "") {
+		if i.Status == Manual || i.Status == Failed || i.Status == Rewritten || i.Status == Check || (i.Status == Skipped && i.Message != "") {
 			_, _ = fmt.Fprintf(w, "%v\t%v\t%v\t%v\towner=%v\t%v\n", i.Status, i.Step, i.Kind, i.Id, i.Owner, i.Message)
 		}
 	}
@@ -139,7 +150,7 @@ func (this *Report) Write(w io.Writer) {
 // Run migrates step by step; a step that cannot read its source fails as a whole, the next
 // steps run nevertheless.
 func Run(ctx context.Context, options Options, sources Sources, target *Target) *Report {
-	m := &migration{options: options, sources: sources, target: target, report: &Report{}, instanceIds: map[string]string{}, planned: map[string]string{}, networkOwners: map[string]string{}}
+	m := &migration{options: options, sources: sources, target: target, report: &Report{}, instanceIds: map[string]string{}, claimed: map[string]string{}, keyIds: map[keyRef][]string{}, planned: map[string]string{}, networkOwners: map[string]string{}}
 	steps := []struct {
 		name string
 		run  func(context.Context) error
@@ -148,6 +159,9 @@ func Run(ctx context.Context, options Options, sources Sources, target *Target) 
 		{"process-deployments", m.processDeployments},
 		{"camunda-deployments", m.camundaDeployments},
 		{"running-instances", m.runningInstances},
+		// before the smart services, whose modules refer to these instances by business key
+		{"fog-deployments", m.fogDeployments},
+		{"fog-instances", m.fogStarts},
 		{"schedules", m.schedules},
 		{"process-io", m.ioValues},
 		{"smart-service-designs", m.designs},
@@ -155,8 +169,6 @@ func Run(ctx context.Context, options Options, sources Sources, target *Target) 
 		{"smart-service-instances", m.smartServiceInstances},
 		{"smart-service-modules", m.modules},
 		{"smart-service-variables", m.smartServiceVariables},
-		{"fog-deployments", m.fogDeployments},
-		{"fog-instances", m.fogStarts},
 	}
 	for _, step := range steps {
 		if err := step.run(ctx); err != nil {
@@ -193,6 +205,10 @@ type migration struct {
 	networkOwners map[string]string
 	// Camunda process instance id -> instance id in the engine, for IO values
 	instanceIds map[string]string
+	// instance ids assigned in this run -> what they were assigned to
+	claimed map[string]string
+	// business keys -> the ids of the instances that had them, for references by key
+	keyIds map[keyRef][]string
 }
 
 func (this *migration) result(step string, kind string, id string, owner string, status Status, format string, args ...any) {

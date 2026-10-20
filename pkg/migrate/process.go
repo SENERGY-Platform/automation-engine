@@ -158,32 +158,46 @@ func (this *migration) processDeployments(ctx context.Context) error {
 			this.result(step, "deployment", pd.Id, owner, Existing, "")
 			continue
 		}
-		input, err := deprecated.DeploymentInput(ctx, this.target.Controller, this.target.token(), processes, pd.Deployment, pd.Source)
-		if err != nil {
-			this.result(step, "deployment", pd.Id, owner, Manual, "%v", describe(err))
-			continue
-		}
-		input.Owner = owner
-		if modelId, ok := this.modelsByContent[contentKey(owner, pd.Deployment.Diagram.XmlRaw)]; ok {
-			input.ModelId, input.ModelVersion = modelId, 1
-		}
-		if !this.options.Apply {
-			issues, err := this.target.Controller.Validate(ctx, this.target.token(), processes, input.Xml)
-			if err == nil && len(issues) > 0 {
-				err = model.ValidationFailed(issues)
-			}
+		input, conversion, err := deprecated.DeploymentInput(ctx, this.target.Controller, this.target.token(), processes, pd.Deployment, pd.Source)
+		status, message := func() (Status, string) {
 			if err != nil {
-				this.result(step, "deployment", pd.Id, owner, Manual, "%v", describe(err))
-				continue
+				return Manual, describe(err)
 			}
-			this.planned[pd.Id] = input.Xml
-		} else if _, err = this.target.Controller.PutDeployment(ctx, this.target.token(), processes, pd.Id, input); err != nil {
-			this.result(step, "deployment", pd.Id, owner, Failed, "%v", describe(err))
-			continue
-		}
-		this.result(step, "deployment", pd.Id, owner, Migrated, "model %v", input.ModelId)
+			input.Owner = owner
+			if modelId, ok := this.modelsByContent[contentKey(owner, pd.Deployment.Diagram.XmlRaw)]; ok {
+				input.ModelId, input.ModelVersion = modelId, 1
+			}
+			if !this.options.Apply {
+				issues, err := this.target.Controller.Validate(ctx, this.target.token(), processes, input.Xml)
+				if err == nil && len(issues) > 0 {
+					err = model.ValidationFailed(issues)
+				}
+				if err != nil {
+					return Manual, describe(err)
+				}
+				this.planned[pd.Id] = input.Xml
+			} else if _, err = this.target.Controller.PutDeployment(ctx, this.target.token(), processes, pd.Id, input); err != nil {
+				return Failed, describe(err)
+			}
+			return Migrated, "model " + input.ModelId
+		}()
+		this.result(step, "deployment", pd.Id, owner, status, "%v", message)
+		this.findings(step, pd.Id, owner, conversion.Rewritten, conversion.Check, conversion.Unsupported)
 	}
 	return nil
+}
+
+// findings reports, after the item of a deployment, what the rewrite of its model changed,
+// what is to be checked by hand and what is not supported (MIG-04)
+func (this *migration) findings(step string, id string, owner string, rewritten []model.Issue, check []model.Issue, unsupported []model.Issue) {
+	for _, kind := range []struct {
+		status Status
+		issues []model.Issue
+	}{{Rewritten, rewritten}, {Check, check}, {Unsupported, unsupported}} {
+		for _, issue := range kind.issues {
+			this.report.add(Item{Step: step, Kind: "model", Id: id, Owner: owner, Status: kind.status, Message: issue.String()})
+		}
+	}
 }
 
 // describe names the issues of a validation error
@@ -239,20 +253,24 @@ func (this *migration) camundaDeployments(ctx context.Context) error {
 		if err == nil && !report.Complete() {
 			err = model.ValidationFailed(report.Unsupported)
 		}
-		if err != nil {
+		switch {
+		case err != nil:
 			this.result(step, "deployment", cd.Id, owner, Manual, "%v", describe(err))
-			continue
-		}
-		if !this.options.Apply {
+		case !this.options.Apply:
 			this.planned[id] = xml
-		} else {
-			if _, err = this.target.Controller.PutDeployment(ctx, this.target.token(), processes, id, model.DeploymentInput{Name: cd.Name, Xml: xml, Source: cd.Source, Owner: owner}); err != nil {
+		default:
+			_, err = this.target.Controller.PutDeployment(ctx, this.target.token(), processes, id, model.DeploymentInput{Name: cd.Name, Xml: xml, Source: cd.Source, Owner: owner})
+			if err != nil {
 				this.result(step, "deployment", cd.Id, owner, Failed, "%v", describe(err))
-				continue
 			}
 		}
-		this.result(step, "deployment", cd.Id, owner, Migrated, "as %v", id)
-		this.disable(ctx, step, cd, id)
+		if err == nil {
+			this.result(step, "deployment", cd.Id, owner, Migrated, "as %v", id)
+		}
+		this.findings(step, cd.Id, owner, report.Rewritten, report.Check, report.Unsupported)
+		if err == nil {
+			this.disable(ctx, step, cd, id)
+		}
 	}
 	return nil
 }
@@ -312,9 +330,16 @@ func firstNonEmpty(values ...string) string {
 
 // runningInstances starts the instances that run in Camunda anew, with the current values of
 // the variables named like the start form fields; the business key is the instance id where
-// it is unique (MIG-02)
+// it is unambiguous (MIG-02, see assign)
 func (this *migration) runningInstances(ctx context.Context) error {
 	const step = "running-instances"
+	type running struct {
+		ci           CamundaInstance
+		deploymentId string
+		names        []string
+	}
+	var all []running
+	var candidates []candidate
 	for _, cd := range this.camunda {
 		deploymentId := firstNonEmpty(vidOf(cd.Key), cd.Id)
 		if !this.known(ctx, deploymentId) {
@@ -330,16 +355,7 @@ func (this *migration) runningInstances(ctx context.Context) error {
 			this.result(step, "instance", cd.Id, cd.TenantId, Failed, "unable to read the start parameters: %v", err)
 			continue
 		}
-		keys := map[string]int{}
 		for _, ci := range instances {
-			keys[strings.TrimPrefix(ci.BusinessKey, "wardened:")]++
-		}
-		for _, ci := range instances {
-			id := strings.TrimPrefix(ci.BusinessKey, "wardened:")
-			if id == "" || keys[id] > 1 || len(id) > 64 || strings.ContainsAny(id, "/?# ") {
-				id = uuid.NewSHA1(instanceNamespace, []byte(cd.Engine+"/"+ci.Id)).String()
-			}
-			this.instanceIds[ci.Id] = id
 			variables := map[string]any{}
 			var names []string
 			for _, p := range parameters {
@@ -349,37 +365,56 @@ func (this *migration) runningInstances(ctx context.Context) error {
 				}
 			}
 			sort.Strings(names)
-			owner := this.options.owner(ci.TenantId)
-			if owner == "" {
-				this.result(step, "instance", id, ci.TenantId, Manual, "no valid owner; map it with -owner")
-				continue
-			}
-			if this.options.NoRestart {
-				this.result(step, "instance", id, owner, Manual, "runs in Camunda as %v; not restarted", ci.Id)
-				continue
-			}
-			exists, err := this.target.instanceExists(ctx, id)
-			if err != nil {
-				this.result(step, "instance", id, owner, Failed, "%v", err)
-				continue
-			}
-			if exists {
-				this.result(step, "instance", id, owner, Existing, "")
-				continue
-			}
-			if this.options.Apply {
-				_, err = this.target.Controller.PutInstance(ctx, this.target.token(), processes, id, model.StartInstanceInput{DeploymentId: deploymentId, Variables: variables, Owner: owner})
-				if err != nil {
-					this.result(step, "instance", id, owner, Failed, "%v", describe(err))
-					continue
-				}
-			}
-			message := fmt.Sprintf("restarted from Camunda instance %v", ci.Id)
-			if len(names) > 0 {
-				message += "; start values are the current values of " + strings.Join(names, ", ") + ", check them if the process changes them"
-			}
-			this.result(step, "instance", id, owner, Migrated, "%v", message)
+			all = append(all, running{ci: ci, deploymentId: deploymentId, names: names})
+			candidates = append(candidates, candidate{oldId: ci.Id, origin: "Camunda instance " + ci.Id, key: strings.TrimPrefix(ci.BusinessKey, "wardened:"),
+				generated: uuid.NewSHA1(instanceNamespace, []byte(cd.Engine+"/"+ci.Id)).String(), owner: this.options.owner(ci.TenantId),
+				deploymentId: deploymentId, values: variables, started: ci.StartTime})
 		}
+	}
+	ids := this.assign(ctx, candidates)
+	for n, r := range all {
+		ci, c, a := r.ci, candidates[n], ids[n]
+		id := a.id
+		if a.manual != "" {
+			id = c.key
+		} else {
+			this.instanceIds[ci.Id] = id
+		}
+		switch {
+		case c.owner == "":
+			this.result(step, "instance", id, ci.TenantId, Manual, "no valid owner; map it with -owner")
+			continue
+		case a.err != nil:
+			this.result(step, "instance", id, c.owner, Failed, "%v", a.err)
+			continue
+		case a.manual != "":
+			this.result(step, "instance", id, c.owner, Manual, "runs in Camunda as %v; %v", ci.Id, a.manual)
+			continue
+		case this.options.NoRestart:
+			this.result(step, "instance", id, c.owner, Manual, "%v", strings.Join(append([]string{"runs in Camunda as " + ci.Id + "; not restarted"}, a.notes...), "; "))
+			continue
+		}
+		exists, err := this.target.instanceExists(ctx, id)
+		if err != nil {
+			this.result(step, "instance", id, c.owner, Failed, "%v", err)
+			continue
+		}
+		if exists {
+			this.result(step, "instance", id, c.owner, Existing, "")
+			continue
+		}
+		if this.options.Apply {
+			_, err = this.target.Controller.PutInstance(ctx, this.target.token(), processes, id, model.StartInstanceInput{DeploymentId: r.deploymentId, Variables: c.values, Owner: c.owner})
+			if err != nil {
+				this.result(step, "instance", id, c.owner, Failed, "%v", describe(err))
+				continue
+			}
+		}
+		message := fmt.Sprintf("restarted from Camunda instance %v", ci.Id)
+		if len(r.names) > 0 {
+			message += "; start values are the current values of " + strings.Join(r.names, ", ") + ", check them if the process changes them"
+		}
+		this.result(step, "instance", id, c.owner, Migrated, "%v", strings.Join(append([]string{message}, a.notes...), "; "))
 	}
 	return nil
 }

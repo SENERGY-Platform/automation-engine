@@ -70,6 +70,8 @@ type CamundaInstance struct {
 	TenantId     string
 	DefinitionId string
 	Variables    map[string]any
+	// from the history of Camunda; zero if it keeps none
+	StartTime time.Time
 }
 
 type Schedule struct {

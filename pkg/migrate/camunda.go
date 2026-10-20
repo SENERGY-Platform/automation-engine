@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -138,6 +139,7 @@ func camundaValue(variable struct {
 }
 
 // RunningInstances reads the running instances of a deployment with their current variables
+// and, from the history, their start time
 func (this *Camunda) RunningInstances(ctx context.Context, d CamundaDeployment) ([]CamundaInstance, error) {
 	var result []CamundaInstance
 	for first := 0; ; first += camundaPage {
@@ -149,6 +151,14 @@ func (this *Camunda) RunningInstances(ctx context.Context, d CamundaDeployment) 
 		if err := this.get(ctx, d.Engine, "/process-instance", query, &page); err != nil {
 			return nil, err
 		}
+		ids := make([]string, 0, len(page))
+		for _, i := range page {
+			ids = append(ids, i.Id)
+		}
+		started, err := this.startTimes(ctx, d.Engine, ids)
+		if err != nil {
+			return nil, err
+		}
 		for _, i := range page {
 			var variables map[string]struct {
 				Type  string
@@ -157,7 +167,7 @@ func (this *Camunda) RunningInstances(ctx context.Context, d CamundaDeployment) 
 			if err := this.get(ctx, d.Engine, "/process-instance/"+url.PathEscape(i.Id)+"/variables", url.Values{"deserializeValues": {"false"}}, &variables); err != nil {
 				return nil, err
 			}
-			instance := CamundaInstance{Id: i.Id, BusinessKey: i.BusinessKey, TenantId: i.TenantId, DefinitionId: i.DefinitionId, Variables: map[string]any{}}
+			instance := CamundaInstance{Id: i.Id, BusinessKey: i.BusinessKey, TenantId: i.TenantId, DefinitionId: i.DefinitionId, Variables: map[string]any{}, StartTime: started[i.Id]}
 			for name, v := range variables {
 				instance.Variables[name] = camundaValue(v)
 			}
@@ -167,4 +177,24 @@ func (this *Camunda) RunningInstances(ctx context.Context, d CamundaDeployment) 
 			return result, nil
 		}
 	}
+}
+
+// startTimes reads the start times of instances from the history; an engine that keeps no
+// history gives none
+func (this *Camunda) startTimes(ctx context.Context, base string, ids []string) (map[string]time.Time, error) {
+	result := map[string]time.Time{}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var history []struct{ Id, StartTime string }
+	query := url.Values{"processInstanceIds": {strings.Join(ids, ",")}, "maxResults": {strconv.Itoa(len(ids))}}
+	if err := this.get(ctx, base, "/history/process-instance", query, &history); err != nil {
+		return nil, err
+	}
+	for _, h := range history {
+		if t, err := time.Parse(camundaTime, h.StartTime); err == nil {
+			result[h.Id] = t.UTC()
+		}
+	}
+	return result, nil
 }

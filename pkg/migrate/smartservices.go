@@ -148,6 +148,7 @@ func (this *migration) releases(ctx context.Context) error {
 			}
 			if err != nil {
 				this.result(step, "release", r.Id, owner, Manual, "%v; the later releases of the design are left out", describe(err))
+				this.findings(step, r.Id, owner, conversion.Rewritten, conversion.Check, conversion.Unsupported)
 				break
 			}
 			input := model.DeploymentInput{Name: r.Name, Description: r.Description, Xml: conversion.Xml, Svg: r.SvgXml, Owner: owner}
@@ -163,14 +164,17 @@ func (this *migration) releases(ctx context.Context) error {
 			} else {
 				if _, err = this.target.Controller.PutDeployment(ctx, this.target.token(), smartServices, deploymentId, input); err != nil {
 					this.result(step, "release", r.Id, owner, Failed, "%v; the later releases of the design are left out", describe(err))
+					this.findings(step, r.Id, owner, conversion.Rewritten, conversion.Check, conversion.Unsupported)
 					break
 				}
 				if err = this.copyRights(ctx, releaseTopic, r.Id, smartServices, model.KindDeployment, deploymentId, owner); err != nil {
 					this.result(step, "release", r.Id, owner, Failed, "%v", err)
+					this.findings(step, r.Id, owner, conversion.Rewritten, conversion.Check, conversion.Unsupported)
 					continue
 				}
 			}
 			this.result(step, "release", r.Id, owner, Migrated, "version %v of %v", i+1, deploymentId)
+			this.findings(step, r.Id, owner, conversion.Rewritten, conversion.Check, conversion.Unsupported)
 		}
 	}
 	return nil
@@ -271,7 +275,7 @@ func (this *migration) insertFinished(ctx context.Context, si SmartServiceInstan
 			return err
 		}
 		for _, m := range modules {
-			if err = insertModule(tx, m, owner); err != nil {
+			if err = this.insertModule(tx, m, owner); err != nil {
 				return err
 			}
 			this.insertedModules[m.Id] = true
@@ -280,10 +284,11 @@ func (this *migration) insertFinished(ctx context.Context, si SmartServiceInstan
 	})
 }
 
-func insertModule(tx *store.Tx, m Module, owner string) error {
+func (this *migration) insertModule(tx *store.Tx, m Module, owner string) error {
 	updated := unix(m.LastUpdate)
+	info, _ := this.deleteInfo(m)
 	module := model.Module{Id: m.Id, Namespace: smartServices, InstanceId: m.InstanceId, CreatedBy: m.InstanceId, Owner: owner, ModuleType: m.Type,
-		Data: m.Data, Keys: m.Keys, DeleteInfo: deleteInfo(m), CreatedAt: updated, UpdatedAt: updated}
+		Data: m.Data, Keys: m.Keys, DeleteInfo: info, CreatedAt: updated, UpdatedAt: updated}
 	if err := tx.UpsertModule(module); err != nil {
 		return err
 	}
@@ -295,23 +300,31 @@ func insertModule(tx *store.Tx, m Module, owner string) error {
 
 // delete info of the old workers that points at services the engine replaces
 var (
-	deploymentUrl  = regexp.MustCompile(`/(?:v3/deployments|deployments/[^/]+)/([^/?]+)$`)
-	businessKeyUrl = regexp.MustCompile(`/process-instances-by-business-key/(?:[^/]+/)?(?:wardened:)?([^/?]+)$`)
+	deploymentUrl = regexp.MustCompile(`/(?:v3/deployments|deployments/[^/]+)/([^/?]+)$`)
+	// with the network for process-sync
+	businessKeyUrl = regexp.MustCompile(`/process-instances-by-business-key/(?:([^/]+)/)?(?:wardened:)?([^/?]+)$`)
 	watcherUrl     = regexp.MustCompile(`/watcher/[^/?]+$`)
 )
 
 // deleteInfo rewrites the delete info of a module onto resources of the engine where the old
-// URL points at a service the engine replaces; other URLs stay (MIG-01)
-func deleteInfo(m Module) *model.ModuleDeleteInfo {
+// URL points at a service the engine replaces; other URLs stay (MIG-01). A business key names
+// the instance that had it in this run; where that is ambiguous, the URL stays and the problem
+// is returned.
+func (this *migration) deleteInfo(m Module) (*model.ModuleDeleteInfo, string) {
 	switch {
 	case m.DeleteUrl == "":
-		return nil
+		return nil, ""
 	case businessKeyUrl.MatchString(m.DeleteUrl):
-		return &model.ModuleDeleteInfo{Resource: &model.ResourceRef{Kind: model.ResourceInstance, Namespace: processes, Id: businessKeyUrl.FindStringSubmatch(m.DeleteUrl)[1]}}
+		match := businessKeyUrl.FindStringSubmatch(m.DeleteUrl)
+		id, problem := this.instanceOfKey(match[1], match[2])
+		if problem != "" {
+			return &model.ModuleDeleteInfo{Url: m.DeleteUrl, UserId: m.DeleteUser}, "the delete info keeps its URL: " + problem
+		}
+		return &model.ModuleDeleteInfo{Resource: &model.ResourceRef{Kind: model.ResourceInstance, Namespace: processes, Id: id}}, ""
 	case deploymentUrl.MatchString(m.DeleteUrl) && (m.Type == "process_deployment" || m.Data["process_deployment_id"] != nil):
-		return &model.ModuleDeleteInfo{Resource: &model.ResourceRef{Kind: model.ResourceDeployment, Namespace: processes, Id: deploymentUrl.FindStringSubmatch(m.DeleteUrl)[1]}}
+		return &model.ModuleDeleteInfo{Resource: &model.ResourceRef{Kind: model.ResourceDeployment, Namespace: processes, Id: deploymentUrl.FindStringSubmatch(m.DeleteUrl)[1]}}, ""
 	}
-	return &model.ModuleDeleteInfo{Url: m.DeleteUrl, UserId: m.DeleteUser}
+	return &model.ModuleDeleteInfo{Url: m.DeleteUrl, UserId: m.DeleteUser}, ""
 }
 
 // modules takes the modules of the migrated instances with their ids
@@ -337,11 +350,15 @@ func (this *migration) modules(ctx context.Context) error {
 			continue
 		}
 		if this.options.Apply && !this.insertedModules[m.Id] {
-			err = this.target.Store.Tx(ctx, func(tx *store.Tx) error { return insertModule(tx, m, owner) })
+			err = this.target.Store.Tx(ctx, func(tx *store.Tx) error { return this.insertModule(tx, m, owner) })
 			if err != nil {
 				this.result(step, "module", m.Id, owner, Failed, "%v", err)
 				continue
 			}
+		}
+		if _, problem := this.deleteInfo(m); problem != "" {
+			this.result(step, "module", m.Id, owner, Manual, "%v", problem)
+			continue
 		}
 		if watcherUrl.MatchString(m.DeleteUrl) {
 			this.result(step, "module", m.Id, owner, Manual, "the watch of the old watcher is not taken over; the module keeps its URL")

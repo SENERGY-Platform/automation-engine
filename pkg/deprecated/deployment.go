@@ -432,7 +432,8 @@ func changed(value string, original string, known bool) bool {
 
 // deploymentInput turns a deployment of the old format into the input of the engine
 func (this *Handler) deploymentInput(r *http.Request, old models.Deployment) (model.DeploymentInput, error) {
-	return DeploymentInput(r.Context(), this.c, token(r), processes, old, r.URL.Query().Get("source"))
+	input, _, err := DeploymentInput(r.Context(), this.c, token(r), processes, old, r.URL.Query().Get("source"))
+	return input, err
 }
 
 // Converter rewrites models of Camunda (MIG-04).
@@ -442,10 +443,11 @@ type Converter interface {
 
 // DeploymentInput turns a deployment of process-deployment (format version 3) into the input
 // of the engine: the BPMN rewritten, device selections as selections, changed values as
-// parameters. The migration uses it as well (MIG-01).
-func DeploymentInput(ctx context.Context, c Converter, token string, namespace string, old models.Deployment, source string) (model.DeploymentInput, error) {
+// parameters. The migration uses it as well (MIG-01) and reports the conversion, which is also
+// returned when unsupported parts reject the deployment (MIG-04).
+func DeploymentInput(ctx context.Context, c Converter, token string, namespace string, old models.Deployment, source string) (model.DeploymentInput, model.Conversion, error) {
 	if old.Version != 3 {
-		return model.DeploymentInput{}, model.BadRequest("expected deployment version 3")
+		return model.DeploymentInput{}, model.Conversion{}, model.BadRequest("expected deployment version 3")
 	}
 	times := map[string]string{}
 	for _, element := range old.Elements {
@@ -456,18 +458,18 @@ func DeploymentInput(ctx context.Context, c Converter, token string, namespace s
 	// a timer left empty in the model gets the time of the dialog; one still empty is reported
 	xml, _, err := fillEmptyTimers(old.Diagram.XmlRaw, times, "")
 	if err != nil {
-		return model.DeploymentInput{}, model.BadRequest("%v", err)
+		return model.DeploymentInput{}, model.Conversion{}, model.BadRequest("%v", err)
 	}
 	conversion, err := c.Convert(ctx, token, namespace, xml)
 	if err != nil {
-		return model.DeploymentInput{}, err
+		return model.DeploymentInput{}, model.Conversion{}, err
 	}
 	if len(conversion.Unsupported) > 0 {
-		return model.DeploymentInput{}, model.ValidationFailed(conversion.Unsupported)
+		return model.DeploymentInput{}, conversion, model.ValidationFailed(conversion.Unsupported)
 	}
 	process, _, err := bpmn.Parse(conversion.Xml)
 	if err != nil {
-		return model.DeploymentInput{}, model.BadRequest("%v", err)
+		return model.DeploymentInput{}, conversion, model.BadRequest("%v", err)
 	}
 	input := model.DeploymentInput{Name: old.Name, Description: old.Description, Xml: conversion.Xml, Svg: old.Diagram.Svg, Source: source,
 		Selections: map[string]model.Selection{}, Parameters: map[string]model.ElementParameters{}}
@@ -510,7 +512,7 @@ func DeploymentInput(ctx context.Context, c Converter, token string, namespace s
 		if selection != nil {
 			s, err := newSelection(*selection)
 			if err != nil {
-				return input, err
+				return input, conversion, err
 			}
 			if element.Task != nil && element.Task.PreferEvent {
 				prefer := true
@@ -539,7 +541,7 @@ func DeploymentInput(ctx context.Context, c Converter, token string, namespace s
 			input.Parameters[start.Id] = params
 		}
 	}
-	return input, nil
+	return input, conversion, nil
 }
 
 // v3Deployment rebuilds a deployment of the engine in the old format
