@@ -36,8 +36,35 @@ const PositionUpAcked = "up_acked"
 
 // unsynced excludes instances with changes the cloud has not taken; without a position, on
 // the cloud, it excludes nothing. Retention and budget keep them, so that the cloud learns how
-// they ended (LONG-07, LONG-10).
+// they ended (LONG-07, LONG-10); TrimChanges keeps the entries this rests on.
 const unsynced = "id NOT IN (SELECT c.instance_id FROM changes c JOIN sync_positions p ON p.name = '" + PositionUpAcked + "' AND c.seq > p.position)"
+
+// TrimChanges removes entries of the change stream older than before, at most limit at a time
+// (LONG-05). On a gateway, the entries after the position the cloud acknowledged are what keeps
+// an instance from retention and budget (unsynced), however long the gateway is offline: of
+// those, only entries followed by a later one of the same instance are removed. The change
+// stream then holds at most one entry per instance changed since the acknowledgement, and the
+// cloud gets the latest state of each, as it would from a fold of the batch (LONG-09, LONG-10).
+// The trade-off: while offline, instances that ended stay with their runtime rows and the
+// budget can only trim their history; a gateway that ends more instances offline than its
+// budget holds fills up instead of losing ends the cloud has not seen (LONG-07).
+func (this *Tx) TrimChanges(before time.Time, limit int) (int64, error) {
+	n, err := this.count("SELECT COUNT(*) FROM sync_positions WHERE name = ?", PositionUpAcked)
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		// the cloud, or a gateway before its first start of the synchronisation
+		return this.PurgeChanges(before, limit)
+	}
+	result, err := this.exec("DELETE FROM changes WHERE seq IN (SELECT seq FROM changes WHERE ts < ? "+
+		"AND (seq <= (SELECT position FROM sync_positions WHERE name = ?) OR seq NOT IN (SELECT MAX(c.seq) FROM changes c GROUP BY c.instance_id)) ORDER BY seq LIMIT ?)",
+		millis(before), PositionUpAcked, limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
 
 // InitSyncPosition sets a position to 0 unless it is set.
 func (this *Tx) InitSyncPosition(name string) error {

@@ -488,7 +488,7 @@ func (this *Engine) housekeeping(ctx context.Context, now time.Time) error {
 	this.lastHousekeeping = now
 	this.housekeepingMux.Unlock()
 	err := this.store.Tx(ctx, func(tx *store.Tx) error {
-		if _, err := tx.PurgeChanges(now.Add(-this.config.ChangeRetention), 10000); err != nil {
+		if _, err := tx.TrimChanges(now.Add(-this.config.ChangeRetention), 10000); err != nil {
 			return err
 		}
 		_, err := tx.PurgeReceipts(now.Add(-this.config.ReceiptRetention))
