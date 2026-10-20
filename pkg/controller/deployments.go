@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"time"
@@ -122,10 +123,55 @@ func (this *Controller) checkRetention(tx *store.Tx, namespace string, deploymen
 }
 
 func sameSelections(a, b map[string]model.Selection) bool {
+	return sameAsJson(a, b)
+}
+
+// sameParameters compares deploy parameters by effect: nil and empty maps are equal, and an
+// element without any parameter is the same as no entry for it
+func sameParameters(a, b map[string]model.ElementParameters) bool {
+	effective := func(p map[string]model.ElementParameters) map[string]model.ElementParameters {
+		result := map[string]model.ElementParameters{}
+		for id, params := range p {
+			if len(params.Inputs) > 0 || len(params.Variables) > 0 || params.Timer != "" || len(params.Defaults) > 0 {
+				result[id] = params
+			}
+		}
+		return result
+	}
+	return sameAsJson(effective(a), effective(b))
+}
+
+// sameAsJson compares values as they are stored: nil and empty maps are equal, and numbers
+// compare by value whatever their Go type
+func sameAsJson[T any](a, b map[string]T) bool {
 	if len(a) == 0 && len(b) == 0 {
 		return true
 	}
-	return reflect.DeepEqual(a, b)
+	ra, errA := json.Marshal(a)
+	rb, errB := json.Marshal(b)
+	if errA != nil || errB != nil {
+		return reflect.DeepEqual(a, b)
+	}
+	var na, nb any
+	if json.Unmarshal(ra, &na) != nil || json.Unmarshal(rb, &nb) != nil {
+		return reflect.DeepEqual(a, b)
+	}
+	return reflect.DeepEqual(na, nb)
+}
+
+// unchanged reports whether an update would change nothing, so that repeating it is harmless.
+// Every field of the input is considered:
+//   - counted: name, description, model id and version, xml and svg (as resolved), incident
+//     handling (nil is the namespace default), retention, selections, parameters, and source if
+//     given (an empty source keeps the stored one);
+//   - not counted: update_strategy (how a change is applied, not a change), owner and network
+//     id (an update must not change them and is refused if it tries), managed_by (set by the
+//     engine at creation only).
+func unchanged(d model.Deployment, current model.DeploymentVersion, resolved resolvedDeployment, input model.DeploymentInput, handling model.IncidentHandling) bool {
+	return current.Xml == resolved.xml && current.Svg == resolved.svg && d.Name == resolved.name && d.Description == input.Description &&
+		d.ModelId == resolved.modelId && d.ModelVersion == resolved.modelVersion && current.IncidentHandling == handling &&
+		d.RetentionDays == input.RetentionDays && (input.Source == "" || input.Source == d.Source) &&
+		sameSelections(current.Selections, input.Selections) && sameParameters(current.Parameters, input.Parameters)
 }
 
 func incidentHandling(ns model.Namespace, input *model.IncidentHandling) model.IncidentHandling {
@@ -259,9 +305,7 @@ func (this *Controller) PutDeployment(ctx context.Context, token string, namespa
 			return err
 		}
 		handling := incidentHandling(ns, input.IncidentHandling)
-		if current.Xml == resolved.xml && current.Svg == resolved.svg && result.Name == resolved.name && result.Description == input.Description &&
-			result.ModelVersion == resolved.modelVersion && current.IncidentHandling == handling && result.RetentionDays == input.RetentionDays &&
-			sameSelections(current.Selections, input.Selections) {
+		if unchanged(result, current, resolved, input, handling) {
 			return nil
 		}
 		if !input.UpdateStrategy.Valid() {
