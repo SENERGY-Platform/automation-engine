@@ -124,6 +124,8 @@ type Runtime struct {
 	adminToken auth.TokenSource
 	// set by Register
 	engine *engine.Engine
+	// the controller once AddProcessModules is called
+	resources Resources
 }
 
 // SetAdminToken sets the token of the engine for the check of used resources.
@@ -135,7 +137,7 @@ func (this *Runtime) SetAdminToken(token auth.TokenSource) {
 func NewRuntime(s *store.Store, settings Settings, tokens auth.UserTokenSource, logger *slog.Logger) *Runtime {
 	iot := devicerepository.NewClient(settings.DeviceRepositoryUrl, nil)
 	result := &Runtime{store: s, settings: settings, tokens: tokens, iot: iot, logger: logger, http: &http.Client{Timeout: 30 * time.Second},
-		types: map[string]*moduleType{}, checks: map[string]Check{}, now: time.Now}
+		types: map[string]*moduleType{}, checks: map[string]Check{}, now: time.Now, resources: storeResources{s}}
 	result.scripts = compat.Scripts{Logger: logger, Tokens: result.token, Iot: iot}
 	result.addExternalChecks()
 	result.add(TypeInfo, &infoHandler{runtime: result})
@@ -264,9 +266,7 @@ func (this *moduleType) Undo(ctx context.Context, task engine.Task, effects *eng
 		}
 		if m.DeleteInfo.Resource != nil {
 			ref := *m.DeleteInfo.Resource
-			err = rt.store.Tx(ctx, func(tx *store.Tx) error {
-				return tx.RemoveResource(ref)
-			})
+			err = rt.resources.RemoveResource(ctx, ref)
 		} else if m.DeleteInfo.Url != "" {
 			err = Delete(ctx, rt.http, rt.tokens, *m.DeleteInfo)
 		}

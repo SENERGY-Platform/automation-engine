@@ -96,7 +96,7 @@ func (this *Controller) DeleteUserData(ctx context.Context, userId string) error
 			return err
 		}
 	}
-	return this.store.Tx(ctx, func(tx *store.Tx) error {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		// dependents may have appeared meanwhile
 		deps, err := this.dependents(tx, userId)
 		if err != nil {
@@ -112,8 +112,24 @@ func (this *Controller) DeleteUserData(ctx context.Context, userId string) error
 				return err
 			}
 		}
+		// the cloud rows of resources on gateways go at once, the gateways delete them later
+		if this.networks != nil {
+			onGateways, err := tx.OwnedOnGateways(userId)
+			if err != nil {
+				return err
+			}
+			for _, r := range onGateways {
+				if err = this.desireDeleted(tx, r.NetworkId, r.Kind, r.Id); err != nil {
+					return err
+				}
+			}
+		}
 		return tx.DeleteOwned(userId)
 	})
+	if err == nil {
+		this.wake()
+	}
+	return err
 }
 
 func singular(kind model.Kind) string {

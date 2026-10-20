@@ -126,6 +126,34 @@ func (this *Tx) DeleteOwned(userId string) error {
 	return this.DeleteUserSettings(userId)
 }
 
+// GatewayResource is a deployment or instance that runs on a gateway.
+type GatewayResource struct {
+	Kind      model.ResourceKind
+	Id        string
+	NetworkId string
+}
+
+// OwnedOnGateways lists the deployments and instances of a user that run on gateways, which
+// DeleteOwned removes only in the cloud (SEC-08). Instances of the user's deployments are left
+// out: the gateway deletes them with their deployment.
+func (this *Tx) OwnedOnGateways(userId string) (result []GatewayResource, err error) {
+	rows, err := this.query("SELECT 'deployment', id, network_id FROM deployments WHERE owner = ? AND network_id <> '' "+
+		"UNION ALL SELECT 'instance', id, network_id FROM instances WHERE owner = ? AND network_id <> '' AND deployment_id NOT IN (SELECT id FROM deployments WHERE owner = ?) "+
+		"ORDER BY 1, 2", userId, userId, userId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r GatewayResource
+		if err = rows.Scan(&r.Kind, &r.Id, &r.NetworkId); err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
 // Owner returns the owner of a resource; ok is false if it does not exist.
 func (this *Tx) Owner(kind model.Kind, id string) (owner string, namespace string, ok bool, err error) {
 	if err = kind.Valid(); err != nil {

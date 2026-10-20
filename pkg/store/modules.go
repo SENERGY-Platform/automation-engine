@@ -326,38 +326,40 @@ func (this *Tx) RemoveModulesOfInstance(instanceId string) (int, error) {
 }
 
 // RemoveResource removes a resource of the engine a module refers to; a missing one counts as
-// removed. The namespace must match, so that a module cannot reach into other namespaces.
-func (this *Tx) RemoveResource(ref model.ResourceRef) error {
+// removed. The namespace must match, so that a module cannot reach into other namespaces. For a
+// deployment or instance of a gateway, it returns the network id: only the cloud rows are
+// removed, the caller desires the deletion on the gateway.
+func (this *Tx) RemoveResource(ref model.ResourceRef) (networkId string, err error) {
 	var namespace string
 	var query string
 	switch ref.Kind {
 	case model.ResourceDeployment:
-		query = "SELECT namespace FROM deployments WHERE id = ?"
+		query = "SELECT namespace, network_id FROM deployments WHERE id = ?"
 	case model.ResourceInstance:
-		query = "SELECT namespace FROM instances WHERE id = ?"
+		query = "SELECT namespace, network_id FROM instances WHERE id = ?"
 	case model.ResourceWatch:
-		query = "SELECT namespace FROM watches WHERE id = ?"
+		query = "SELECT namespace, '' FROM watches WHERE id = ?"
 	default:
-		return model.BadRequest("unknown resource kind %q", ref.Kind)
+		return "", model.BadRequest("unknown resource kind %q", ref.Kind)
 	}
-	err := this.queryRow(query, ref.Id).Scan(&namespace)
+	err = this.queryRow(query, ref.Id).Scan(&namespace, &networkId)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return "", nil
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	if ref.Namespace != "" && namespace != ref.Namespace {
-		return model.Forbidden("%v %v is not in namespace %v", ref.Kind, ref.Id, ref.Namespace)
+		return "", model.Forbidden("%v %v is not in namespace %v", ref.Kind, ref.Id, ref.Namespace)
 	}
 	switch ref.Kind {
 	case model.ResourceDeployment:
-		return this.DeleteDeployment(ref.Id)
+		return networkId, this.DeleteDeployment(ref.Id)
 	case model.ResourceInstance:
-		return this.DeleteInstance(ref.Id)
+		return networkId, this.DeleteInstance(ref.Id)
 	default:
 		_, err = this.exec("DELETE FROM watches WHERE id = ?", ref.Id)
-		return err
+		return "", err
 	}
 }
 

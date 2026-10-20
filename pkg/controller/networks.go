@@ -153,6 +153,30 @@ func (this *Controller) desireDeletedDeployment(tx *store.Tx, d model.Deployment
 	return this.networks.Desire(tx, d.NetworkId, fogsync.Resource{Kind: fogsync.ResourceDeployment, Id: d.Id, Deleted: true})
 }
 
+// desireDeleted deletes a deployment or instance on its gateway, as through the API
+func (this *Controller) desireDeleted(tx *store.Tx, networkId string, kind model.ResourceKind, id string) error {
+	if kind == model.ResourceDeployment {
+		return this.desireDeletedDeployment(tx, model.Deployment{Id: id, NetworkId: networkId})
+	}
+	return this.desireInstance(tx, model.Instance{Id: id, NetworkId: networkId}, true)
+}
+
+// RemoveResource removes a deployment, instance or watch a module refers to (SMS-06); one of a
+// gateway is deleted there as well, as through the API (SMS-12).
+func (this *Controller) RemoveResource(ctx context.Context, ref model.ResourceRef) error {
+	var networkId string
+	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+		if networkId, err = tx.RemoveResource(ref); err != nil || networkId == "" || this.networks == nil {
+			return err
+		}
+		return this.desireDeleted(tx, networkId, ref.Kind, ref.Id)
+	})
+	if err == nil && networkId != "" {
+		this.wake()
+	}
+	return err
+}
+
 // startOnNetwork records an instance the gateway shall start; it is pending until the gateway
 // reports it. A repeated start with the id returns the instance (RUN-01).
 func (this *Controller) startOnNetwork(ctx context.Context, user jwt.Token, d model.Deployment, id string, owner string, variables map[string]any, name string, description string) (result model.Instance, err error) {

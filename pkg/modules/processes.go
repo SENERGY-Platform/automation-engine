@@ -46,6 +46,8 @@ type Processes interface {
 	StartInstance(ctx context.Context, token string, namespace string, input model.StartInstanceInput) (model.Instance, error)
 	// the gateways the user may read (SYNC-12)
 	ListNetworks(ctx context.Context, token string) ([]model.Network, error)
+	// removes the deployments and instances these modules create (SMS-06)
+	Resources
 }
 
 // Namespaces gives the referenced namespaces of the namespace of an instance (NS-08).
@@ -56,6 +58,7 @@ type Namespaces interface {
 // AddProcessModules registers process_deployment (TASK-20) and process_deployment_start (TASK-21).
 func (this *Runtime) AddProcessModules(processes Processes, namespaces Namespaces) {
 	p := &processModules{runtime: this, processes: processes, namespaces: namespaces}
+	this.resources = processes
 	this.add(TypeProcessDeployment, &deployHandler{p})
 	this.add(TypeProcessDeploymentStart, &startHandler{p})
 	this.AddCheck(TypeProcessDeployment, p.checkDeployment)

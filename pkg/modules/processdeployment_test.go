@@ -76,6 +76,10 @@ func (this *fakeProcesses) ListNetworks(context.Context, string) ([]model.Networ
 	return this.networks, nil
 }
 
+func (this *fakeProcesses) RemoveResource(context.Context, model.ResourceRef) error {
+	return errors.New("unexpected removal")
+}
+
 type referencingProcesses struct{}
 
 func (referencingProcesses) Get(name string) (model.Namespace, bool) {

@@ -369,9 +369,12 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	liveSettings := controller.DefaultLiveSettings()
 	liveSettings.MaxPerUser = config.MaxLiveConnectionsPerUser
 	c.SetLive(hub, liveSettings)
+	// module removals of gateway resources reach the gateway through the controller (SMS-12)
+	remover := modules.NewRemover(s, userToken, logger)
+	remover.SetResources(c)
 	return &Server{
 		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, apiSettings), Namespaces: registry, Permissions: service, Metrics: m,
-		Live: hub, ModuleRemover: modules.NewRemover(s, userToken, logger), Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, Sync: agent, Networks: networks, config: config, logger: logger,
+		Live: hub, ModuleRemover: remover, Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, Sync: agent, Networks: networks, config: config, logger: logger,
 	}, nil
 }
 

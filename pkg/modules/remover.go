@@ -33,10 +33,29 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 )
 
+// Resources removes the deployments, instances and watches of the engine that modules refer
+// to. The controller deletes those of a gateway there as well, as through the API (SMS-12).
+type Resources interface {
+	RemoveResource(ctx context.Context, ref model.ResourceRef) error
+}
+
+// storeResources removes only the rows of the engine, for an engine without gateways
+type storeResources struct {
+	store *store.Store
+}
+
+func (this storeResources) RemoveResource(ctx context.Context, ref model.ResourceRef) error {
+	return this.store.Tx(ctx, func(tx *store.Tx) error {
+		_, err := tx.RemoveResource(ref)
+		return err
+	})
+}
+
 // Remover removes the resources of deleted modules from the outbox, with growing pauses
 // between attempts, so that nothing is left behind when a service is down (SMS-06).
 type Remover struct {
 	store     *store.Store
+	resources Resources
 	userToken auth.UserTokenSource
 	http      *http.Client
 	logger    *slog.Logger
@@ -44,7 +63,13 @@ type Remover struct {
 }
 
 func NewRemover(s *store.Store, userToken auth.UserTokenSource, logger *slog.Logger) *Remover {
-	return &Remover{store: s, userToken: userToken, http: &http.Client{Timeout: 30 * time.Second}, logger: logger, now: time.Now}
+	return &Remover{store: s, resources: storeResources{s}, userToken: userToken, http: &http.Client{Timeout: 30 * time.Second}, logger: logger, now: time.Now}
+}
+
+// SetResources removes the resources of the engine through the controller, so that those of
+// gateways are deleted there too.
+func (this *Remover) SetResources(resources Resources) {
+	this.resources = resources
 }
 
 // Run processes due removals until ctx is done.
@@ -99,9 +124,7 @@ func (this *Remover) remove(ctx context.Context, r store.ModuleRemoval) error {
 		if ref.Namespace == "" {
 			ref.Namespace = r.Namespace
 		}
-		return this.store.Tx(ctx, func(tx *store.Tx) error {
-			return tx.RemoveResource(ref)
-		})
+		return this.resources.RemoveResource(ctx, ref)
 	}
 	if info.Url == "" {
 		return nil
