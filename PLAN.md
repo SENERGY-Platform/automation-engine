@@ -347,7 +347,7 @@ Every requirement id of `docs/requirements.md` (242) was checked against code an
 
 ### Defects
 
-To be fixed next, each with a test that fails before the fix.
+All fixed on 2026-10-20, each with a test that failed before the fix; the decisions the fixes needed are in "Decisions of the fixes" below.
 
 1. **The cloud runs the restarts of gateway instances (FOG-07).** `store.Tx.UpsertReplicatedInstance` copies the `restart_at` of the gateway into the cloud row, and `Tx.DueRestarts` has no `network_id` filter, so `Engine.restartInstance` executes the instance in the cloud as well. The comments in `pkg/fogsync/protocol.go` and `gateway.go` ("restarts are the gateway's own") describe the intent, not the behaviour.
 2. **Removed modules leave their resources on the gateway (SMS-12, SMS-06).** `modules.Remover` deletes deployments and instances through `store.Tx.RemoveResource`, which removes only the cloud rows; the desired state of the gateway (`network_desired`) never learns of the deletion, unlike `Controller.desireDeletedDeployment` and `desireInstance(..., true)`.
@@ -360,7 +360,22 @@ To be fixed next, each with a test that fails before the fix.
 9. **Cleaning up a network leaves its rights in permissions-v2 (SYNC-07).** `Tx.DeleteNetwork` removes rows with plain SQL, past `queueRemovals` and the change stream.
 10. **The migration report drops rewritten and to-be-checked findings (MIG-04).** Only `Unsupported` is kept (`deprecated/deployment.go`, `migrate/process.go`), so rewrites such as `R/P1D` → `P1D` or five-field cron pass silently; only `POST /namespaces/{ns}/convert` returns the full report.
 
+11. **The cloud ran the schedules of gateway deployments (FOG-05, RUN-07).** Found while fixing 1: `Engine.fireSchedules` started instances of a gateway deployment in the cloud, and nothing rejected such a schedule.
+
 A documentation defect was corrected right away: `NOTIFIER_URL` on a gateway is `http://{gateway}/notifications-v2`, the notifier client appends `/notifications` itself (FOG-08); README and `OPEN-ITEMS.md` named the full path.
+
+### Decisions of the fixes
+
+- **Restarts of gateway instances** (1): the cloud keeps `restart_at` of a gateway instance only for display; `DueRestarts` and `NextRestartDue` consider cloud instances only.
+- **Change stream on a gateway** (3): `TrimChanges` replaces `PurgeChanges` in the housekeeping. Up to the acknowledged position it removes by age as before; after it, only entries followed by a later one of the same instance. The cost: while offline, ended instances keep their runtime rows and the budget can trim only their history, so a gateway that ends more instances offline than its budget holds fills up instead of losing ends the cloud has not seen. Rejected: a fog-specific longer `ChangeRetention`, which only moves the limit.
+- **Protocol window** (4): the cloud writes to each gateway in the version that gateway reported, if it lies in the window; a gateway accepts only its own version. All downward messages pass `encode` in `protocol.go`, where a future version converts to older formats. Consequence: a protocol change updates the cloud first, then the gateways one by one.
+- **Network cleanup** (9): resources of a removed network are deleted one by one through `DeleteDeployment` and `DeleteInstance`, so rights, module removals and tombstones follow as for any deletion.
+- **Deletions reaching gateways** (2, 8): module removal and the undo of a module go through `Controller.RemoveResource`, user deletion desires the deletions in the same transaction as `DeleteOwned`; both share `desireDeleted` with the deletion through the API. Instances of a user's own gateway deployments are not desired separately, the gateway deletes them with the deployment.
+- **What counts as a change of a deployment** (5): name, description, model id and version, XML and SVG as resolved, incident handling, retention, selections, parameters, and a given source. Not: the update strategy, owner and network (refused), `managed_by`. Parameters and selections compare by effect, so empty and missing maps are equal. Such updates now need an `update_strategy`; the old deploy route sets `stop`, modules set their own.
+- **Restarts** (6): a restart, after an update, an incident or through the API, begins at the start event that began the run, read from the element statistics of the run, if the version still has it; otherwise at the start event without definition. An instance that still cannot be restarted is stopped at an update with the reason in its run, and its owner is notified; the update goes ahead. After an incident it stays ended with its incident, as before. Rejected: failing the update, which let one instance block the new version. Open: the start element should be recorded on the run itself; replicated gateway instances have no element statistics and fall back to the start event without definition.
+- **Schedules of gateway deployments** (11): rejected with 400 on create and on move; existing ones (e.g. from a migration) are skipped by `DueSchedules`. Rejected for now: sending schedules to the gateway, a new feature; process-scheduler had none for gateways either.
+- **Instance ids of the migration** (7): a business key becomes an id only if exactly one running instance or fog start has it and no earlier step of the run took it; otherwise the id is generated from the Camunda or process-sync ids. A later run recognises an instance migrated under its key by namespace, owner, deployment, network, start time from the Camunda history and start values; candidates it cannot tell apart are left to decide, none is restarted. Fog starts now run right after the running instances, because module delete references resolve business keys through the ids assigned in the run; an ambiguous reference keeps its URL and is left to decide. Remaining limits: smart-service instances keep their old ids without a check against those the instance steps took, and without Camunda history the start time is not compared.
+- **Migration report** (10): `DeploymentInput` returns the conversion with the input; every migrated deployment and release reports its findings as `rewritten`, `check` and `unsupported` items of kind `model`, which do not change the exit code.
 
 ### Partly implemented
 
