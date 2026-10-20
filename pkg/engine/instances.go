@@ -357,22 +357,11 @@ func (this *Engine) RestartWith(ctx context.Context, instanceId string, version 
 		if err != nil {
 			return err
 		}
+		deployment, version, start, err := this.restartTarget(tx, inst, version)
+		if err != nil {
+			return err
+		}
 		if variables != nil {
-			deployment, err := tx.GetDeployment(inst.DeploymentId, false)
-			if err != nil {
-				return err
-			}
-			if version == 0 {
-				version = deployment.Version
-			}
-			proc, err := this.process(tx, deployment.Id, version)
-			if err != nil {
-				return err
-			}
-			start := proc.NoneStartEvent()
-			if start == nil {
-				return model.BadRequest("deployment %v version %v has no start event without definition", deployment.Id, version)
-			}
 			ns, _ := this.namespaces.Get(deployment.Namespace)
 			if inst.StartVariables, err = startVariables(start, variables, this.config.MaxVariableBytes, ns.JsonStringParameters); err != nil {
 				return err
@@ -381,7 +370,7 @@ func (this *Engine) RestartWith(ctx context.Context, instanceId string, version 
 				return err
 			}
 		}
-		inst, err = this.restartInstance(tx, instanceId, version, cause)
+		err = this.restart(tx, &inst, deployment, version, start, cause)
 		result = inst.Instance
 		return err
 	})
@@ -393,46 +382,101 @@ func (this *Engine) restartInstance(tx *store.Tx, instanceId string, version int
 	if err != nil {
 		return inst, err
 	}
-	// everything that can refuse the restart is checked before the current run ends, so that a
-	// refused restart leaves the instance as it was
-	deployment, err := tx.GetDeployment(inst.DeploymentId, false)
+	deployment, version, start, err := this.restartTarget(tx, inst, version)
 	if err != nil {
 		return inst, err
 	}
+	return inst, this.restart(tx, &inst, deployment, version, start, cause)
+}
+
+// restartTarget checks everything that can refuse a restart and changes nothing, so that a
+// refused restart leaves the instance as it was. It returns the deployment, the version of the
+// new run (0 selects the current one) and its start event.
+func (this *Engine) restartTarget(tx *store.Tx, inst store.Instance, version int) (model.Deployment, int, *bpmn.Element, error) {
+	deployment, err := tx.GetDeployment(inst.DeploymentId, false)
+	if err != nil {
+		return deployment, version, nil, err
+	}
 	if deployment.Disabled {
-		return inst, ErrDisabled(deployment.Id)
+		return deployment, version, nil, ErrDisabled(deployment.Id)
 	}
 	if version == 0 {
 		version = deployment.Version
 	}
 	if version < 1 || version > deployment.Version {
-		return inst, model.BadRequest("deployment %v has no version %v", deployment.Id, version)
+		return deployment, version, nil, model.BadRequest("deployment %v has no version %v", deployment.Id, version)
 	}
 	proc, err := this.process(tx, deployment.Id, version)
 	if err != nil {
-		return inst, err
+		return deployment, version, nil, err
 	}
-	start := proc.NoneStartEvent()
+	start, err := this.restartStart(tx, inst, proc)
+	if err != nil {
+		return deployment, version, nil, err
+	}
 	if start == nil {
-		return inst, model.BadRequest("deployment %v version %v has no start event without definition", deployment.Id, version)
+		return deployment, version, nil, model.BadRequest("instance %v cannot be restarted: deployment %v version %v has neither the start event that started run %v nor a start event without definition",
+			inst.Id, deployment.Id, version, inst.Run)
 	}
-	if inst.State == model.StateRunning {
-		r, err := this.newRunner(tx, &inst)
+	return deployment, version, start, nil
+}
+
+// restartStart selects the start event of a new run (RUN-11): the start event that began the
+// current run if the version still has it, so that an instance started by a message or a timer
+// starts there again; otherwise the start event without definition, nil if there is none. Runs
+// do not record their start event; it is the one start event entered in the run, which the
+// element statistics keep for the current run (retention removes only those of earlier runs).
+// The new run gets the stored start variables; local variables of a message start are not
+// stored and are not given again.
+func (this *Engine) restartStart(tx *store.Tx, inst store.Instance, proc *bpmn.Process) (*bpmn.Element, error) {
+	if inst.Run > 0 {
+		stats, err := tx.ListElementStats(inst.Id, inst.Run)
 		if err != nil {
-			return inst, err
+			return nil, err
+		}
+		previous, err := this.process(tx, inst.DeploymentId, inst.DeploymentVersion)
+		if err != nil && !errors.Is(err, model.ErrNotFound) {
+			return nil, err
+		}
+		for _, s := range stats {
+			if previous == nil {
+				// the version of the run is gone, its start event cannot be told
+				break
+			}
+			if old := previous.Element(s.ElementId); old == nil || old.Type != bpmn.StartEvent {
+				continue
+			}
+			if start := proc.Element(s.ElementId); start != nil && start.Type == bpmn.StartEvent {
+				return start, nil
+			}
+		}
+	}
+	return proc.NoneStartEvent(), nil
+}
+
+// restart ends a running run and begins the next one on version at start
+func (this *Engine) restart(tx *store.Tx, inst *store.Instance, deployment model.Deployment, version int, start *bpmn.Element, cause model.RunCause) error {
+	if inst.State == model.StateRunning {
+		r, err := this.newRunner(tx, inst)
+		if err != nil {
+			return err
 		}
 		if err = r.endRun(model.StateTerminated, "restart"); err != nil {
-			return inst, err
+			return err
 		}
 		if err = r.finish(); err != nil {
-			return inst, err
+			return err
 		}
 	}
 	inst.DeploymentName = deployment.Name
-	if err = this.beginRun(tx, &inst, version, start.Id, nil, cause); err != nil {
-		return inst, err
-	}
-	return inst, nil
+	return this.beginRun(tx, inst, version, start.Id, nil, cause)
+}
+
+// restartRefused reports whether a restart was refused before anything changed, as opposed to
+// a failure of the database or another service
+func restartRefused(err error) bool {
+	var modelErr *model.Error
+	return errors.As(err, &modelErr) && modelErr.Kind != model.KindInternal && modelErr.Kind != model.KindUnavailable
 }
 
 // SetVariable sets a variable of a running instance (RUN-05).
@@ -480,13 +524,41 @@ func (this *Engine) ApplyUpdate(tx *store.Tx, deploymentId string, strategy mode
 		case model.UpdateStop:
 			err = this.stopInstance(tx, id, "deployment updated")
 		case model.UpdateRestart:
-			_, err = this.restartInstance(tx, id, 0, model.CauseUpdate)
+			err = this.restartOnUpdate(tx, id)
 		}
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// restartOnUpdate restarts an instance on the current version. An instance that cannot be
+// restarted there, e.g. because the version has neither the start event that started it nor
+// one without definition, is stopped and its owner told instead of failing the whole update:
+// the user chose to keep no instance on the old version, and one such instance must not keep
+// the new version from being deployed (DEP-04). The end reason of the run names the cause.
+func (this *Engine) restartOnUpdate(tx *store.Tx, instanceId string) error {
+	inst, err := tx.GetInstance(instanceId, true)
+	if err != nil {
+		return err
+	}
+	deployment, version, start, refusal := this.restartTarget(tx, inst, 0)
+	if refusal != nil && !restartRefused(refusal) {
+		return refusal
+	}
+	if refusal == nil {
+		return this.restart(tx, &inst, deployment, version, start, model.CauseUpdate)
+	}
+	this.logger.Warn("instance stopped instead of restarted at deployment update", "instance_id", inst.Id, "deployment_id", inst.DeploymentId, "error", refusal)
+	if err = this.stopInstance(tx, instanceId, fmt.Sprintf("deployment updated, %v", refusal)); err != nil {
+		return err
+	}
+	if inst.Owner == "" {
+		return nil
+	}
+	return this.queueNotification(tx, inst.Owner, "Process stopped at update: "+inst.DeploymentName,
+		fmt.Sprintf("The deployment was updated with the strategy restart, but instance %v could not be restarted on the new version and was stopped.\n\n%v", inst.Id, refusal))
 }
 
 // ActivateVersion registers the message and timer start events of the current version of a

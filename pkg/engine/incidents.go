@@ -124,9 +124,11 @@ func (this *Engine) processRestarts(ctx context.Context, now time.Time) error {
 				return nil
 			}
 			_, err = this.restartInstance(tx, id, 0, model.CauseIncident)
-			var modelErr *model.Error
-			if errors.As(err, &modelErr) && modelErr.Kind != model.KindInternal && modelErr.Kind != model.KindUnavailable {
-				// the restart itself is not possible, e.g. the new version cannot be started directly
+			if restartRefused(err) {
+				// the restart itself is not possible, e.g. the current version has neither the start
+				// event of the failed run nor one without definition (see restartStart); the instance
+				// stays ended with its incident and the owner is told
+				this.logger.Warn("restart after incident not possible", "instance_id", inst.Id, "deployment_id", inst.DeploymentId, "error", err)
 				return this.queueNotification(tx, inst.Owner, "ERROR: unable to restart process after incident in: "+inst.DeploymentName, fmt.Sprintf("Restart-Error: %v\n\nIncident: %v", err, inst.EndReason))
 			}
 			return err
