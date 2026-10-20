@@ -64,6 +64,9 @@ type Cloud struct {
 	now      func() time.Time
 	wake     chan struct{}
 
+	// the protocol version of this side, Version except in tests
+	protocol int
+
 	mux     sync.Mutex
 	waiting map[string]chan Response
 }
@@ -72,7 +75,12 @@ func NewCloud(settings CloudSettings, s *store.Store, broker mqtt.Broker, logger
 	if settings.ReplicaId == "" {
 		settings.ReplicaId = uuid.NewString()
 	}
-	return &Cloud{settings: settings, store: s, broker: broker, logger: logger, now: time.Now, wake: make(chan struct{}, 1), waiting: map[string]chan Response{}}
+	return &Cloud{settings: settings, store: s, broker: broker, logger: logger, now: time.Now, protocol: Version, wake: make(chan struct{}, 1), waiting: map[string]chan Response{}}
+}
+
+// SetProtocol replaces the own protocol version, for tests of a change of the protocol.
+func (this *Cloud) SetProtocol(version int) {
+	this.protocol = version
 }
 
 // SetClock replaces the clock, for tests.
@@ -80,12 +88,23 @@ func (this *Cloud) SetClock(now func() time.Time) {
 	this.now = now
 }
 
-func (this *Cloud) envelope() Envelope {
-	return Envelope{Protocol: Version, Engine: this.settings.EngineVersion, SentAt: this.now().UTC()}
+// envelope is stamped with the protocol version of the receiving gateway: a gateway takes only
+// messages of its own version, and the cloud serves the versions of its window (SYNC-11)
+func (this *Cloud) envelope(protocol int) Envelope {
+	return Envelope{Protocol: this.serving(protocol), Engine: this.settings.EngineVersion, SentAt: this.now().UTC()}
+}
+
+// serving is the protocol version the cloud writes for a gateway of a version: its own, or that
+// of an older gateway within the window; an unknown version gets the own one
+func (this *Cloud) serving(protocol int) int {
+	if protocol != 0 && CompatibleWith(this.protocol, protocol, this.settings.ProtocolWindow) {
+		return protocol
+	}
+	return this.protocol
 }
 
 func (this *Cloud) publish(ctx context.Context, networkId string, kind string, message any) error {
-	raw, err := json.Marshal(message)
+	raw, err := encode(kind, message)
 	if err != nil {
 		return err
 	}
@@ -225,7 +244,7 @@ func (this *Cloud) Handle(ctx context.Context, topic string, payload []byte) err
 		this.logger.Warn("unreadable message of a gateway", "network_id", networkId, "error", err)
 		return nil
 	}
-	if !Compatible(envelope.Protocol, this.settings.ProtocolWindow) {
+	if !CompatibleWith(this.protocol, envelope.Protocol, this.settings.ProtocolWindow) {
 		return this.incompatible(ctx, networkId, envelope)
 	}
 	var err error
@@ -238,7 +257,7 @@ func (this *Cloud) Handle(ctx context.Context, topic string, payload []byte) err
 	case KindDesiredAck:
 		var applied Applied
 		if err = json.Unmarshal(payload, &applied); err == nil {
-			err = this.applied(ctx, networkId, applied.Results)
+			err = this.applied(ctx, networkId, envelope.Protocol, applied.Results)
 		}
 	case KindChanges:
 		var changes Changes
@@ -255,7 +274,7 @@ func (this *Cloud) Handle(ctx context.Context, topic string, payload []byte) err
 // incompatible marks a gateway whose protocol the cloud does not serve; it gets nothing until
 // it is updated, instead of being served wrongly (SYNC-11)
 func (this *Cloud) incompatible(ctx context.Context, networkId string, envelope Envelope) error {
-	this.logger.Error("gateway with an unsupported protocol version", "network_id", networkId, "protocol", envelope.Protocol, "supported", Version, "window", this.settings.ProtocolWindow)
+	this.logger.Error("gateway with an unsupported protocol version", "network_id", networkId, "protocol", envelope.Protocol, "supported", this.protocol, "window", this.settings.ProtocolWindow)
 	return this.store.Tx(ctx, func(tx *store.Tx) error {
 		n, err := tx.LockNetwork(networkId, this.now())
 		if err != nil {
@@ -319,16 +338,16 @@ func (this *Cloud) status(ctx context.Context, networkId string, status Status) 
 		return err
 	}
 	this.Wake()
-	return this.publish(ctx, networkId, KindUpAck, UpAck{Envelope: this.envelope(), Acked: acked})
+	return this.publish(ctx, networkId, KindUpAck, UpAck{Envelope: this.envelope(status.Protocol), Acked: acked})
 }
 
-func (this *Cloud) applied(ctx context.Context, networkId string, results []Result) error {
+func (this *Cloud) applied(ctx context.Context, networkId string, protocol int, results []Result) error {
 	return this.store.Tx(ctx, func(tx *store.Tx) error {
 		n, err := tx.LockNetwork(networkId, this.now())
 		if err != nil {
 			return err
 		}
-		n.LastContact = this.now()
+		n.LastContact, n.Protocol = this.now(), protocol
 		if err = tx.UpdateNetwork(n); err != nil {
 			return err
 		}
@@ -362,7 +381,7 @@ func (this *Cloud) changes(ctx context.Context, networkId string, changes Change
 		if err != nil {
 			return err
 		}
-		n.LastContact = this.now()
+		n.LastContact, n.Protocol = this.now(), changes.Protocol
 		acked = n.Acked
 		if changes.After != n.Acked {
 			// a duplicate or a gap: the gateway continues from the acknowledged position
@@ -378,7 +397,7 @@ func (this *Cloud) changes(ctx context.Context, networkId string, changes Change
 	if err != nil {
 		return err
 	}
-	return this.publish(ctx, networkId, KindUpAck, UpAck{Envelope: this.envelope(), Acked: acked})
+	return this.publish(ctx, networkId, KindUpAck, UpAck{Envelope: this.envelope(changes.Protocol), Acked: acked})
 }
 
 func (this *Cloud) take(tx *store.Tx, networkId string, changes Changes) error {
@@ -452,24 +471,34 @@ func (this *Cloud) take(tx *store.Tx, networkId string, changes Changes) error {
 func (this *Cloud) Reconcile(ctx context.Context) error {
 	now := this.now()
 	var due []store.Desired
+	var byNetwork map[string][]store.Desired
+	var protocols map[string]int
+	var order []string
 	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
 		due, err = tx.DueDesired(now.Add(-this.settings.ResendAfter), now.Add(-this.settings.OfflineAfter), 500)
-		return err
+		if err != nil {
+			return err
+		}
+		byNetwork, protocols, order = map[string][]store.Desired{}, map[string]int{}, nil
+		for _, d := range due {
+			if _, ok := byNetwork[d.NetworkId]; !ok {
+				order = append(order, d.NetworkId)
+				n, _, err := tx.GetNetwork(d.NetworkId)
+				if err != nil {
+					return err
+				}
+				protocols[d.NetworkId] = n.Protocol
+			}
+			byNetwork[d.NetworkId] = append(byNetwork[d.NetworkId], d)
+		}
+		return nil
 	})
 	if err != nil || len(due) == 0 {
 		return err
 	}
-	byNetwork := map[string][]store.Desired{}
-	order := []string{}
-	for _, d := range due {
-		if _, ok := byNetwork[d.NetworkId]; !ok {
-			order = append(order, d.NetworkId)
-		}
-		byNetwork[d.NetworkId] = append(byNetwork[d.NetworkId], d)
-	}
 	var errs []error
 	for _, networkId := range order {
-		message := Desired{Envelope: this.envelope()}
+		message := Desired{Envelope: this.envelope(protocols[networkId])}
 		// namespaces before deployments before instances, so that a gateway can apply in order
 		list := byNetwork[networkId]
 		slices.SortStableFunc(list, func(a, b store.Desired) int { return kindOrder(a.Kind) - kindOrder(b.Kind) })
@@ -615,8 +644,9 @@ func (this *Cloud) unregister(id string) {
 	this.mux.Unlock()
 }
 
-// reachable rejects requests to gateways that are offline or need an update
-func (this *Cloud) reachable(ctx context.Context, networkId string) error {
+// reachable rejects requests to gateways that are offline or need an update; it returns the
+// protocol version of the gateway
+func (this *Cloud) reachable(ctx context.Context, networkId string) (int, error) {
 	var network store.Network
 	var found bool
 	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
@@ -624,32 +654,33 @@ func (this *Cloud) reachable(ctx context.Context, networkId string) error {
 		return err
 	})
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if !found || this.now().Sub(network.LastContact) >= this.settings.OfflineAfter {
-		return model.Unavailable("gateway %v is offline", networkId)
+		return 0, model.Unavailable("gateway %v is offline", networkId)
 	}
 	if !network.Compatible {
-		return model.Unavailable("gateway %v needs an update of its engine", networkId)
+		return 0, model.Unavailable("gateway %v needs an update of its engine", networkId)
 	}
-	return nil
+	return network.Protocol, nil
 }
 
-func (this *Cloud) request(ctx context.Context, networkId string, id string, method string, namespace string, instance string, args RequestArgs) error {
-	return this.publish(ctx, networkId, KindRequest, Request{Envelope: this.envelope(), Id: id, ReplyTo: this.settings.ReplicaId,
+func (this *Cloud) request(ctx context.Context, networkId string, protocol int, id string, method string, namespace string, instance string, args RequestArgs) error {
+	return this.publish(ctx, networkId, KindRequest, Request{Envelope: this.envelope(protocol), Id: id, ReplyTo: this.settings.ReplicaId,
 		Method: method, Namespace: namespace, Instance: instance, Args: args})
 }
 
 // Call reads from a gateway: the state or history of an instance, which stay there (DBG-15).
 // An offline gateway or one that does not answer in time is unavailable.
 func (this *Cloud) Call(ctx context.Context, networkId string, method string, namespace string, instance string, args RequestArgs, result any) error {
-	if err := this.reachable(ctx, networkId); err != nil {
+	protocol, err := this.reachable(ctx, networkId)
+	if err != nil {
 		return err
 	}
 	id := uuid.NewString()
 	ch := this.register(id, 1)
 	defer this.unregister(id)
-	if err := this.request(ctx, networkId, id, method, namespace, instance, args); err != nil {
+	if err := this.request(ctx, networkId, protocol, id, method, namespace, instance, args); err != nil {
 		return model.Unavailable("unable to reach gateway %v: %v", networkId, err)
 	}
 	timer := time.NewTimer(this.settings.CallTimeout)
@@ -673,7 +704,8 @@ func (this *Cloud) Call(ctx context.Context, networkId string, method string, na
 // Watch streams the debug messages of an instance of a gateway; the gateway streams only while
 // the request is renewed, so the stream ends with ctx or a lost gateway (DBG-12).
 func (this *Cloud) Watch(ctx context.Context, networkId string, namespace string, instance string, options model.WatchOptions) (<-chan model.DebugMessage, error) {
-	if err := this.reachable(ctx, networkId); err != nil {
+	protocol, err := this.reachable(ctx, networkId)
+	if err != nil {
 		return nil, err
 	}
 	raw, err := json.Marshal(options)
@@ -683,7 +715,7 @@ func (this *Cloud) Watch(ctx context.Context, networkId string, namespace string
 	args := RequestArgs{Options: raw}
 	id := uuid.NewString()
 	ch := this.register(id, 256)
-	if err = this.request(ctx, networkId, id, MethodWatch, namespace, instance, args); err != nil {
+	if err = this.request(ctx, networkId, protocol, id, MethodWatch, namespace, instance, args); err != nil {
 		this.unregister(id)
 		return nil, model.Unavailable("unable to reach gateway %v: %v", networkId, err)
 	}
@@ -696,10 +728,10 @@ func (this *Cloud) Watch(ctx context.Context, networkId string, namespace string
 		for {
 			select {
 			case <-ctx.Done():
-				_ = this.request(context.Background(), networkId, id, MethodUnwatch, namespace, instance, RequestArgs{})
+				_ = this.request(context.Background(), networkId, protocol, id, MethodUnwatch, namespace, instance, RequestArgs{})
 				return
 			case <-renew.C:
-				if err := this.request(ctx, networkId, id, MethodWatch, namespace, instance, args); err != nil {
+				if err := this.request(ctx, networkId, protocol, id, MethodWatch, namespace, instance, args); err != nil {
 					this.logger.Warn("unable to renew a live stream of a gateway", "network_id", networkId, "error", err)
 				}
 			case response := <-ch:

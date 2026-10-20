@@ -93,6 +93,9 @@ type Gateway struct {
 
 	local   Local
 	watches map[string]*watch
+
+	// the protocol version of this side, Version except in tests
+	protocol int
 }
 
 type watch struct {
@@ -107,7 +110,12 @@ func (this *Gateway) SetLocal(local Local) {
 
 func NewGateway(settings GatewaySettings, s *store.Store, e *engine.Engine, namespaces Namespaces, broker mqtt.Broker, logger *slog.Logger) *Gateway {
 	return &Gateway{settings: settings, store: s, engine: e, namespaces: namespaces, broker: broker, logger: logger, now: time.Now,
-		resendAfter: settings.ResendAfter, wake: make(chan struct{}, 1), watches: map[string]*watch{}}
+		resendAfter: settings.ResendAfter, wake: make(chan struct{}, 1), watches: map[string]*watch{}, protocol: Version}
+}
+
+// SetProtocol replaces the own protocol version, for tests of a change of the protocol.
+func (this *Gateway) SetProtocol(version int) {
+	this.protocol = version
 }
 
 // SetClock replaces the clock, for tests.
@@ -116,7 +124,7 @@ func (this *Gateway) SetClock(now func() time.Time) {
 }
 
 func (this *Gateway) envelope() Envelope {
-	return Envelope{Protocol: Version, Engine: this.settings.EngineVersion, SentAt: this.now().UTC()}
+	return Envelope{Protocol: this.protocol, Engine: this.settings.EngineVersion, SentAt: this.now().UTC()}
 }
 
 func (this *Gateway) publish(ctx context.Context, kind string, message any) error {
@@ -184,8 +192,8 @@ func (this *Gateway) Handle(ctx context.Context, topic string, payload []byte) e
 		this.logger.Warn("unreadable message of the cloud", "topic", topic, "error", err)
 		return nil
 	}
-	if envelope.Protocol != Version {
-		this.logger.Error("message of the cloud with another protocol version, the engine of the gateway needs an update", "protocol", envelope.Protocol, "supported", Version)
+	if envelope.Protocol != this.protocol {
+		this.logger.Error("message of the cloud with another protocol version, the engine of the gateway needs an update", "protocol", envelope.Protocol, "supported", this.protocol)
 		return nil
 	}
 	switch kind {

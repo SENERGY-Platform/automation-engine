@@ -45,7 +45,8 @@
 //   - The gateway reports its status when it starts and periodically: versions, positions,
 //     applied resources and storage (SYNC-11, SYNC-12, SYNC-13, LONG-14).
 //
-// Every message carries the protocol version (SYNC-11).
+// Every message carries the protocol version; the cloud writes to each gateway in the version
+// of that gateway, see Version (SYNC-11).
 package fogsync
 
 import (
@@ -57,6 +58,16 @@ import (
 )
 
 // Version of this protocol; a change of a message is a new version (SYNC-11).
+//
+// A gateway takes only messages of its own version. The cloud serves gateways of its version
+// and of the CloudSettings.ProtocolWindow versions before it, so that the cloud is updated first
+// and the gateways after it: it stamps every message to a gateway with the version that gateway
+// reported, and reads what gateways of the window send. A new version therefore has to
+//   - write the messages of each older version of the window in that version's format (encode)
+//     and read the messages of those versions (Cloud.Handle),
+//   - keep the topics and the envelope, which the version is read from before anything else,
+//   - keep a gateway of the new version from taking messages of an older cloud; it waits for
+//     the update of the cloud.
 const Version = 1
 
 const (
@@ -239,10 +250,22 @@ type Storage struct {
 	Rows        map[string]int64 `json:"rows,omitempty"`
 }
 
+// encode writes a message of the cloud to a gateway in the format of the version its envelope
+// carries. Version 1 is the only format so far; a new version converts here what changed for
+// gateways of older versions within the window.
+func encode(kind string, message any) ([]byte, error) {
+	return json.Marshal(message)
+}
+
 // Compatible tells whether the cloud serves a gateway of a protocol version; the cloud supports
 // its own version and window versions before it (SYNC-11).
 func Compatible(gatewayProtocol int, window int) bool {
-	return gatewayProtocol <= Version && gatewayProtocol >= Version-window
+	return CompatibleWith(Version, gatewayProtocol, window)
+}
+
+// CompatibleWith tells whether a cloud of protocol version own serves a gateway.
+func CompatibleWith(own int, gatewayProtocol int, window int) bool {
+	return gatewayProtocol <= own && gatewayProtocol >= own-window
 }
 
 // Requests read the history and the state of an instance on its gateway, where it stays
