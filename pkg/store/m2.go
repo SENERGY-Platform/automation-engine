@@ -284,9 +284,10 @@ func (this *Tx) SetRestartStats(deploymentId string, stats RestartStats) error {
 	return err
 }
 
-// DueRestarts lists instances whose automatic restart is due.
+// DueRestarts lists instances whose automatic restart is due. Instances of gateways are left
+// out: their gateway restarts them, the cloud only shows the planned time (FOG-07).
 func (this *Tx) DueRestarts(now time.Time, limit int) (result []string, err error) {
-	rows, err := this.query("SELECT id FROM instances WHERE restart_at IS NOT NULL AND restart_at <= ? ORDER BY restart_at LIMIT ?", millis(now), limit)
+	rows, err := this.query("SELECT id FROM instances WHERE restart_at IS NOT NULL AND restart_at <= ? AND network_id = '' ORDER BY restart_at LIMIT ?", millis(now), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +304,7 @@ func (this *Tx) DueRestarts(now time.Time, limit int) (result []string, err erro
 
 func (this *Tx) NextRestartDue() (*time.Time, error) {
 	var due sql.NullInt64
-	err := this.queryRow("SELECT MIN(restart_at) FROM instances").Scan(&due)
+	err := this.queryRow("SELECT MIN(restart_at) FROM instances WHERE network_id = ''").Scan(&due)
 	return fromNullMillis(due), err
 }
 

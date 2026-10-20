@@ -286,7 +286,8 @@ func (this *Tx) ForgetEndedInstance(networkId string, id string) error {
 
 // UpsertReplicatedInstance writes the state of an instance as its gateway reported it; name and
 // description belong to the cloud and stay; an
-// instance of a deployment the cloud no longer has is skipped.
+// instance of a deployment the cloud no longer has is skipped. restart_at only shows when the
+// gateway restarts it; DueRestarts leaves instances of gateways out (FOG-07).
 func (this *Tx) UpsertReplicatedInstance(networkId string, i model.Instance) error {
 	var exists int
 	err := this.queryRow("SELECT COUNT(*) FROM deployments WHERE id = ? AND network_id = ?", i.DeploymentId, networkId).Scan(&exists)
