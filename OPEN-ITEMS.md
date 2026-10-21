@@ -4,6 +4,14 @@ Collection point for tasks and questions that concern other repositories, operat
 
 Every item names its occasion (requirement id or milestone) and is either a **task** (what has to be done there) or a **question** (what has to be settled before anyone acts). Done items are checked off, not deleted, until the list as a whole is through.
 
+## Prepared in other repositories
+
+Feature branches, each forked from the default branch, pushed, not merged and without pull request. A row names what is still needed before the branch can go in.
+
+| Repository | Branch | Open item | Changes | Tests | Before merging |
+|---|---|---|---|---|---|
+| user-management | `feat/automation-engine-user-deletion` (`cc7c427`) | user-management: dry run and delete at the engine (SEC-14) | Deleting a user asks `GET /users/{id}/dependents` before the `user` message goes out and rejects with 412 listing the dependants; then `DELETE /users/{id}` at the engine before any other service (409 stops the deletion). The process-scheduler call is removed (the engine deletes schedules). Config `AUTOMATION_ENGINE_URL` (empty or `-` skips), `PROCESS_SCHEDULER_URL` removed. Files: `pkg/ctrl/automationengine.go` (new), `pkg/ctrl/user.go`, `pkg/ctrl/events.go`, `pkg/configuration/config.go`, `config.json`, tests. | new unit test green; `TestUserDelete` does not run because the `dashboard:latest` container fails at start, already on master | Set `AUTOMATION_ENGINE_URL` in the deployment; the engine is called with an unsigned admin token, so with `KEYCLOAK_CERT_URL` in the engine a signed client token with role `admin` is needed; fix the dashboard container of the test separately |
+
 ## Routing and access
 
 ### Kong, Ladon
@@ -30,7 +38,7 @@ Every item names its occasion (requirement id or milestone) and is either a **ta
 
 ### user-management
 
-- [ ] **Task:** Before deleting a user, call the dry run of the engine, then the delete call (`/users`), instead of addressing process-scheduler. Kafka `user` remains the fallback (SEC-14, M2).
+- [x] **Task:** Before deleting a user, call the dry run of the engine, then the delete call (`/users`), instead of addressing process-scheduler. Kafka `user` remains the fallback (SEC-14, M2).
 
 ### gin-middleware (`otelx`)
 
