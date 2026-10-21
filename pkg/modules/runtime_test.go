@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -193,7 +194,10 @@ func TestModuleHandlersRunWithTemplatesScriptsAndOwnerTokens(t *testing.T) {
 }
 
 func TestHealthChecksMarkStoppedPipelinesInTheStatus(t *testing.T) {
+	// the pipeline runs until the test stops it: the background pass of the server may check the
+	// new module at any time, and must find nothing to report before then
 	var running atomic.Bool
+	running.Store(true)
 	flowEngine := &recorder{answer: func(r *http.Request) any { return map[string]any{"id": "p1", "running": running.Load()} }}
 	flowUrl := flowEngine.server(t).URL
 	srv := newServer(t, func(c *configuration.Config) {
@@ -217,13 +221,15 @@ func TestHealthChecksMarkStoppedPipelinesInTheStatus(t *testing.T) {
 		return current
 	}
 	waitFor(t, "the smart service", func() bool { return status().Status == model.StatusReady })
+	before := len(flowEngine.all())
+	running.Store(false)
 	if err = srv.Modules.CheckModules(ctx, 0); err != nil {
 		t.Fatal(err)
 	}
 	if current := status(); current.Status != model.StatusError || !strings.Contains(current.StatusMessage, "analytics: pipeline p1 is not running") {
 		t.Fatalf("a stopped pipeline shows as module error in the status (SMS-11): %+v", current)
 	}
-	if requests := flowEngine.all(); len(requests) != 1 || requests[0] != "GET /pipeline/p1 "+"token of alice" {
+	if requests := flowEngine.all()[before:]; len(requests) == 0 || slices.ContainsFunc(requests, func(r string) bool { return r != "GET /pipeline/p1 "+"token of alice" }) {
 		t.Fatalf("the check asks with the owner's token: %v", requests)
 	}
 	running.Store(true)
