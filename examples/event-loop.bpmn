@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Runs until it is stopped: waits for every event of the selected thermostat, counts them, and sets
+     the target temperature to 20 °C when the room is warmer than 23 °C and to 23 °C when it is
+     cooler than 20 °C; with devicesim an event arrives every 10 s, so the live debugging always has
+     something to show; see "Running locally" in README.md -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:senergy="https://senergy.infai.org" id="Definitions_event_loop" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="event_loop" name="Event loop" isExecutable="true">
+    <bpmn:startEvent id="start"/>
+    <bpmn:exclusiveGateway id="loop" name="Next event"/>
+    <bpmn:intermediateCatchEvent id="reading" name="Room temperature" senergy:function="urn:infai:ses:measuring-function:local-get-temperature" senergy:aspect="urn:infai:ses:aspect:local-room" senergy:characteristic="urn:infai:ses:characteristic:local-celsius" senergy:qos="1">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:outputParameter name="temperature">
+            <camunda:script scriptFormat="javascript">event</camunda:script>
+          </camunda:outputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:messageEventDefinition/>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:scriptTask id="count" name="Count events" scriptFormat="javascript" camunda:resultVariable="events">
+      <bpmn:script>(typeof events === "number" ? events : 0) + 1</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:exclusiveGateway id="decide" name="Room temperature?" default="f_decide_loop"/>
+    <bpmn:serviceTask id="cool_down" name="Set target 20 °C" senergy:taskType="device_command" senergy:completionStrategy="pessimistic">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="payload">{"version": 2, "function": {"id": "urn:infai:ses:controlling-function:local-set-temperature", "rdf_type": "https://senergy.infai.org/ontology/ControllingFunction"}, "characteristic_id": "urn:infai:ses:characteristic:local-celsius", "aspects": [{"id": "urn:infai:ses:aspect:local-room"}], "retries": 1}</camunda:inputParameter>
+          <camunda:inputParameter name="inputs">
+            <camunda:script scriptFormat="javascript">20</camunda:script>
+          </camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="heat_up" name="Set target 23 °C" senergy:taskType="device_command" senergy:completionStrategy="pessimistic">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="payload">{"version": 2, "function": {"id": "urn:infai:ses:controlling-function:local-set-temperature", "rdf_type": "https://senergy.infai.org/ontology/ControllingFunction"}, "characteristic_id": "urn:infai:ses:characteristic:local-celsius", "aspects": [{"id": "urn:infai:ses:aspect:local-room"}], "retries": 1}</camunda:inputParameter>
+          <camunda:inputParameter name="inputs">
+            <camunda:script scriptFormat="javascript">23</camunda:script>
+          </camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f_start_loop" sourceRef="start" targetRef="loop"/>
+    <bpmn:sequenceFlow id="f_loop_reading" sourceRef="loop" targetRef="reading"/>
+    <bpmn:sequenceFlow id="f_reading_count" sourceRef="reading" targetRef="count"/>
+    <bpmn:sequenceFlow id="f_count_decide" sourceRef="count" targetRef="decide"/>
+    <bpmn:sequenceFlow id="f_decide_cool" name="warmer than 23 °C" sourceRef="decide" targetRef="cool_down">
+      <bpmn:conditionExpression language="javascript">temperature &gt; 23</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_decide_heat" name="cooler than 20 °C" sourceRef="decide" targetRef="heat_up">
+      <bpmn:conditionExpression language="javascript">temperature &lt; 20</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_decide_loop" sourceRef="decide" targetRef="loop"/>
+    <bpmn:sequenceFlow id="f_cool_loop" sourceRef="cool_down" targetRef="loop"/>
+    <bpmn:sequenceFlow id="f_heat_loop" sourceRef="heat_up" targetRef="loop"/>
+  </bpmn:process>
+</bpmn:definitions>

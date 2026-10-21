@@ -94,6 +94,8 @@ INSTANCE=$(curl -s -H "Authorization: $TOKEN" -H 'Content-Type: application/json
   -d "{\"deployment_id\": \"$DEPLOYMENT\"}" localhost:8080/namespaces/processes/instances | jq -r .id)
 ```
 
+`examples/event-loop.bpmn` runs until it is stopped: it waits for every event of the thermostat (one every 10 seconds), counts them, and sets the target temperature to 20 °C when the room is warmer than 23 °C and to 23 °C when it is cooler than 20 °C. It gives the live debugging of the web interface something to show at any time. Deploy it like the room temperature example, with the get service selected for `reading` and the set service for `cool_down` and `heat_up`.
+
 Commands to services that only send events need timescale-wrapper or mgw-last-value and are not part of the setup.
 
 `docker compose down -v` removes the containers with their data.
