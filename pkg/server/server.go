@@ -524,12 +524,51 @@ func (this *Server) importLegacyIo(ctx context.Context) {
 	if this.config.Mode != "fog" || this.config.LegacyIoPostgres.Value() == "" {
 		return
 	}
-	result, done, err := legacyio.Import(ctx, this.Store, this.config.LegacyIoPostgres.Value(), this.config.LegacyIoOwner)
-	switch {
-	case err != nil:
-		this.logger.Warn("unable to take over the values of process-io; retried at the next start", "error", err)
-	case done:
-		this.logger.Info("values of process-io taken over", "imported", result.Imported, "existing", result.Existing, "instance_values_left_out", result.Skipped)
+	// the Postgres of the old module may still be starting next to the engine (MIG-06)
+	retry(ctx, legacyIoRetry, func() error {
+		result, done, err := legacyio.Import(ctx, this.Store, this.config.LegacyIoPostgres.Value(), this.config.LegacyIoOwner)
+		switch {
+		case err != nil:
+			this.logger.Warn("unable to take over the values of process-io, trying again", "error", err)
+		case done:
+			this.logger.Info("values of process-io taken over", "imported", result.Imported, "existing", result.Existing, "instance_values_left_out", result.Skipped)
+		}
+		return err
+	})
+}
+
+// retrySettings: the start waits up to Block for success, then the attempts go on in the
+// background; the wait between them doubles from First up to Max
+type retrySettings struct {
+	First, Max, Block time.Duration
+}
+
+var legacyIoRetry = retrySettings{First: time.Second, Max: 30 * time.Second, Block: 2 * time.Minute}
+
+// retry calls attempt until it succeeds or ctx is done
+func retry(ctx context.Context, settings retrySettings, attempt func() error) {
+	deadline := time.Now().Add(settings.Block)
+	wait := settings.First
+	next := func() bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(wait):
+		}
+		wait = min(wait*2, settings.Max)
+		return true
+	}
+	for attempt() != nil {
+		if time.Now().After(deadline) {
+			go func() {
+				for next() && attempt() != nil {
+				}
+			}()
+			return
+		}
+		if !next() {
+			return
+		}
 	}
 }
 
