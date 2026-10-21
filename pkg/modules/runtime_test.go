@@ -397,7 +397,10 @@ func TestWatcherStartsTheMaintenanceProcedureOnChange(t *testing.T) {
 		}
 	}
 	check()
-	if requests := deviceSelection.all(); len(requests) != 1 || !strings.HasPrefix(requests[0], "POST /v2/query/selectables?include_devices=true ") || !strings.HasSuffix(requests[0], "token of alice") {
+	// the background pass of the server may have checked the watch as well
+	if requests := deviceSelection.all(); len(requests) == 0 || slices.ContainsFunc(requests, func(r string) bool {
+		return !strings.HasPrefix(r, "POST /v2/query/selectables?include_devices=true ") || !strings.HasSuffix(r, "token of alice")
+	}) {
 		t.Fatalf("the watch asks device-selection with the owner's token: %v", requests)
 	}
 	check()
