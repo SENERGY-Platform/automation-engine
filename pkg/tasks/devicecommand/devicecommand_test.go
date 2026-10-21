@@ -38,8 +38,8 @@ func TestPessimisticCommandKeepsTheHandlerContract(t *testing.T) {
 		t.Errorf("message goes to the handler topic with the device id as key (TASK-04): %v %v", s.topic, s.key)
 	}
 	info := s.msg.TaskInfo
-	if info.ProcessInstanceId != inst.Id || info.ProcessDefinitionId != d || info.TenantId != "alice" || info.CompletionStrategy != Pessimistic || info.TaskId == "" || info.Time == "" {
-		t.Errorf("task_info must carry instance, deployment id as definition id, owner and strategy (TASK-05, DATA-04): %+v", info)
+	if info.ProcessInstanceId != inst.Id || info.DeploymentId != d || info.ProcessDefinitionId != d || info.TenantId != "alice" || info.CompletionStrategy != Pessimistic || info.TaskId == "" || info.Time == "" {
+		t.Errorf("task_info must carry instance, deployment id under both names, owner and strategy (TASK-05, DATA-04): %+v", info)
 	}
 	if s.msg.Metadata.ResponseTo != "response" || s.msg.Metadata.OutputCharacteristic != "c" || s.msg.Metadata.Service.Id != "s-get" {
 		t.Errorf("unexpected metadata %+v", s.msg.Metadata)

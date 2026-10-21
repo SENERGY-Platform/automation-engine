@@ -30,9 +30,13 @@ import (
 )
 
 type TaskInfo struct {
-	WorkerId            string `json:"worker_id"`
-	TaskId              string `json:"task_id"`
-	ProcessInstanceId   string `json:"process_instance_id"`
+	WorkerId          string `json:"worker_id"`
+	TaskId            string `json:"task_id"`
+	ProcessInstanceId string `json:"process_instance_id"`
+	// the deployment of the instance (DATA-04)
+	DeploymentId string `json:"deployment_id"`
+	// Deprecated: the old name of DeploymentId, filled with the same id until every connector
+	// mirrors deployment_id with platform-connector-lib (DATA-04)
 	ProcessDefinitionId string `json:"process_definition_id"`
 	CompletionStrategy  string `json:"completion_strategy"`
 	Time                string `json:"time"`

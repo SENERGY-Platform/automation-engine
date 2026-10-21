@@ -140,8 +140,8 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 	}
 	info := TaskInfo{
 		WorkerId: this.workerId, ProcessInstanceId: task.InstanceId,
-		// carries the deployment id; connectors mirror it back (DATA-04)
-		ProcessDefinitionId: task.DeploymentId,
+		// connectors mirror it back; the old name until all of them know the new one (DATA-04)
+		DeploymentId: task.DeploymentId, ProcessDefinitionId: task.DeploymentId,
 		CompletionStrategy:  strategy(task), TenantId: task.Owner,
 	}
 	if info.CompletionStrategy == Optimistic {
