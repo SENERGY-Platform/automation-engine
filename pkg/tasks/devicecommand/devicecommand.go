@@ -142,7 +142,7 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 		WorkerId: this.workerId, ProcessInstanceId: task.InstanceId,
 		// connectors mirror it back; the old name until all of them know the new one (DATA-04)
 		DeploymentId: task.DeploymentId, ProcessDefinitionId: task.DeploymentId,
-		CompletionStrategy:  strategy(task), TenantId: task.Owner,
+		CompletionStrategy: strategy(task), TenantId: task.Owner,
 	}
 	if info.CompletionStrategy == Optimistic {
 		for _, c := range children {
