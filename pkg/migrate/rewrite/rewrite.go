@@ -306,6 +306,16 @@ func (this *rewriter) condition(e *etree.Element, id string) {
 	}
 }
 
+// Duration rewrites a repeating interval used as the duration of a timer, e.g. R/P1D, to its
+// period: Camunda waited once for it as well. Other values are returned unchanged and false.
+func Duration(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if hasExpression(value) || !repeating.MatchString(value) {
+		return value, false
+	}
+	return repeating.ReplaceAllString(value, ""), true
+}
+
 func (this *rewriter) timer(definition *etree.Element, id string) {
 	for _, child := range definition.ChildElements() {
 		if child.NamespaceURI() != bpmn.NsBpmn || !slices.Contains([]string{"timeDuration", "timeDate", "timeCycle"}, child.Tag) {
@@ -326,8 +336,8 @@ func (this *rewriter) timer(definition *etree.Element, id string) {
 			child.CreateAttr("language", "javascript")
 			this.rewritten(id, "timer: JUEL became JavaScript")
 		case child.Tag == "timeDuration" && repeating.MatchString(value):
-			// Camunda waits once for the period of a repeating interval used as duration
-			child.SetText(repeating.ReplaceAllString(value, ""))
+			duration, _ := Duration(value)
+			child.SetText(duration)
 			this.check(id, "timer: the duration %v became %v; Camunda waited once as well", value, child.Text())
 		case child.Tag == "timeCycle" && !strings.HasPrefix(value, "R") && len(strings.Fields(value)) == 5:
 			child.SetText("0 " + value)

@@ -26,8 +26,10 @@ import (
 	"strings"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/rewrite"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
+	"github.com/SENERGY-Platform/automation-engine/pkg/timer"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
@@ -499,8 +501,13 @@ func DeploymentInput(ctx context.Context, c Converter, token string, namespace s
 		case element.MessageEvent != nil:
 			selection = &element.MessageEvent.Selection
 		case element.TimeEvent != nil && e.Timer != nil:
-			if changed(element.TimeEvent.Time, e.Timer.Value, !e.Timer.Expression) {
-				params.Timer = element.TimeEvent.Time
+			value := element.TimeEvent.Time
+			if e.Timer.Kind == timer.KindDuration {
+				// the dialog took a repeating interval as duration, as the model did (MIG-04)
+				value, _ = rewrite.Duration(value)
+			}
+			if changed(value, e.Timer.Value, !e.Timer.Expression) {
+				params.Timer = value
 			}
 		case element.Notification != nil:
 			for name, value := range map[string]string{"title": element.Notification.Title, "message": element.Notification.Message} {

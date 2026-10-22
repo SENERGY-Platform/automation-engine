@@ -73,3 +73,33 @@ func TestDeployWithAnEmptyTimerIsRejected(t *testing.T) {
 		t.Fatalf("nothing is deployed: %+v %v", page, err)
 	}
 }
+
+const durationTimerModel = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="wait" isExecutable="true">
+    <bpmn:startEvent id="start"/>
+    <bpmn:intermediateCatchEvent id="pause"><bpmn:timerEventDefinition><bpmn:timeDuration>R/PT120S</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="end"/>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="pause"/>
+    <bpmn:sequenceFlow id="f2" sourceRef="pause" targetRef="end"/>
+  </bpmn:process>
+</bpmn:definitions>`
+
+// The deploy dialog took a repeating interval as duration as well; it becomes its period like
+// the one in the model, instead of rejecting the deployment.
+func TestDeployTakesARepeatingIntervalOfTheDialogAsDuration(t *testing.T) {
+	e := newEnv(t)
+	old := models.Deployment{Version: 3, Name: "wait", Diagram: models.Diagram{XmlRaw: durationTimerModel, Svg: "<svg/>"},
+		Elements: []models.Element{{BpmnId: "pause", TimeEvent: &models.TimeEvent{Type: "timeDuration", Time: "R/PT1800S"}}}}
+	var deployed models.Deployment
+	if status, _ := e.call(alice, http.MethodPost, "/deployment/v3/deployments", old, &deployed); status != http.StatusOK {
+		t.Fatalf("deploy: %v", status)
+	}
+	version, err := e.srv.Controller.GetDeploymentVersion(ctx, alice, "processes", deployed.Id, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := version.Parameters["pause"].Timer; got != "PT1800S" {
+		t.Errorf("timer parameter %q, want PT1800S", got)
+	}
+}
