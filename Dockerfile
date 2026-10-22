@@ -3,6 +3,8 @@
 FROM --platform=$BUILDPLATFORM golang:1.27 AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH
+# the release tag from prod.yml; the CI checkout carries no tags
+ARG VERSION=dev
 
 COPY . /go/src/app
 WORKDIR /go/src/app
@@ -12,7 +14,7 @@ ENV GO111MODULE=on
 RUN go generate ./...
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o app
 
-RUN git log -1 --oneline > version.txt
+RUN echo "$VERSION $(git log -1 --oneline)" > version.txt
 
 FROM alpine:latest
 WORKDIR /root/
