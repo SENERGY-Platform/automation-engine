@@ -14,8 +14,8 @@ The engine runs on ses-prod-rke2 (`processes/automation-engine` in rancher-2-def
 
 Left over from the migration, to decide or to tell the owners:
 
-- [ ] 3 smart service designs with a loop in the sequence flow (releases `2e5ab7db`, `3e734dc8`, `480ef793`), rejected by `forbid_cycles` of `smart-services`, with 6 instances and their 89 modules and 47 variables not migrated. Either they stay out, or an admin lifts `forbid_cycles` for one more migration run.
-- [ ] 3 releases left out because of Groovy beyond `println` and the JUEL operator `empty`; 2 deployments with `mail-send` and their schedule; 2 deployments whose device selection is missing or whose device no longer exists; 21 deployments only in Camunda, all without instances or timers, not migrated.
+- [x] 3 smart service designs with a loop in the sequence flow were rejected by `forbid_cycles` of `smart-services`. Decided: smart services may loop; the stored namespace was changed through the admin API and a fourth run migrated their releases, 2 instances, 72 modules and 14 variables.
+- [ ] 3 releases left out because of Groovy beyond `println` (2) and the JUEL operator `empty` (1); 4 instances of later releases of these designs (owners `c24fc1b5`, `ca4d1149`) with 16 modules and 33 variables are not migrated with them; 2 deployments with `mail-send` and their schedule; 2 deployments whose device selection is missing or whose device no longer exists; 21 deployments only in Camunda, all without instances or timers, not migrated.
 - [ ] 1 module of the old watcher keeps its URL (MIG-01).
 - [ ] An instance of `pv_auto` ended in an incident in the script `event_location` (`JSON.parse` of an object); not yet clear whether the model or a difference to Camunda is the cause.
 - [ ] Events that arrive while the event role restarts can be missed (once each in canary and snowflake-canary during rollouts).
