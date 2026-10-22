@@ -120,6 +120,12 @@ func (this *Type) applySelection(command *Command, selection model.Selection, to
 		if command.Version < 3 {
 			command.Version = 3
 		}
+	} else if command.Version == 2 {
+		// process-deployment deployed the version 2 payloads of the old designer as version 3,
+		// with or without a path, so they went out through the marshaller by function and
+		// aspect; the marshalling by characteristic of version 2 finds no content variable
+		// whose characteristic is not set directly at it. The result stays a list either way.
+		command.Version = 3
 	}
 	return nil
 }

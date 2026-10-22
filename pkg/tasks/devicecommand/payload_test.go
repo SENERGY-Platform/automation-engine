@@ -234,3 +234,25 @@ func TestCommandTheMarshallerRejectsIsNotSentAndBecomesAnIncident(t *testing.T) 
 		t.Errorf("nothing is sent: %+v", e.producer.messages())
 	}
 }
+
+// process-deployment deployed a version 2 payload of the old designer with a selected device as
+// version 3 even without a path; the marshaller then finds the content variable by function and
+// aspect, where the marshalling by characteristic of version 2 finds none whose characteristic
+// is not set at the variable itself (snowflake-canary).
+func TestVersion2CommandWithASelectedDeviceIsMarshalledAsVersion3(t *testing.T) {
+	e := newEnv(t, Parallel)
+	m := &recordingMarshaller{}
+	e.use(newRepo(), e.aspects, m, Parallel)
+	d := e.deploy(process(Optimistic, payload(controlling, map[string]any{"input": 42}), ""), map[string]model.Selection{"cmd": {DeviceId: "d1", ServiceId: "s-set"}})
+	e.start(d)
+	if len(m.v1Calls()) != 0 || len(m.v2Calls()) != 1 || len(m.v2Calls()[0]) != 1 {
+		t.Fatalf("one marshalling by function and aspect: v1 %+v v2 %+v", m.v1Calls(), m.v2Calls())
+	}
+	input := m.v2Calls()[0][0]
+	if input.FunctionId != controlling || input.CharacteristicId != "c" || len(input.Paths) != 0 || input.Value != 42.0 {
+		t.Errorf("the input goes by function and characteristic, without a path: %+v", input)
+	}
+	if list := e.producer.messages(); len(list) != 1 || list[0].msg.Metadata.Version != 3 {
+		t.Fatalf("the command goes out as version 3: %+v", list)
+	}
+}
