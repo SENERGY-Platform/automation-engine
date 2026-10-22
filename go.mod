@@ -5,15 +5,15 @@ go 1.27
 require (
 	github.com/SENERGY-Platform/converter v0.0.12
 	github.com/SENERGY-Platform/developer-notifications v0.0.6
-	github.com/SENERGY-Platform/device-repository/v3 v3.4.0
-	github.com/SENERGY-Platform/device-selection/v2 v2.0.3
+	github.com/SENERGY-Platform/device-repository/v3 v3.4.4
+	github.com/SENERGY-Platform/device-selection/v2 v2.1.0
 	github.com/SENERGY-Platform/gin-middleware v0.14.1
 	github.com/SENERGY-Platform/go-service-base/config-hdl v1.2.0
 	github.com/SENERGY-Platform/go-service-base/struct-logger v0.8.1
 	github.com/SENERGY-Platform/marshaller v0.3.0
 	github.com/SENERGY-Platform/models/go v0.0.0-20260911075423-f01521c01da2
 	github.com/SENERGY-Platform/permissions-v2 v1.0.0
-	github.com/SENERGY-Platform/service-commons v0.0.0-20260915085610-4949c31a01ef
+	github.com/SENERGY-Platform/service-commons v0.0.0-20261016083822-dec36fce00ad
 	github.com/beevik/etree v1.8.1
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20261011204819-0c9fae1b959d
