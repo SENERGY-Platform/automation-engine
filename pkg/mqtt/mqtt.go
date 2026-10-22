@@ -129,15 +129,30 @@ func (this *Client) Subscribe(topic string, qos byte, handler Handler) error {
 }
 
 func (this *Client) subscribe(topic string, qos byte, handler Handler) error {
-	return this.wait(this.client.Subscribe(topic, qos, func(_ paho.Client, message paho.Message) {
+	token := this.client.Subscribe(topic, qos, func(_ paho.Client, message paho.Message) {
 		if err := handler(message.Topic(), message.Payload()); err != nil {
 			this.logger.Warn("mqtt message not processed", "topic", message.Topic(), "error", err)
 			return
 		}
 		message.Ack()
-	}))
+	})
+	if err := this.wait(token); err != nil {
+		return err
+	}
+	// a broker refuses a subscription in the SUBACK, which paho does not report as an error;
+	// VerneMQ does so while its webhooks do not answer yet, e.g. right after a restart
+	if s, ok := token.(*paho.SubscribeToken); ok && s.Result()[topic] == 0x80 {
+		return fmt.Errorf("mqtt broker refused the subscription of %v", topic)
+	}
+	return nil
 }
 
+// resubscribeBackoff is the longest pause between two attempts to renew a refused subscription
+var resubscribeBackoff = 30 * time.Second
+
+// resubscribe renews the subscriptions after a connect, in the background, because it runs in
+// the connect handler of paho; a refused one is tried again until the broker accepts it, the
+// topic is unsubscribed or the connection is lost.
 func (this *Client) resubscribe() {
 	this.mux.Lock()
 	current := map[string]subscription{}
@@ -146,9 +161,25 @@ func (this *Client) resubscribe() {
 	}
 	this.mux.Unlock()
 	for topic, s := range current {
-		if err := this.subscribe(topic, s.qos, s.handler); err != nil {
-			this.logger.Error("unable to subscribe", "topic", topic, "error", err)
-		}
+		go func() {
+			pause := time.Second
+			for {
+				err := this.subscribe(topic, s.qos, s.handler)
+				if err == nil {
+					return
+				}
+				this.logger.Error("unable to subscribe", "topic", topic, "error", err)
+				time.Sleep(pause)
+				pause = min(2*pause, resubscribeBackoff)
+				this.mux.Lock()
+				_, wanted := this.subscriptions[topic]
+				this.mux.Unlock()
+				if !wanted || !this.client.IsConnectionOpen() {
+					// the next connect renews it
+					return
+				}
+			}
+		}()
 	}
 }
 
