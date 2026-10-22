@@ -39,6 +39,7 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/api"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 )
 
 // Prefix of all routes of the layer.
@@ -119,6 +120,26 @@ func decode[T any](r *http.Request) (result T, err error) {
 		return result, model.BadRequest("invalid body: %v", err)
 	}
 	return result, nil
+}
+
+// ownerChange reads the body {"owner": "<user id>"} of the owner changes of the old repositories,
+// which only admins could call; the engine checks the token again when it changes the owner
+func ownerChange(r *http.Request) (string, error) {
+	parsed, err := jwt.Parse(token(r))
+	if err != nil {
+		return "", model.Forbidden("invalid token: %v", err)
+	}
+	if !parsed.IsAdmin() {
+		return "", model.Forbidden("only admins may change the owner")
+	}
+	body, err := decode[model.OwnerInput](r)
+	if err != nil {
+		return "", err
+	}
+	if body.Owner == "" || strings.TrimSpace(body.Owner) != body.Owner {
+		return "", model.BadRequest("owner must be a user id without surrounding whitespace")
+	}
+	return body.Owner, nil
 }
 
 // intParam reads an integer query parameter; missing is the fallback

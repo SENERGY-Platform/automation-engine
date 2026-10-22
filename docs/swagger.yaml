@@ -5541,6 +5541,49 @@ paths:
       summary: update a model
       tags:
       - deprecated-repository
+  /deprecated/repository/processes/{id}/owner:
+    put:
+      consumes:
+      - application/json
+      deprecated: true
+      description: 'admins only, as process-model-repository v1.3.0: the id stays,
+        the owner gets all rights, other entries in permissions-v2 stay'
+      parameters:
+      - description: model id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: new owner (user id)
+        in: body
+        name: owner
+        required: true
+        schema:
+          $ref: '#/definitions/model.OwnerInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.Process'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: move a model to another owner
+      tags:
+      - deprecated-repository
   /deprecated/repository/processes/{id}/publish:
     post:
       deprecated: true
@@ -5952,6 +5995,55 @@ paths:
       security:
       - Bearer: []
       summary: update a design
+      tags:
+      - deprecated-smart-services
+  /deprecated/smart-services/designs/{id}/owner:
+    put:
+      consumes:
+      - application/json
+      deprecated: true
+      description: 'admins only, as smart-service-repository v0.7.0: the design and
+        every release of it (the deployment of the design with all its versions) move
+        to the owner, all ids stay; the owner gets all rights on the releases, other
+        entries in permissions-v2 stay; instances are not touched'
+      parameters:
+      - description: design id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: new owner (user id)
+        in: body
+        name: owner
+        required: true
+        schema:
+          $ref: '#/definitions/model.OwnerInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/deprecated.SmartServiceDesign'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            type: string
+        "409":
+          description: Conflict
+          schema:
+            type: string
+      security:
+      - Bearer: []
+      summary: move a design and its releases to another owner
       tags:
       - deprecated-smart-services
   /deprecated/smart-services/extended-releases:

@@ -52,6 +52,41 @@ func (this *Handler) repository() {
 	this.handle("PUT /repository/processes/{id}", this.updateProcess)
 	this.handle("POST /repository/processes/{id}/publish", this.publishProcess)
 	this.handle("DELETE /repository/processes/{id}", this.deleteProcess)
+	this.handle("PUT /repository/processes/{id}/owner", this.setProcessOwner)
+}
+
+// setProcessOwner godoc
+//
+//	@Summary		move a model to another owner
+//	@Description	admins only, as process-model-repository v1.3.0: the id stays, the owner gets all rights, other entries in permissions-v2 stay
+//	@Tags		deprecated-repository
+//	@Deprecated
+//	@Security	Bearer
+//	@Accept		json
+//	@Produce	json
+//	@Param		id	path	string	true	"model id"
+//	@Param		owner	body	model.OwnerInput	true	"new owner (user id)"
+//	@Success	200	{object}	Process
+//	@Failure	400,403,404	{string}	string
+//	@Router		/deprecated/repository/processes/{id}/owner [put]
+func (this *Handler) setProcessOwner(w http.ResponseWriter, r *http.Request) {
+	owner, err := ownerChange(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	if err = this.c.SetOwner(r.Context(), token(r), processes, model.KindModel, id, model.OwnerInput{Owner: owner}); err != nil {
+		writeError(w, err)
+		return
+	}
+	m, err := this.c.GetModel(r.Context(), token(r), processes, id)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	p, err := this.process(r, m)
+	respond(w, p, err)
 }
 
 // process reads the latest version of a model for its content

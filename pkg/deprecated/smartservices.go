@@ -203,6 +203,7 @@ type SmartServiceModule struct {
 func (this *Handler) smartServices() {
 	this.handle("GET /smart-services/designs", this.listDesigns)
 	this.handle("GET /smart-services/designs/{id}", this.getDesign)
+	this.handle("PUT /smart-services/designs/{id}/owner", this.setDesignOwner)
 	this.handle("POST /smart-services/designs", this.createDesign)
 	this.handle("PUT /smart-services/designs/{id}", this.updateDesign)
 	this.handle("DELETE /smart-services/designs/{id}", this.deleteDesign)
@@ -332,6 +333,67 @@ func (this *Handler) listDesigns(w http.ResponseWriter, r *http.Request) {
 func (this *Handler) getDesign(w http.ResponseWriter, r *http.Request) {
 	m, v, err := this.latestModel(r, smartServices, r.PathValue("id"))
 	respond(w, design(m, v), err)
+}
+
+// setDesignOwner godoc
+//
+//	@Summary		move a design and its releases to another owner
+//	@Description	admins only, as smart-service-repository v0.7.0: the design and every release of it (the deployment of the design with all its versions) move to the owner, all ids stay; the owner gets all rights on the releases, other entries in permissions-v2 stay; instances are not touched
+//	@Tags		deprecated-smart-services
+//	@Deprecated
+//	@Security	Bearer
+//	@Accept		json
+//	@Produce	json
+//	@Param		id	path	string	true	"design id"
+//	@Param		owner	body	model.OwnerInput	true	"new owner (user id)"
+//	@Success	200	{object}	SmartServiceDesign
+//	@Failure	400,403,404,409	{string}	string
+//	@Router		/deprecated/smart-services/designs/{id}/owner [put]
+func (this *Handler) setDesignOwner(w http.ResponseWriter, r *http.Request) {
+	owner, err := ownerChange(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	m, err := this.c.GetModel(r.Context(), token(r), smartServices, id)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	releases, err := all(func(page model.PageOptions) (model.Page[model.Deployment], error) {
+		return this.c.ListDeployments(r.Context(), token(r), smartServices, model.DeploymentListOptions{ModelId: id, PageOptions: page})
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	// a deleted design leaves its releases behind, so a release may belong to an earlier design
+	// of another user with the same id, as smart-service-repository refused it
+	foreign := []string{}
+	for _, d := range releases {
+		if d.Owner != m.Owner && d.Owner != owner {
+			foreign = append(foreign, d.Id)
+		}
+	}
+	if len(foreign) > 0 {
+		writeError(w, model.Conflict("releases %v of design %v belong to another user than the design owner", strings.Join(foreign, ", "), id))
+		return
+	}
+	// the releases first, as smart-service-repository wrote their rights first; a repeat
+	// completes a move that stopped halfway
+	for _, d := range releases {
+		if err = this.c.SetOwner(r.Context(), token(r), smartServices, model.KindDeployment, d.Id, model.OwnerInput{Owner: owner}); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
+	if err = this.c.SetOwner(r.Context(), token(r), smartServices, model.KindModel, id, model.OwnerInput{Owner: owner}); err != nil {
+		writeError(w, err)
+		return
+	}
+	moved, v, err := this.latestModel(r, smartServices, id)
+	respond(w, design(moved, v), err)
 }
 
 func (this *Handler) saveDesign(w http.ResponseWriter, r *http.Request, save func(input model.ModelInput) (model.Model, error)) {
