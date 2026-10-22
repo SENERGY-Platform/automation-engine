@@ -11,6 +11,7 @@ go run . -config config.json
 The configuration comes from `config.json` and from environment variables (names in `pkg/configuration/config.go`, e.g. `DATABASE=postgres`, `POSTGRES_DSN`, `SERVER_PORT`, `NAMESPACES` as JSON). The default is SQLite in `automation-engine.db`. The engine migrates the schema itself on start.
 
 For platform operation, add:
+- `POSTGRES_MAX_CONNS`: open connections per process (default 0, no limit). Behind PgBouncer in session mode, every open connection holds a server connection of the pool, so the limit times the number of pods (both roles and a running migration) has to fit the pool size.
 - `PERMISSIONS_V2_URL` with `AUTH_ENDPOINT`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`: sharing through permissions-v2; the Keycloak client needs the realm role `admin`. Without the URL, only owners and admins have access.
 - `NOTIFIER_URL`, `DEVELOPER_NOTIFICATIONS_URL`: notifications on incidents.
 - `INTERNAL_PORT` (default 8081, replaces `METRICS_PORT`): Prometheus metrics under `/metrics` and answers of devices over HTTP under `/responses` and `/errors`. Do not route it through Kong.

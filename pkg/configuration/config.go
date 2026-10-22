@@ -38,7 +38,10 @@ type Config struct {
 	// "postgres" or "sqlite"
 	Database    string       `json:"database" env_var:"DATABASE"`
 	PostgresDsn types.Secret `json:"postgres_dsn" env_var:"POSTGRES_DSN"`
-	SqlitePath  string       `json:"sqlite_path" env_var:"SQLITE_PATH"`
+	// open connections per process, 0 for no limit; behind PgBouncer in session mode every open
+	// connection holds a server connection of the pool
+	PostgresMaxConns int    `json:"postgres_max_conns" env_var:"POSTGRES_MAX_CONNS"`
+	SqlitePath       string `json:"sqlite_path" env_var:"SQLITE_PATH"`
 
 	// with a certificate URL, token signatures are verified; otherwise Kong has verified them (SEC-04)
 	// e.g. https://<keycloak>/auth/realms/<realm>/protocol/openid-connect/certs

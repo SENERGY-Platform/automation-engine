@@ -26,3 +26,8 @@ func ExecForTest(tx *Tx, statement string) error {
 	_, err := tx.exec(statement)
 	return err
 }
+
+// MaxOpenConnsForTest returns the connection limit of the store; for tests only.
+func MaxOpenConnsForTest(s *Store) int {
+	return s.db.Stats().MaxOpenConnections
+}

@@ -100,6 +100,12 @@ func Open(ctx context.Context, dialect Dialect, dsn string) (*Store, error) {
 	return result, nil
 }
 
+// SetMaxOpenConns limits the connections of the process to the database; further requests wait
+// for a free one.
+func (this *Store) SetMaxOpenConns(n int) {
+	this.db.SetMaxOpenConns(n)
+}
+
 func sqliteDsn(dsn string) string {
 	if !strings.HasPrefix(dsn, "file:") {
 		dsn = "file:" + dsn

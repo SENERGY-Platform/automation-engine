@@ -113,7 +113,11 @@ type Dependencies struct {
 
 func openStore(ctx context.Context, config configuration.Config) (*store.Store, error) {
 	if config.Database == "postgres" {
-		return store.Open(ctx, store.Postgres, config.PostgresDsn.Value())
+		s, err := store.Open(ctx, store.Postgres, config.PostgresDsn.Value())
+		if err == nil && config.PostgresMaxConns > 0 {
+			s.SetMaxOpenConns(config.PostgresMaxConns)
+		}
+		return s, err
 	}
 	return store.Open(ctx, store.SQLite, config.SqlitePath)
 }

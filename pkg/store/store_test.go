@@ -361,3 +361,12 @@ func TestIoValuesAndSchedules(t *testing.T) {
 		})
 	})
 }
+
+func TestTheConnectionLimitApplies(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		s.SetMaxOpenConns(4)
+		if got := store.MaxOpenConnsForTest(s); got != 4 {
+			t.Fatalf("limit %d, want 4", got)
+		}
+	})
+}
