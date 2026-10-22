@@ -184,6 +184,11 @@ func (this *Handler) syncDeployments(w http.ResponseWriter, r *http.Request) {
 	result := []SyncDeployment{}
 	for _, networkId := range ids {
 		states, contact, err := this.syncStates(r, networkId)
+		if errors.Is(err, model.ErrNotFound) {
+			// a gateway the engine does not know, e.g. one still with Camunda: process-sync
+			// listed nothing for it either, and the other networks of the request still count
+			continue
+		}
 		if err != nil {
 			writeError(w, err)
 			return
@@ -446,6 +451,11 @@ func (this *Handler) syncHistory(w http.ResponseWriter, r *http.Request) {
 	total := 0
 	for _, networkId := range ids {
 		_, contact, err := this.syncStates(r, networkId)
+		if errors.Is(err, model.ErrNotFound) {
+			// a gateway the engine does not know, e.g. one still with Camunda: process-sync
+			// listed nothing for it either, and the other networks of the request still count
+			continue
+		}
 		if err != nil {
 			writeError(w, err)
 			return
@@ -582,6 +592,11 @@ func (this *Handler) syncIncidents(w http.ResponseWriter, r *http.Request) {
 	result := []SyncIncident{}
 	for _, networkId := range ids {
 		_, contact, err := this.syncStates(r, networkId)
+		if errors.Is(err, model.ErrNotFound) {
+			// a gateway the engine does not know, e.g. one still with Camunda: process-sync
+			// listed nothing for it either, and the other networks of the request still count
+			continue
+		}
 		if err != nil {
 			writeError(w, err)
 			return

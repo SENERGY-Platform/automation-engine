@@ -145,6 +145,19 @@ func TestFogViewsOfTheWebUi(t *testing.T) {
 	if history.Total != 1 || history.Data[0].Id != "k1" || history.Data[0].NetworkId != hub || history.Data[0].State != "ACTIVE" {
 		t.Errorf("history: %+v", history)
 	}
+	// a gateway still with Camunda is unknown to the engine; it adds nothing to the lists of the
+	// fog views, which ask for all gateways of the user at once
+	both := "?network_id=" + hub + ",camunda-hub&limit=10&offset=0"
+	if status, _ := e.call(alice, http.MethodGet, "/process-sync/deployments"+both, nil, &deployments); status != http.StatusOK || len(deployments) != 1 {
+		t.Errorf("deployments with an unknown gateway: %v %+v", status, deployments)
+	}
+	if status, _ := e.call(alice, http.MethodGet, "/process-sync/history/process-instances"+both+"&with_total=true", nil, &history); status != http.StatusOK || history.Total != 1 {
+		t.Errorf("history with an unknown gateway: %v %+v", status, history)
+	}
+	var incidents []any
+	if status, _ := e.call(alice, http.MethodGet, "/process-sync/incidents"+both, nil, &incidents); status != http.StatusOK || len(incidents) != 0 {
+		t.Errorf("incidents with an unknown gateway: %v %+v", status, incidents)
+	}
 	if status, _ := e.call(alice, http.MethodDelete, "/process-sync/process-instances/other-hub/k1", nil, nil); status != http.StatusNotFound {
 		t.Errorf("an instance of another gateway is not found: %v", status)
 	}
