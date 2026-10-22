@@ -4,9 +4,27 @@ Collection point for tasks and questions that concern other repositories, operat
 
 Every item names its occasion (requirement id or milestone) and is either a **task** (what has to be done there) or a **question** (what has to be settled before anyone acts). Done items are checked off, not deleted, until the list as a whole is through.
 
+## Rollout (2026-10-22)
+
+The engine runs on ses-prod-rke2 (`processes/automation-engine` in rancher-2-defs, v0.1.5, two engine and two event pods, central Postgres) and has replaced the Camunda stack:
+
+- Kong: `/automation-engine` for the new API; the old routes, `/process-sync` and `/process-fog-deployment` included, are served by `deprecated/` through the service path. Ladon allows `/automation-engine` for every client and role that had the process routes and denies `/users` and `PUT`/`DELETE /namespaces/{ns}` to `full_user`.
+- Migrated (three runs of the job in `processes/automation-engine/migration`): 216 models, 73 deployments, 47 running instances restarted, 30 gateway deployments with 24 starts, 84 designs, 219 releases, 47 smart service instances with their modules and variables.
+- The old services stand at zero with their databases (`automation-engine-off.yaml` per overlay); removing the patches and the Kong redirect restores them. fog-processes keeps running for gateways with the old process module. Every place to remove later carries a TODO.
+
+Left over from the migration, to decide or to tell the owners:
+
+- [ ] 3 smart service designs with a loop in the sequence flow (releases `2e5ab7db`, `3e734dc8`, `480ef793`), rejected by `forbid_cycles` of `smart-services`, with 6 instances and their 89 modules and 47 variables not migrated. Either they stay out, or an admin lifts `forbid_cycles` for one more migration run.
+- [ ] 3 releases left out because of Groovy beyond `println` and the JUEL operator `empty`; 2 deployments with `mail-send` and their schedule; 2 deployments whose device selection is missing or whose device no longer exists; 21 deployments only in Camunda, all without instances or timers, not migrated.
+- [ ] 1 module of the old watcher keeps its URL (MIG-01).
+- [ ] An instance of `pv_auto` ended in an incident in the script `event_location` (`JSON.parse` of an object); not yet clear whether the model or a difference to Camunda is the cause.
+- [ ] Events that arrive while the event role restarts can be missed (once each in canary and snowflake-canary during rollouts).
+- [ ] moses has no image with `deployment_id`: its CI stops at the vulnerability gate (Go 1.26.9, GO-2026-6809 fixed in 1.26.10). The engine still sends `process_definition_id`.
+- [ ] `process-engine-prod` in ArgoCD has failed for a while on a forbidden change of the StatefulSet `engine-db`; wrapper and engine were scaled to zero by hand, as the manifests say.
+
 ## Prepared in other repositories
 
-Feature branches, each forked from the default branch, pushed, not merged and without pull request. A row names what is still needed before the branch can go in.
+Feature branches, each forked from the default branch. Since 2026-10-22 all of them are merged and deployed (user-management v0.1.0, canary and snowflake-canary v0.1.0, device-selection v2.1.0, senergy-platform-connector v0.2.0, lorawan-platform-connector v0.0.45, web-ui v0.49.0, mgw-module-repository `main/process` v2.0.0 with the engine v0.1.5), except moses (merged, no image, see Rollout) and device-command (not changed). The column "Before merging" keeps what was open at the time.
 
 | Repository | Branch | Open item | Changes | Tests | Before merging |
 |---|---|---|---|---|---|
@@ -27,18 +45,18 @@ Feature branches, each forked from the default branch, pushed, not merged and wi
 
 ### Kong, Ladon
 
-- [ ] **Task:** One route for the new API plus `deprecated/`; redirect today's routes to `deprecated/` (API-08, M7), with path rewriting and without the `strip_path` of the old services: `/process/engine` → `/deprecated/engine`, `/process/repository` → `/deprecated/repository`, `/process-io` → `/deprecated/io`, `/process/incidents` → `/deprecated/incidents`, `/process/scheduler` → `/deprecated/scheduler`, `/process/deployment` → `/deprecated/deployment`, `/smart-services/repository` → `/deprecated/smart-services`; `/process-sync` → `/deprecated/process-sync` and `/process-fog-deployment` → `/deprecated/fog-deployment` only once no gateway runs Camunda any more, because the layer covers only gateways with the engine. Ladon rules of the old paths keep applying to the new targets if the rewrite takes effect after Ladon; otherwise they have to be changed as well.
+- [x] **Task:** One route for the new API plus `deprecated/`; redirect today's routes to `deprecated/` (API-08, M7), with path rewriting and without the `strip_path` of the old services: `/process/engine` → `/deprecated/engine`, `/process/repository` → `/deprecated/repository`, `/process-io` → `/deprecated/io`, `/process/incidents` → `/deprecated/incidents`, `/process/scheduler` → `/deprecated/scheduler`, `/process/deployment` → `/deprecated/deployment`, `/smart-services/repository` → `/deprecated/smart-services`; `/process-sync` → `/deprecated/process-sync` and `/process-fog-deployment` → `/deprecated/fog-deployment` only once no gateway runs Camunda any more, because the layer covers only gateways with the engine. Ladon rules of the old paths keep applying to the new targets if the rewrite takes effect after Ladon; otherwise they have to be changed as well.
 - [ ] **Note (behaviour):** Under `deprecated/`, the status codes of the new API apply (403 instead of 401, 404 instead of 500 for unknown ids). A start with `business_key` creates the instance with this id; a second start with the same key and the same variables answers with it, with other variables with 409, instead of creating a second instance. Deleting a running instance through the engine routes stops it and keeps its history, as Camunda did. Deployments through `/deprecated/deployment` are rewritten on creation (MIG-04); a model with `mail-send` is rejected with 400. `GET /dependencies` no longer names devices, because the engine does not store their names; generic event sources (`selected_generic_event_source`) are rejected. Releases of a smart service design are versions of one deployment: a further release keeps the id, older versions are called `<id>:v<n>`, a release can only be deleted as a whole. The layer knows the rights in `permissions_info` only roughly (owner everything, otherwise read); `value_label` of parameters is not stored. Under `/deprecated/process-sync`, networks are named by their id (the engine does not know the names of the hubs), `POST /sync/deployments` does nothing any more.
-- [ ] **Task:** Do not route the internal port (`INTERNAL_PORT`, default 8081). It carries `/metrics` and the HTTP answers of devices (`/responses`, `/errors`) (M3).
-- [ ] **Task:** Pass the WebSocket upgrade through for `/namespaces/*/instances/*/live` (DBG-01, DBG-08, M4).
-- [ ] **Task:** Routes and Ladon rules for the paths from M5: `/namespaces/*/modules[/*]`, `/namespaces/*/deployments/*/parameters`, `/namespaces/*/instances/*/parameters`, `/namespaces/*/instances/*/maintenance-procedures[/...]`, `DELETE /namespaces/*/instances/*/variables/*`.
-- [ ] **Task:** Ladon rules for the admin endpoints `/users` and `PUT` and `DELETE /namespaces/{ns}` (SEC-14, NS-02, M2) and for the debug paths `debug`, `live`, `history`, `event-evaluations`, `variables/{name}` under `/namespaces/*/instances/*` (M4).
+- [x] **Task:** Do not route the internal port (`INTERNAL_PORT`, default 8081). It carries `/metrics` and the HTTP answers of devices (`/responses`, `/errors`) (M3).
+- [x] **Task:** Pass the WebSocket upgrade through for `/namespaces/*/instances/*/live` (DBG-01, DBG-08, M4).
+- [x] **Task:** Routes and Ladon rules for the paths from M5: `/namespaces/*/modules[/*]`, `/namespaces/*/deployments/*/parameters`, `/namespaces/*/instances/*/parameters`, `/namespaces/*/instances/*/maintenance-procedures[/...]`, `DELETE /namespaces/*/instances/*/variables/*`.
+- [x] **Task:** Ladon rules for the admin endpoints `/users` and `PUT` and `DELETE /namespaces/{ns}` (SEC-14, NS-02, M2) and for the debug paths `debug`, `live`, `history`, `event-evaluations`, `variables/{name}` under `/namespaces/*/instances/*` (M4).
 - [ ] **Task:** Remove the dead routes `/api-aggregator` and `/eventmanager`.
-- [ ] **Task:** Routes and Ladon rules for the paths added after M5 (audit 2026-10-20): `/namespaces/*/convert`, `/networks[/*]`, `/namespaces/*/deployments/*/disabled`, `/namespaces/*/deployments/*/instance-count`, `/namespaces/*/resource-usage/*/*`, `/namespaces/*/instances/*/info`, `/namespaces/*/prepared-deployments`.
+- [x] **Task:** Routes and Ladon rules for the paths added after M5 (audit 2026-10-20): `/namespaces/*/convert`, `/networks[/*]`, `/namespaces/*/deployments/*/disabled`, `/namespaces/*/deployments/*/instance-count`, `/namespaces/*/resource-usage/*/*`, `/namespaces/*/instances/*/info`, `/namespaces/*/prepared-deployments`.
 
 ### Keycloak
 
-- [ ] **Task:** The client of the engine needs the realm role `admin` (permissions-v2) and the permission for token exchange. Since the owner check through `CheckPermission`, token exchange is required as soon as permissions-v2 is configured; device commands and the event reconstruction use it as well (SEC-03, SEC-06, SEC-11).
+- [x] **Task:** The client of the engine needs the realm role `admin` (permissions-v2) and the permission for token exchange. Since the owner check through `CheckPermission`, token exchange is required as soon as permissions-v2 is configured; device commands and the event reconstruction use it as well (SEC-03, SEC-06, SEC-11).
 
 ## Platform services
 
@@ -142,7 +160,7 @@ Feature branches, each forked from the default branch, pushed, not merged and wi
 
 ## Migration (M7)
 
-- [ ] **Task (operations):** Run the migration as a one-time job in the cluster: first as a dry run, check the report, make the decisions (`-owner`, `-camunda-only`), inform those affected by running instances (MIG-02), then with `-apply`. Needs read access to the MongoDB of the old services (`MIGRATE_MONGO_URL`), the REST API of all Camunda shards with basic auth (`MIGRATE_CAMUNDA_PASSWORD`) and the client of the engine with the admin role.
+- [x] **Task (operations):** Run the migration as a one-time job in the cluster: first as a dry run, check the report, make the decisions (`-owner`, `-camunda-only`), inform those affected by running instances (MIG-02), then with `-apply`. Needs read access to the MongoDB of the old services (`MIGRATE_MONGO_URL`), the REST API of all Camunda shards with basic auth (`MIGRATE_CAMUNDA_PASSWORD`) and the client of the engine with the admin role.
 - [x] **Question:** Where does camunda-engine-wrapper v1.1.0 store the state "disabled" per deployment (`PUT /v2/deployments/{id}/disabled`)? Answered on 2026-10-13: it suspends the process definition in Camunda; the migration reads the `suspended` flag of the definition and takes the deployment over switched off (DEP-12).
 - [ ] **Note:** Modules of the old watcher keep their URL; the migration does not take over the watches themselves, they are in the database of the watcher. Smart service instances whose setup was still running during the migration restart; modules already created may then exist twice (the report names them).
 - [ ] **Question:** What is the collection of process-scheduler called in prod (`process_scheduler` as database is known, locally the collection is called `process_schedule`)? Changeable with `-collection-scheduler`.
@@ -161,11 +179,11 @@ Feature branches, each forked from the default branch, pushed, not merged and wi
 - [ ] **Task (operations):** Alerts on `automation_engine_network_last_contact_seconds` for gateways without contact, replacing the ping self-test of process-sync (SYNC-12), and the switch of today's process alerts to the metrics of the engine (OPS-05); neither exists yet (audit 2026-10-20).
 
 - [ ] **Task (acceptance):** Soak test on an arm64 gateway with `pkg/soak` for at least 72 h, file the report (CSV) (LONG-15). Locally it ran for 30 min on amd64; whether flash storage, a slower CPU and the real broker change anything only the gateway shows.
-- [ ] **Task (operations):** Create the workflow for prod images (`prod.yml` with tagging as in the other repositories) once the engine is to be released; until then there is only `dev.yml`. The secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` and `CR_PAT` have to be available to the repository (FOG-02).
+- [x] **Task (operations):** Create the workflow for prod images (`prod.yml` with tagging as in the other repositories) once the engine is to be released; until then there is only `dev.yml`. The secrets `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` and `CR_PAT` have to be available to the repository (FOG-02).
 
 ### VerneMQ and senergy-platform-connector (`lib/handler/process`)
 
-- [ ] **Task (operations):** The replicas of the engine connect to `SYNC_MQTT_BROKER` as an admin client: they subscribe to `$share/automation-engine/processes/+/state/engine/v1/#` and publish to `processes/{nid}/cmd/engine/v1/...` of every network. The webhook allows wildcards and `$share` only for admins. Every replica needs a client id of its own (default `automation-engine-{hostname}`).
+- [x] **Task (operations):** The replicas of the engine connect to `SYNC_MQTT_BROKER` as an admin client: they subscribe to `$share/automation-engine/processes/+/state/engine/v1/#` and publish to `processes/{nid}/cmd/engine/v1/...` of every network. The webhook allows wildcards and `$share` only for admins. Every replica needs a client id of its own (default `automation-engine-{hostname}`).
 - [ ] **Question:** Does the VerneMQ in use support shared subscriptions with QoS 1 so that a message is delivered to exactly one replica? Double delivery would be harmless (the protocol detects it), the gateway resends lost ones.
 
 ### mgw-device-cloud-connector
