@@ -92,9 +92,15 @@ var wordOperators = map[string]string{
 	"and": "&&", "or": "||", "not": "!", "eq": "==", "ne": "!=", "lt": "<", "gt": ">", "le": "<=", "ge": ">=", "div": "/", "mod": "%",
 }
 
+// emptyCheck is the JavaScript form of the JUEL operator empty: true for null, an empty text
+// and an empty list or map, false for everything else. It is written out in the model instead
+// of calling a function of the engine, so that an older engine on a gateway runs it as well.
+const emptyCheck = `((v) => v == null || v === "" || (typeof v === "object" && Object.keys(v).length === 0))`
+
 // jsExpression translates the body of a JUEL expression. The expressions in use are
 // comparisons, &&, ||, ! and index access, which JavaScript reads the same way; word
-// operators are replaced outside string literals. empty has no direct counterpart.
+// operators are replaced outside string literals. empty, which has no counterpart, applies
+// emptyCheck to its operand.
 func jsExpression(juel string) (string, error) {
 	var result strings.Builder
 	var quote byte
@@ -125,7 +131,16 @@ func jsExpression(juel string) (string, error) {
 			property := strings.HasSuffix(previous, ".")
 			switch {
 			case word == "empty" && !property:
-				return "", errors.New("the JUEL operator empty has no JavaScript counterpart")
+				end, err := operandEnd(juel, j)
+				if err != nil {
+					return "", fmt.Errorf("the operand of the JUEL operator empty: %w", err)
+				}
+				operand, err := jsExpression(juel[j:end])
+				if err != nil {
+					return "", err
+				}
+				result.WriteString(emptyCheck + "(" + operand + ")")
+				j = end
 			case wordOperators[word] != "" && !property:
 				result.WriteString(wordOperators[word])
 			default:
@@ -140,6 +155,109 @@ func jsExpression(juel string) (string, error) {
 		return "", errors.New("unterminated string literal")
 	}
 	return strings.TrimSpace(result.String()), nil
+}
+
+// operandEnd returns the end of the operand of a prefix operator that starts at start: a value
+// with its property accesses, index accesses and calls, e.g. a.b['c'].d(1), a parenthesized
+// expression or a literal. A further prefix operator is not supported as operand.
+func operandEnd(juel string, start int) (int, error) {
+	i := start
+	for i < len(juel) && (juel[i] == ' ' || juel[i] == '\t' || juel[i] == '\r' || juel[i] == '\n') {
+		i++
+	}
+	if i == len(juel) {
+		return 0, errors.New("missing")
+	}
+	switch c := juel[i]; {
+	case c == '(':
+		end, err := closing(juel, i)
+		if err != nil {
+			return 0, err
+		}
+		i = end + 1
+	case c == '\'' || c == '"':
+		end, err := closing(juel, i)
+		if err != nil {
+			return 0, err
+		}
+		i = end + 1
+	case c >= '0' && c <= '9':
+		for i < len(juel) && (juel[i] == '.' || (juel[i] >= '0' && juel[i] <= '9')) {
+			i++
+		}
+		return i, nil
+	case isIdentStart(c):
+		j := i
+		for j < len(juel) && isIdentPart(juel[j]) {
+			j++
+		}
+		if word := juel[i:j]; word == "not" || word == "empty" {
+			return 0, fmt.Errorf("%v as operand is not supported", word)
+		}
+		i = j
+	default:
+		return 0, fmt.Errorf("%q as operand is not supported", string(c))
+	}
+	for i < len(juel) {
+		switch juel[i] {
+		case '.':
+			j := i + 1
+			for j < len(juel) && isIdentPart(juel[j]) {
+				j++
+			}
+			if j == i+1 {
+				return 0, errors.New("a property name is missing after .")
+			}
+			i = j
+		case '[', '(':
+			end, err := closing(juel, i)
+			if err != nil {
+				return 0, err
+			}
+			i = end + 1
+		default:
+			return i, nil
+		}
+	}
+	return i, nil
+}
+
+// closing returns the index of the bracket or quote that closes the one at open; brackets
+// inside string literals and nested brackets are skipped
+func closing(text string, open int) (int, error) {
+	if q := text[open]; q == '\'' || q == '"' {
+		for i := open + 1; i < len(text); i++ {
+			if text[i] == '\\' {
+				i++
+			} else if text[i] == q {
+				return i, nil
+			}
+		}
+		return 0, errors.New("unterminated string literal")
+	}
+	depth := 0
+	var quote byte
+	for i := open; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case quote != 0:
+			if c == '\\' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '(' || c == '[':
+			depth++
+		case c == ')' || c == ']':
+			depth--
+			if depth == 0 {
+				return i, nil
+			}
+		}
+	}
+	return 0, errors.New("unterminated bracket")
 }
 
 func isIdentStart(c byte) bool {

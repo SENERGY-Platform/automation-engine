@@ -190,8 +190,15 @@ func TestConstantConditionIsReported(t *testing.T) {
 	}
 }
 
-func TestEmptyOperatorIsReported(t *testing.T) {
-	_, report := rewrite(t, definitions(gateway(`<bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${empty list}</bpmn:conditionExpression>`)))
+func TestEmptyOperatorIsRewritten(t *testing.T) {
+	p, report := rewrite(t, definitions(gateway(`<bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${empty list}</bpmn:conditionExpression>`)))
+	if c := p.Flows["yes"].Condition; !report.Complete() || !strings.HasSuffix(c, `Object.keys(v).length === 0))(list)`) {
+		t.Errorf("%+v\n%v", report, c)
+	}
+}
+
+func TestEmptyBeforeAnotherPrefixOperatorIsReported(t *testing.T) {
+	_, report := rewrite(t, definitions(gateway(`<bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${empty not list}</bpmn:conditionExpression>`)))
 	if report.Complete() || !has(report.Unsupported, "empty") {
 		t.Errorf("%+v", report)
 	}
