@@ -236,3 +236,20 @@ func TestTheReportListsWhatTheConversionWouldDoPerModel(t *testing.T) {
 		t.Errorf("the issues are hints of the conversion: %+v", v.Issues)
 	}
 }
+
+// The base URL of a Camunda engine may carry its basic auth; the report names the engine
+// without it, because the report ends up in logs.
+func TestTheReportLeavesOutTheCredentialsOfCamunda(t *testing.T) {
+	e := newEnv(t)
+	s := &sources{PermissionsV2: e.rights}
+	s.camunda = []migrate.CamundaDeployment{{Engine: "http://camunda:s3cret@shard-2:8080/engine-rest", Id: "c-old", Name: "Old", TenantId: "alice", Key: "old_process", Bpmn: dailyModel()}}
+	report := migrate.Run(ctx, migrate.Options{CamundaOnly: map[string]bool{}}, s, e.target)
+	var out bytes.Buffer
+	report.Write(&out)
+	if strings.Contains(out.String(), "s3cret") {
+		t.Fatalf("the report contains the password:\n%v", out.String())
+	}
+	if !strings.Contains(out.String(), "http://shard-2:8080/engine-rest") {
+		t.Fatalf("the report names the engine:\n%v", out.String())
+	}
+}

@@ -241,7 +241,7 @@ func (this *migration) camundaDeployments(ctx context.Context) error {
 		id := firstNonEmpty(vid, cd.Id)
 		if !this.options.CamundaOnly[cd.Id] && !this.options.CamundaOnly[id] {
 			this.result(step, "deployment", cd.Id, cd.TenantId, Manual, "%q (%v, deployed %v) exists only in Camunda; name it with -camunda-only to migrate it",
-				cd.Name, cd.Engine, dateOf(cd.Time))
+				cd.Name, withoutUserinfo(cd.Engine), dateOf(cd.Time))
 			continue
 		}
 		owner := this.options.owner(cd.TenantId)
@@ -376,7 +376,7 @@ func (this *migration) runningInstances(ctx context.Context) error {
 			sort.Strings(names)
 			all = append(all, running{ci: ci, deploymentId: deploymentId, names: names})
 			candidates = append(candidates, candidate{oldId: ci.Id, origin: "Camunda instance " + ci.Id, key: strings.TrimPrefix(ci.BusinessKey, "wardened:"),
-				generated: uuid.NewSHA1(instanceNamespace, []byte(cd.Engine+"/"+ci.Id)).String(), owner: this.options.owner(ci.TenantId),
+				generated: uuid.NewSHA1(instanceNamespace, []byte(withoutUserinfo(cd.Engine)+"/"+ci.Id)).String(), owner: this.options.owner(ci.TenantId),
 				deploymentId: deploymentId, values: variables, started: ci.StartTime})
 		}
 	}

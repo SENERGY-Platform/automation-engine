@@ -72,6 +72,17 @@ func paging(first int) url.Values {
 	return url.Values{"firstResult": {strconv.Itoa(first)}, "maxResults": {strconv.Itoa(camundaPage)}}
 }
 
+// withoutUserinfo is the base URL of an engine without the basic auth it may carry, for the
+// report and for ids derived from it: the credentials are secret and may change between runs
+func withoutUserinfo(base string) string {
+	u, err := url.Parse(base)
+	if err != nil || u.User == nil {
+		return base
+	}
+	u.User = nil
+	return u.String()
+}
+
 // camundaTime is the format of times in the REST API of Camunda
 const camundaTime = "2006-01-02T15:04:05.000-0700"
 
