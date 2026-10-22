@@ -70,3 +70,13 @@ func TestValidateAcceptsCorsOrigins(t *testing.T) {
 		t.Fatalf("got %q", origins)
 	}
 }
+
+// Smart services may loop in their sequence flow like processes (decided 2026-10-22); a
+// namespace that wants to forbid it sets forbid_cycles itself.
+func TestDefaultNamespacesAllowLoops(t *testing.T) {
+	for _, ns := range DefaultNamespaces() {
+		if ns.ForbidCycles {
+			t.Errorf("namespace %v forbids loops", ns.Name)
+		}
+	}
+}

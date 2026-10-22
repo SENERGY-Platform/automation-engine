@@ -114,7 +114,7 @@ API:
 - Modules: `GET .../modules?instance_id=&module_type=&key=`, `GET|DELETE .../modules/{id}`. Resources are deleted through an outbox with retries; retention does not delete instances with modules, but trims their history like any other.
 - Status of every instance (`status`, `status_message`): `running`, `ready`, `error`, from the run state and the module errors of the hourly health check.
 - Start parameters with options: `GET .../deployments/{id}/parameters`; the engine fills `auto_select_all` fields on start.
-- Changing parameters: `PUT .../instances/{id}/parameters`. Every new run removes the modules of the previous one; `smart-services` therefore rejects loops in the sequence flow (`forbid_cycles`).
+- Changing parameters: `PUT .../instances/{id}/parameters`. Every new run removes the modules of the previous one. Loops in the sequence flow are allowed, also in `smart-services`; a namespace with `forbid_cycles` rejects them at deploy.
 - Maintenance procedures: `GET .../instances/{id}/maintenance-procedures[/{procedure}/parameters]`, `POST .../{procedure}/start`. Message starts in `smart-services` start only this way, not through `/messages`.
 - Setting and deleting variables, also on ended instances: `PUT|DELETE .../instances/{id}/variables/{name}`.
 - Deploy parameters per element: `parameters` on the deployment override inputs, event variables, timers and start defaults.

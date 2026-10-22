@@ -433,6 +433,7 @@ Recorded here so that it is a decision; changing it would be a new task.
 - M4 decisions name `pkg/live.Hub`; it is `pkg/debug.Hub` (see "Cleanup").
 - README: instances with modules are exempt from deletion by retention, not from trimming their history; on a full disk `/ready` reports the error, `/health` does not. Both corrected on 2026-10-20.
 - M6 c: deployments with `network_id` and `prefer_fog_deployment` apply only to namespaces without `cloud_only`; `smart-services` never runs on a gateway ("Namespaces kept from gateways").
+- M5 decisions and status: `smart-services` no longer sets `forbid_cycles` (decided by the user on 2026-10-22, during the migration). Three designs on the platform loop in their sequence flow and could not be migrated otherwise; every new run still removes the modules of the previous one. The setting stays for a namespace that wants to be stricter. A namespace stored by an earlier version keeps its value; the admin API changes it.
 
 ### Before this file is removed
 

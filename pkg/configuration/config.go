@@ -295,8 +295,8 @@ func DefaultNamespaces() []model.Namespace {
 			Deployments:          model.LevelSettings{Shareable: true},
 			Instances:            model.LevelSettings{Shareable: true},
 			IncidentHandling:     model.IncidentHandling{Restart: false, Notify: true},
-			// processes that create modules run briefly; every new run removes the modules of the last one
-			ForbidCycles:               true,
+			// every new run removes the modules of the last one; loops within a run are allowed,
+			// as existing designs use them (decided 2026-10-22), forbid_cycles makes it stricter
 			MessageStartsAreProcedures: true,
 			JsonStringParameters:       true,
 			// smart services run on the platform only; the processes they deploy may go to gateways
