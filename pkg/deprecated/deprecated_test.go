@@ -349,6 +349,24 @@ func TestIncidentsOfTheMonitor(t *testing.T) {
 	if len(incidents) != 1 || incidents[0].DeploymentName != "Lights" || !strings.Contains(incidents[0].ErrorMessage, "broken") || incidents[0].TenantId != "alice" || !strings.HasPrefix(incidents[0].ProcessDefinitionId, "deplid_") {
 		t.Errorf("%+v", incidents)
 	}
+
+	// a restart in Camunda was a new process instance; the engine keeps the id, and the incident of
+	// the first run belongs to a predecessor the old API listed under another id
+	if _, err := e.srv.Controller.RestartInstance(ctx, alice, "processes", started.Id, model.RestartInput{}); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the second incident", func() bool {
+		inst := e.instance(started.Id)
+		return inst.Run == 2 && inst.State == model.StateIncident
+	})
+	e.call(alice, http.MethodGet, "/incidents/incidents?process_instance_id="+started.Id, nil, &incidents)
+	if len(incidents) != 1 {
+		t.Errorf("the incidents of the instance are those of its current run: %+v", incidents)
+	}
+	e.call(alice, http.MethodGet, "/incidents/incidents", nil, &incidents)
+	if len(incidents) != 2 {
+		t.Errorf("the monitor lists every incident: %+v", incidents)
+	}
 }
 
 func TestSchedulesOfWidgets(t *testing.T) {

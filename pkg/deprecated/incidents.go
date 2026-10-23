@@ -78,6 +78,14 @@ func (this *Handler) listIncidents(w http.ResponseWriter, r *http.Request) {
 	if definition := q.Get("process_definition_id"); definition != "" {
 		options.DeploymentId = deploymentOf(definition)
 	}
+	// a restart in Camunda started a new process instance, so the incidents of an instance were
+	// those of its one run; the engine restarts under the same id, and the incidents of earlier
+	// runs belong to predecessors the old API no longer listed under this id
+	if options.InstanceId != "" {
+		if inst, err := this.c.GetInstance(r.Context(), token(r), processes, options.InstanceId); err == nil {
+			options.Run = inst.Run
+		}
+	}
 	incidents, _, err := paged(limit, offset, func(page model.PageOptions) (model.Page[model.Incident], error) {
 		options.PageOptions = page
 		return this.c.ListIncidents(r.Context(), token(r), processes, options)
