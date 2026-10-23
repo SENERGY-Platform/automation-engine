@@ -23,7 +23,9 @@ import (
 
 // Network is a gateway as the cloud synchronises with it (SYNC-12, SYNC-13).
 type Network struct {
-	Id            string `json:"id"`
+	Id string `json:"id"`
+	// the name of the hub in device-repository; empty if it cannot be read
+	Name          string `json:"name,omitempty"`
 	EngineVersion string `json:"engine_version,omitempty"`
 	Protocol      int    `json:"protocol,omitempty"`
 	// false: the gateway speaks a protocol the cloud does not serve; it needs an update (SYNC-11)

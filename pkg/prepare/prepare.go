@@ -159,6 +159,23 @@ func (this *Preparer) PrepareForHub(token string, process *bpmn.Process, hubId s
 	return this.prepare(token, process, hub.DeviceLocalIds)
 }
 
+// HubNames reads the names of the hubs with one request to device-repository; hubs the user
+// cannot read are missing.
+func (this *Preparer) HubNames(token string, ids []string) (map[string]string, error) {
+	result := map[string]string{}
+	if len(ids) == 0 || this.config.DeviceRepositoryUrl == "" {
+		return result, nil
+	}
+	var hubs []models.Hub
+	if err := devices.Token(token).GetJSON(this.config.DeviceRepositoryUrl+"/hubs?ids="+url.QueryEscape(strings.Join(ids, ",")), &hubs); err != nil {
+		return nil, err
+	}
+	for _, hub := range hubs {
+		result[hub.Id] = hub.Name
+	}
+	return result, nil
+}
+
 func (this *Preparer) prepare(token string, process *bpmn.Process, localDevices []string) ([]model.PreparedElement, error) {
 	result := []model.PreparedElement{}
 	laneCriteria := map[string][]devicemodel.FilterCriteria{}

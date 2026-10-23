@@ -18,6 +18,7 @@ package deprecated_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -56,6 +57,16 @@ func newFogEnv(t *testing.T) *env {
 	config.SqlitePath = storetest.MemoryDsn()
 	config.PollInterval = "20ms"
 	config.SyncResendAfter = "300ms"
+	// device-repository knows the name of the hub, which the fog views show
+	hubs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hubs" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"id": hub, "name": "Keller"}})
+	}))
+	t.Cleanup(hubs.Close)
+	config.DeviceRepositoryUrl = hubs.URL
 	deps, err := client.TestDependencies(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -165,8 +176,8 @@ func TestFogViewsOfTheWebUi(t *testing.T) {
 		t.Fatal(status)
 	}
 	e.waitFor("the stopped instance", func() bool { return e.instance("k1").State == model.StateTerminated })
-	var networks []struct{ Id string }
-	if e.call(alice, http.MethodGet, "/process-sync/networks", nil, &networks); len(networks) != 1 || networks[0].Id != hub {
+	var networks []struct{ Id, Name string }
+	if e.call(alice, http.MethodGet, "/process-sync/networks", nil, &networks); len(networks) != 1 || networks[0].Id != hub || networks[0].Name != "Keller" {
 		t.Errorf("%+v", networks)
 	}
 	if status, _ := e.call(alice, http.MethodDelete, "/fog-deployment/deployments/"+hub+"/"+deployed.Id, nil, nil); status != http.StatusOK {

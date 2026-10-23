@@ -12933,6 +12933,10 @@ const docTemplate = `{
                 "last_contact": {
                     "type": "string"
                 },
+                "name": {
+                    "description": "the name of the hub in device-repository; empty if it cannot be read",
+                    "type": "string"
+                },
                 "online": {
                     "type": "boolean"
                 },

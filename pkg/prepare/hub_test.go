@@ -73,3 +73,25 @@ func TestPrepareForAHubWithoutDevicesOffersNothing(t *testing.T) {
 		}
 	}
 }
+
+// The names of the hubs label the networks of the fog views; device-repository answers several
+// ids at once with the hubs the user can read.
+func TestHubNamesAskDeviceRepositoryOnce(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path != "/hubs" || r.URL.Query().Get("ids") != "hub-1,hub-2" || r.Header.Get("Authorization") != "token" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]models.Hub{{Id: "hub-1", Name: "Keller"}})
+	}))
+	t.Cleanup(server.Close)
+	names, err := New(nil, Config{DeviceRepositoryUrl: server.URL}).HubNames("token", []string{"hub-1", "hub-2"})
+	if err != nil || requests != 1 || names["hub-1"] != "Keller" || names["hub-2"] != "" {
+		t.Fatalf("%v %v %v", names, err, requests)
+	}
+	if names, err = New(nil, Config{}).HubNames("token", []string{"hub-1"}); err != nil || len(names) != 0 {
+		t.Fatalf("without device-repository there are no names: %v %v", names, err)
+	}
+}

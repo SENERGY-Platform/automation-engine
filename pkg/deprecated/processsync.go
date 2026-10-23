@@ -135,7 +135,12 @@ func (this *Handler) syncNetworks(w http.ResponseWriter, r *http.Request) {
 	}
 	result := make([]Hub, 0, len(networks))
 	for _, n := range networks {
-		result = append(result, Hub{Id: n.Id, Name: n.Id, DeviceLocalIds: []string{}, DeviceIds: []string{}})
+		// the web-ui shows the name; the id stands in where the hub cannot be read
+		name := n.Name
+		if name == "" {
+			name = n.Id
+		}
+		result = append(result, Hub{Id: n.Id, Name: name, DeviceLocalIds: []string{}, DeviceIds: []string{}})
 	}
 	writeJson(w, http.StatusOK, result)
 }

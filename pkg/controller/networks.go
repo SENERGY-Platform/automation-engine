@@ -69,7 +69,31 @@ func (this *Controller) ListNetworks(ctx context.Context, token string) ([]model
 			ids = []string{}
 		}
 	}
-	return this.networks.Overview(ctx, ids, false)
+	list, err := this.networks.Overview(ctx, ids, false)
+	if err != nil {
+		return nil, err
+	}
+	this.nameNetworks(token, list)
+	return list, nil
+}
+
+// nameNetworks adds the names of the hubs. They only label the networks, so an unreachable
+// device-repository leaves them empty rather than failing the list.
+func (this *Controller) nameNetworks(token string, list []model.Network) {
+	if this.preparer == nil || len(list) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(list))
+	for _, n := range list {
+		ids = append(ids, n.Id)
+	}
+	names, err := this.preparer.HubNames(token, ids)
+	if err != nil {
+		return
+	}
+	for i := range list {
+		list[i].Name = names[list[i].Id]
+	}
 }
 
 // GetNetwork shows a gateway with the desired and the applied state of its resources (SYNC-13).
@@ -91,6 +115,7 @@ func (this *Controller) GetNetwork(ctx context.Context, token string, networkId 
 	if len(list) == 0 {
 		return model.Network{}, model.NotFound("network %v not found", networkId)
 	}
+	this.nameNetworks(token, list)
 	return list[0], nil
 }
 
