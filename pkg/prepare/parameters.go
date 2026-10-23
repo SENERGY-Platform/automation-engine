@@ -186,7 +186,10 @@ func (this *Describer) Describe(ctx context.Context, token string, start *bpmn.E
 			param.Label = f.Id
 		}
 		if param.CharacteristicId != "" && this.characteristics != nil {
-			characteristic, err, _ := this.characteristics.GetCharacteristic(param.CharacteristicId)
+			characteristic, err := shared(ctx, "characteristic\n"+param.CharacteristicId, func() (models.Characteristic, error) {
+				characteristic, err, _ := this.characteristics.GetCharacteristic(param.CharacteristicId)
+				return characteristic, err
+			})
 			if err != nil {
 				return nil, model.Unavailable("characteristic %v: %v", param.CharacteristicId, err)
 			}
@@ -304,47 +307,53 @@ func (this *Describer) selectables(ctx context.Context, token string, typeFilter
 	if err != nil {
 		return nil, err
 	}
-	cache, _ := ctx.Value(selectablesCacheKey{}).(*selectablesCache)
-	if cache == nil {
+	return shared(ctx, "selectables\n"+query.Encode()+"\n"+string(body), func() ([]models.Selectable, error) {
 		return this.querySelectables(ctx, token, query, body)
-	}
-	entry := cache.entry(query.Encode() + "\n" + string(body))
-	entry.once.Do(func() {
-		entry.result, entry.err = this.querySelectables(ctx, token, query, body)
 	})
-	return entry.result, entry.err
 }
 
-type selectablesCacheKey struct{}
+type requestCacheKey struct{}
 
-type selectablesCache struct {
+// requestCache holds the answers the descriptions of one request share
+type requestCache struct {
 	mux     sync.Mutex
-	entries map[string]*selectablesEntry
+	entries map[string]*requestCacheEntry
 }
 
-type selectablesEntry struct {
+type requestCacheEntry struct {
 	once   sync.Once
-	result []models.Selectable
+	result any
 	err    error
 }
 
-func (this *selectablesCache) entry(key string) *selectablesEntry {
-	this.mux.Lock()
-	defer this.mux.Unlock()
-	e, ok := this.entries[key]
-	if !ok {
-		e = &selectablesEntry{}
-		this.entries[key] = e
+// shared asks once per key within a request that carries a cache, also while the first call
+// still runs, and on every call otherwise
+func shared[T any](ctx context.Context, key string, ask func() (T, error)) (T, error) {
+	cache, _ := ctx.Value(requestCacheKey{}).(*requestCache)
+	if cache == nil {
+		return ask()
 	}
-	return e
+	cache.mux.Lock()
+	entry, ok := cache.entries[key]
+	if !ok {
+		entry = &requestCacheEntry{}
+		cache.entries[key] = entry
+	}
+	cache.mux.Unlock()
+	entry.once.Do(func() {
+		entry.result, entry.err = ask()
+	})
+	result, _ := entry.result.(T)
+	return result, entry.err
 }
 
 // WithSelectablesCache lets the parameter descriptions under ctx share their answers from
-// device-selection: a query asked again, also while the first one runs, is sent once. Only for
-// the descriptions of one request, since the answers depend on its token; the release list of
-// the mobile app asks the same criteria for many releases.
+// device-selection and device-repository: a query or characteristic asked again, also while
+// the first one runs, is sent once. Only for the descriptions of one request, since the
+// options depend on its token; the release list of the mobile app asks the same criteria and
+// characteristics for many releases.
 func WithSelectablesCache(ctx context.Context) context.Context {
-	return context.WithValue(ctx, selectablesCacheKey{}, &selectablesCache{entries: map[string]*selectablesEntry{}})
+	return context.WithValue(ctx, requestCacheKey{}, &requestCache{entries: map[string]*requestCacheEntry{}})
 }
 
 func (this *Describer) querySelectables(ctx context.Context, token string, query url.Values, body []byte) (result []models.Selectable, err error) {

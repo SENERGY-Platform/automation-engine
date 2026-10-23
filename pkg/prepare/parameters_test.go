@@ -27,6 +27,7 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/models/go/models"
 )
 
 // selectables answers like device-selection (field names of models.Selectable): a device with two services, one of them with two paths, a group and an import
@@ -150,5 +151,39 @@ func TestSelectablesCacheSendsEachQueryOnce(t *testing.T) {
 	}
 	if _, err := describer.Describe(context.Background(), "Bearer user", start); err != nil || requests != 5 {
 		t.Fatalf("without the cache every parameter asks: %v %v", requests, err)
+	}
+}
+
+type countingCharacteristics struct {
+	mux   sync.Mutex
+	calls int
+}
+
+func (this *countingCharacteristics) GetCharacteristic(id string) (models.Characteristic, error, int) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	this.calls++
+	return models.Characteristic{Id: id, Name: "name of " + id}, nil, 200
+}
+
+// The parameters of many releases name the same few characteristics; within one request each is
+// read from device-repository once.
+func TestSelectablesCacheReadsEachCharacteristicOnce(t *testing.T) {
+	characteristics := &countingCharacteristics{}
+	start := &bpmn.Element{Id: "start", FormFields: []bpmn.FormField{
+		{Id: "a", Type: "string", Properties: map[string]string{"characteristic_id": "c1"}},
+		{Id: "b", Type: "string", Properties: map[string]string{"characteristic_id": "c1"}},
+		{Id: "c", Type: "string", Properties: map[string]string{"characteristic_id": "c2"}},
+	}}
+	describer := NewDescriber("", characteristics)
+	ctx := WithSelectablesCache(context.Background())
+	for range 3 {
+		described, err := describer.Describe(ctx, "Bearer user", start)
+		if err != nil || described[0].Characteristic.(models.Characteristic).Name != "name of c1" || described[2].Characteristic.(models.Characteristic).Name != "name of c2" {
+			t.Fatalf("%+v %v", described, err)
+		}
+	}
+	if characteristics.calls != 2 {
+		t.Fatalf("each characteristic once: %v", characteristics.calls)
 	}
 }
