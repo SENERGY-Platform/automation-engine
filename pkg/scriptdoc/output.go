@@ -98,10 +98,12 @@ type Namespace struct {
 }
 
 type TsMethod struct {
-	Name    string
-	Params  string
-	Result  string
-	Comment []string
+	Name            string
+	Params          string
+	Result          string
+	Comment         []string
+	Deprecated      bool
+	DeprecationNote string
 }
 
 var builtinGlobals = map[string]string{"console": "Console"}
@@ -130,7 +132,7 @@ func Namespaces(methods []Method) (result []Namespace) {
 }
 
 func tsMethod(m Method) TsMethod {
-	result := TsMethod{Name: m.Name, Result: "void", Comment: m.CommentLines()}
+	result := TsMethod{Name: m.Name, Result: "void", Comment: m.CommentLines(), Deprecated: m.Deprecated, DeprecationNote: m.DeprecationNote}
 	if m.Result != nil {
 		result.Result = ToTsType(m.Result.Type)
 	}

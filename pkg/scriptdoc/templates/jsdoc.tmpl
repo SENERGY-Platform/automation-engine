@@ -6,7 +6,8 @@
  */
 {{end}}{{range .methods}}
 /**{{range .CommentLines}}
- * {{.}}{{end}}
+ * {{.}}{{end}}{{if .Deprecated}}
+ * @deprecated{{if .DeprecationNote}} {{.DeprecationNote}}{{end}}{{end}}
  * @function {{.Namespace}}#{{.Name}}
 {{range .Params}} * @param { {{.Type}} } {{.Name}}
 {{end}}{{if .Result}} * @returns { {{.Result.Type}} }

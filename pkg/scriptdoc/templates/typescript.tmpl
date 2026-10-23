@@ -7,8 +7,9 @@ interface {{.Name}} {
 {{end}}}
 {{end}}{{range .namespaces}}
 {{if .Interface}}interface {{.Interface}} {{"{"}}{{else}}declare const {{.Name}}: {{"{"}}{{end}}
-{{range .Methods}}{{if .Comment}}    /**
+{{range .Methods}}{{if or .Comment .Deprecated}}    /**
 {{range .Comment}}     * {{.}}
+{{end}}{{if .Deprecated}}     * @deprecated{{if .DeprecationNote}} {{.DeprecationNote}}{{end}}
 {{end}}     */
 {{end}}    {{.Name}}({{.Params}}): {{.Result}};
 {{end}}{{if .Interface}}}

@@ -10,7 +10,7 @@ const completer = {
                 {
                     caption: '{{$m.Namespace}}.{{$m.Name}}',
                     value: 'var {{$m.Result.NameWithType}} = {{$m.Namespace}}.{{$m.Name}}({{$m.ParamsStr}});',
-                    meta: 'static'
+                    meta: '{{if $m.Deprecated}}deprecated{{else}}static{{end}}'
                 }{{end}}
             ]);
         } else {
@@ -18,7 +18,7 @@ const completer = {
                 {
                     caption: '{{$m.Namespace}}.{{$m.Name}}',
                     value: '{{$m.Namespace}}.{{$m.Name}}({{$m.ParamsStr}})',
-                    meta: 'static'
+                    meta: '{{if $m.Deprecated}}deprecated{{else}}static{{end}}'
                 }{{end}}
             ]);
         }

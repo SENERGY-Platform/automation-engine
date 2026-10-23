@@ -361,3 +361,32 @@ func fieldNames(def TypeDef) (result []string) {
 	sort.Strings(result)
 	return result
 }
+
+// A method is deprecated by a paragraph of its doc comment that opens with "Deprecated", the Go
+// convention; editors cross out a call of it, the completion marks it.
+func TestDeprecatedMethodsAreMarkedInEveryOutput(t *testing.T) {
+	comment, note, deprecated := splitDeprecation("Read value of a variable\n\nDeprecated: use readValue,\nwhich parses JSON text\n")
+	if comment != "Read value of a variable" || note != "use readValue, which parses JSON text" || !deprecated {
+		t.Fatalf("%q %q %v", comment, note, deprecated)
+	}
+	if _, _, deprecated = splitDeprecation("Names a deprecatedField\n"); deprecated {
+		t.Fatal("only a paragraph opening with the word deprecates")
+	}
+	files, err := Generate(compatSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for file, expected := range map[string]string{
+		"modules/script-env.d.ts":       "     * @deprecated use getValue",
+		"modules/jsdoc.js":              " * @deprecated use getValue",
+		"modules/ace-code-completer.ts": "caption: 'inputs.get',",
+		"README.md":                     "<br>**Deprecated**: use getValue",
+	} {
+		if !strings.Contains(files[file], expected) {
+			t.Errorf("%v lacks %q", file, expected)
+		}
+	}
+	if !strings.Contains(files["modules/ace-code-completer.ts"], "meta: 'deprecated'") {
+		t.Error("the completion marks deprecated methods")
+	}
+}

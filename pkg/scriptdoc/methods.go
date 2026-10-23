@@ -35,6 +35,10 @@ type Method struct {
 	ParamsStr string
 	Result    *Parameter
 	Comment   string
+	// from a paragraph of the comment that opens with "Deprecated", the Go convention; the
+	// paragraph is not part of Comment
+	Deprecated      bool
+	DeprecationNote string
 }
 
 // Parameter has its type in jsdoc notation.
@@ -57,7 +61,8 @@ func Methods(dir string, namespaces map[string]any) (result []Method, err error)
 			t = t.Elem()
 		}
 		for _, decl := range methodDecls(parsed, t.Name()) {
-			method := Method{Namespace: namespace, Name: uncapitalize(decl.Name.Name), Comment: strings.TrimSpace(decl.Doc.Text())}
+			method := Method{Namespace: namespace, Name: uncapitalize(decl.Name.Name)}
+			method.Comment, method.DeprecationNote, method.Deprecated = splitDeprecation(decl.Doc.Text())
 			examples := []string{}
 			index := 0
 			for _, field := range decl.Type.Params.List {
@@ -92,6 +97,31 @@ func Methods(dir string, namespaces map[string]any) (result []Method, err error)
 		return strings.Compare(a.Name, b.Name)
 	})
 	return result, nil
+}
+
+// splitDeprecation takes the paragraph that opens with "Deprecated" out of a doc comment and
+// returns its text after the word as the note
+func splitDeprecation(doc string) (comment string, note string, deprecated bool) {
+	var kept, noteLines []string
+	inNote := false
+	for _, line := range strings.Split(doc, "\n") {
+		switch {
+		case inNote && strings.TrimSpace(line) == "":
+			inNote = false
+		case inNote:
+			noteLines = append(noteLines, strings.TrimSpace(line))
+		default:
+			if first, ok := deprecationOfLine(line); ok && !deprecated {
+				deprecated, inNote = true, true
+				if first != "" {
+					noteLines = append(noteLines, first)
+				}
+				continue
+			}
+			kept = append(kept, line)
+		}
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n")), strings.Join(noteLines, " "), deprecated
 }
 
 func methodDecls(parsed map[string]*ast.Package, typeName string) (result []*ast.FuncDecl) {

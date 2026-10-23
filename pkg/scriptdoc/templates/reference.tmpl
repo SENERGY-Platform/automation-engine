@@ -37,7 +37,7 @@ Applies to the inputs `prescript*` and `postscript*` of the task types `info`, `
 {{range .namespaces}}
 ### `{{.Name}}`
 {{range .Methods}}
-- `{{.Name}}({{.Params}}): {{.Result}}`{{if .Comment}}<br>{{join .Comment " "}}{{end}}
+- `{{.Name}}({{.Params}}): {{.Result}}`{{if .Comment}}<br>{{join .Comment " "}}{{end}}{{if .Deprecated}}<br>**Deprecated**{{if .DeprecationNote}}: {{.DeprecationNote}}{{end}}{{end}}
 {{- end}}
 {{end}}
 ### Types
