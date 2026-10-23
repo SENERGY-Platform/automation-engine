@@ -141,7 +141,7 @@ func engineConfig(config configuration.Config) (engine.Config, error) {
 	result.RetentionDefaultDays = config.RetentionDefaultDays
 	result.RetentionMaxDays = config.RetentionMaxDays
 	result.ModelVersionsKept = config.ModelVersionsKept
-	result.StorageBudget = config.StorageBudget
+	result.StorageBudget = int64(config.StorageBudget)
 	return result, nil
 }
 
@@ -360,7 +360,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	var agent *fogsync.Gateway
 	if fog {
 		settings := fogsync.DefaultGatewaySettings()
-		settings.EngineVersion, settings.StorageBudget = Version(), config.StorageBudget
+		settings.EngineVersion, settings.StorageBudget = Version(), int64(config.StorageBudget)
 		agent = fogsync.NewGateway(settings, s, e, registry, broker, logger)
 		agent.SetLocal(c)
 	}

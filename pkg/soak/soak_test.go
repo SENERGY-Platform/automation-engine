@@ -284,7 +284,7 @@ func newEnv(t *testing.T, ctx context.Context, s settings) *env {
 	gatewayConfig.MinTimerDuration = "0s"
 	gatewayConfig.Mode = "fog"
 	gatewayConfig.SqlitePath = this.dbPath
-	gatewayConfig.StorageBudget = s.budget
+	gatewayConfig.StorageBudget = configuration.ByteSize(s.budget)
 	gatewayConfig.DeviceRepositoryUrl = repo.URL
 	gatewayConfig.MqttBroker, gatewayConfig.MqttClientId, gatewayConfig.MqttUser = "memory", "automation-engine-soak", s.user
 	gatewayDeps := server.Dependencies{Marshaller: marshaller{}, EventUnmarshaller: unmarshaller{}}

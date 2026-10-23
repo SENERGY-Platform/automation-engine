@@ -191,8 +191,9 @@ type Config struct {
 	NetworkCleanupMaxAge string `json:"network_cleanup_max_age" env_var:"NETWORK_CLEANUP_MAX_AGE"`
 	// protocol versions of gateways before the own one the cloud serves (SYNC-11)
 	SyncProtocolWindow int `json:"sync_protocol_window" env_var:"SYNC_PROTOCOL_WINDOW"`
-	// upper bound of the database in bytes; 0 is unlimited, in fog 1 GiB, negative unlimited (LONG-07)
-	StorageBudget int64 `json:"storage_budget" env_var:"STORAGE_BUDGET"`
+	// upper bound of the database, in bytes or with a unit such as "1GiB"; 0 is unlimited, in fog
+	// 1 GiB, negative unlimited (LONG-07)
+	StorageBudget ByteSize `json:"storage_budget" env_var:"STORAGE_BUDGET"`
 	// fog: the Postgres of process-io-worker of the old process module; its values are taken
 	// over once at the first start (MIG-06)
 	LegacyIoPostgres types.Secret `json:"legacy_io_postgres" env_var:"LEGACY_IO_POSTGRES"`
@@ -326,7 +327,7 @@ func Load(path string) (Config, error) {
 			path = ""
 		}
 	}
-	err := confighdl.Load(&config, nil, []confighdl.EnvTypeParser{types.SecretEnvTypeParser}, nil, path)
+	err := confighdl.Load(&config, nil, []confighdl.EnvTypeParser{types.SecretEnvTypeParser, ByteSizeEnvTypeParser}, nil, path)
 	if err != nil {
 		return config, err
 	}

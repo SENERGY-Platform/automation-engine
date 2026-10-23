@@ -8,6 +8,7 @@ require (
 	github.com/SENERGY-Platform/device-repository/v3 v3.4.4
 	github.com/SENERGY-Platform/device-selection/v2 v2.1.0
 	github.com/SENERGY-Platform/gin-middleware v0.14.1
+	github.com/SENERGY-Platform/go-env-loader v0.5.3
 	github.com/SENERGY-Platform/go-service-base/config-hdl v1.2.0
 	github.com/SENERGY-Platform/go-service-base/struct-logger v0.8.1
 	github.com/SENERGY-Platform/marshaller v0.3.0
@@ -44,7 +45,6 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/RyanCarrier/dijkstra v1.4.0 // indirect
 	github.com/SENERGY-Platform/device-repository/v2 v2.2.2 // indirect
-	github.com/SENERGY-Platform/go-env-loader v0.5.3 // indirect
 	github.com/SENERGY-Platform/mgw-cloud-proxy/cert-manager/lib v0.0.4 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
