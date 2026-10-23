@@ -278,6 +278,11 @@ func (this *ClientImpl) GetDeploymentVersion(ctx context.Context, token string, 
 	return result, err
 }
 
+func (this *ClientImpl) GetDeploymentSource(ctx context.Context, token string, namespace string, id string, version int) (result model.ModelVersion, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "deployments", id, "versions", strconv.Itoa(version), "source"), nil, nil, &result)
+	return result, err
+}
+
 func (this *ClientImpl) GetStartParameters(ctx context.Context, token string, namespace string, deploymentId string) (result []model.StartParameter, err error) {
 	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "deployments", deploymentId, "start-parameters"), nil, nil, &result)
 	return result, err

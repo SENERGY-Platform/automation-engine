@@ -145,6 +145,7 @@ func (h *handlers) routes() []route {
 		{"DELETE /namespaces/{ns}/deployments/{id}", h.deleteDeployment},
 		{"GET /namespaces/{ns}/deployments/{id}/versions", h.listDeploymentVersions},
 		{"GET /namespaces/{ns}/deployments/{id}/versions/{version}", h.getDeploymentVersion},
+		{"GET /namespaces/{ns}/deployments/{id}/versions/{version}/source", h.getDeploymentSource},
 		{"GET /namespaces/{ns}/deployments/{id}/start-parameters", h.getStartParameters},
 		{"GET /namespaces/{ns}/deployments/{id}/parameters", h.getDeploymentParameters},
 		{"POST /namespaces/{ns}/deployments/{id}/reset-restarts", h.resetRestarts},

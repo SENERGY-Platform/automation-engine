@@ -483,6 +483,29 @@ func (this *Controller) GetDeploymentVersion(ctx context.Context, token string, 
 	return result, err
 }
 
+// GetDeploymentSource returns the model version a version of a deployment was created from, as
+// it was saved, before the conversion for the engine. Reading the deployment is enough: whoever
+// sees a release sees what it was made of, as with the copy smart-service-repository kept.
+// ErrNotFound if the version names no model or the model version is gone.
+func (this *Controller) GetDeploymentSource(ctx context.Context, token string, namespace string, id string, version int) (result model.ModelVersion, err error) {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		d, err := this.readDeployment(ctx, tx, token, namespace, id, Read, false)
+		if err != nil {
+			return err
+		}
+		v, err := tx.GetDeploymentVersion(id, version)
+		if err != nil {
+			return err
+		}
+		if d.ModelId == "" || v.ModelVersion == 0 {
+			return model.NotFound("version %v of deployment %v names no model", version, id)
+		}
+		result, err = tx.GetModelVersion(d.ModelId, v.ModelVersion)
+		return err
+	})
+	return result, err
+}
+
 func (this *Controller) GetStartParameters(ctx context.Context, token string, namespace string, deploymentId string) (result []model.StartParameter, err error) {
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		d, err := this.readDeployment(ctx, tx, token, namespace, deploymentId, Read, false)

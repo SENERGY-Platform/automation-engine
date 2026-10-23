@@ -142,3 +142,29 @@ func TestExtendedReleaseDescribesAFieldWithoutDefaultWithNull(t *testing.T) {
 		t.Fatalf("pipeline_id declares no default: default_value %#v", value)
 	}
 }
+
+// smart-service-repository kept the BPMN of the design in its release; clients such as
+// platform-content compare it with their design to tell whether a release is current. The engine
+// runs a converted copy, which the release must not show instead.
+func TestExtendedReleaseShowsTheReleasedDesign(t *testing.T) {
+	e := newEnv(t)
+	xml := fixture(t, "maintenance.bpmn")
+	release := e.createRelease(alice, e.createDesign(alice, "Released", xml).Id, "release name")
+	var extended struct {
+		BpmnXml string `json:"bpmn_xml"`
+	}
+	if status, _ := e.call(alice, http.MethodGet, "/smart-services/extended-releases/"+url.PathEscape(release.Id), nil, &extended); status != http.StatusOK {
+		t.Fatal(status)
+	}
+	if extended.BpmnXml != xml {
+		t.Errorf("the release shows the design as released:\n%v", extended.BpmnXml)
+	}
+	var list []struct {
+		Id      string `json:"id"`
+		BpmnXml string `json:"bpmn_xml"`
+	}
+	e.call(alice, http.MethodGet, "/smart-services/extended-releases", nil, &list)
+	if len(list) != 1 || list[0].BpmnXml != xml {
+		t.Errorf("the list shows it as well: %+v", list)
+	}
+}

@@ -445,6 +445,29 @@ func (h *handlers) getDeploymentVersion(w http.ResponseWriter, r *http.Request) 
 	respond(w, http.StatusOK, result, err)
 }
 
+// getDeploymentSource godoc
+//
+//	@Summary		the model version a version of a deployment was created from, as saved
+//	@Description	BPMN and SVG before the conversion for the engine, e.g. in the format of the old designer. Reading the deployment is enough. 404 if the version names no model or the model version is gone.
+//	@Tags			deployments
+//	@Security		Bearer
+//	@Produce		json
+//	@Param			ns		path		string	true	"namespace"
+//	@Param			id		path		string	true	"deployment id"
+//	@Param			version	path		int		true	"version"
+//	@Success		200		{object}	model.ModelVersion
+//	@Failure		404		{object}	model.Error
+//	@Router			/namespaces/{ns}/deployments/{id}/versions/{version}/source [get]
+func (h *handlers) getDeploymentSource(w http.ResponseWriter, r *http.Request) {
+	version, err := pathInt(r, "version")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	result, err := h.c.GetDeploymentSource(r.Context(), token(r), r.PathValue("ns"), r.PathValue("id"), version)
+	respond(w, http.StatusOK, result, err)
+}
+
 // getStartParameters godoc
 //
 //	@Summary	start parameters of the current version, without fields marked ignore_on_start

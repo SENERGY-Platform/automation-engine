@@ -7575,6 +7575,43 @@ paths:
       summary: get a version of a deployment with BPMN and SVG
       tags:
       - deployments
+  /namespaces/{ns}/deployments/{id}/versions/{version}/source:
+    get:
+      description: BPMN and SVG before the conversion for the engine, e.g. in the
+        format of the old designer. Reading the deployment is enough. 404 if the version
+        names no model or the model version is gone.
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: deployment id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: version
+        in: path
+        name: version
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ModelVersion'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: the model version a version of a deployment was created from, as saved
+      tags:
+      - deployments
   /namespaces/{ns}/incidents:
     get:
       parameters:

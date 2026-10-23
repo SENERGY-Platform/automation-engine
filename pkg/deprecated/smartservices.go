@@ -696,8 +696,15 @@ func releaseInfo(xml string) ReleaseInfo {
 	return result
 }
 
+// extendedRelease shows the BPMN of the design as it was released, as smart-service-repository
+// kept it; clients compare it with their design to tell whether a release is current. Only a
+// version without its model, e.g. one taken over without a matching design, shows what runs.
 func (this *Handler) extendedRelease(r *http.Request, d model.Deployment, v model.DeploymentVersion) SmartServiceReleaseExtended {
-	return SmartServiceReleaseExtended{SmartServiceRelease: release(d, v.Version, v.CreatedAt.Unix(), v.ChangedResources), BpmnXml: v.Xml, SvgXml: v.Svg,
+	xml, svg := v.Xml, v.Svg
+	if source, err := this.c.GetDeploymentSource(r.Context(), token(r), smartServices, d.Id, v.Version); err == nil {
+		xml, svg = source.Xml, source.Svg
+	}
+	return SmartServiceReleaseExtended{SmartServiceRelease: release(d, v.Version, v.CreatedAt.Unix(), v.ChangedResources), BpmnXml: xml, SvgXml: svg,
 		ParsedInfo: releaseInfo(v.Xml), PermissionsInfo: permissions(r, d.Owner, releaseRights)}
 }
 
