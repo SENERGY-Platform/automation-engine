@@ -20,7 +20,9 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
@@ -59,11 +61,53 @@ func (this *Controller) DeploymentParameters(ctx context.Context, token string, 
 // device-selection and device-repository
 const usableConcurrency = 16
 
+// usableTTL is how long a computed usable flag is served without asking again; a device the
+// user adds shows in the flag after this time at the latest, the parameters of a single
+// deployment are always described fresh
+const usableTTL = 5 * time.Minute
+
+type usableEntry struct {
+	usable bool
+	at     time.Time
+}
+
+// usableFlags keeps computed usable flags per user, deployment and version
+type usableFlags struct {
+	mux     sync.Mutex
+	entries map[string]usableEntry
+}
+
+func (this *usableFlags) get(key string, now time.Time) (bool, bool) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	entry, ok := this.entries[key]
+	if !ok || now.Sub(entry.at) > usableTTL {
+		return false, false
+	}
+	return entry.usable, true
+}
+
+func (this *usableFlags) set(key string, usable bool, now time.Time) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	if this.entries == nil {
+		this.entries = map[string]usableEntry{}
+	}
+	for k, entry := range this.entries {
+		if now.Sub(entry.at) > usableTTL {
+			delete(this.entries, k)
+		}
+	}
+	this.entries[key] = usableEntry{usable: usable, at: now}
+}
+
 // DeploymentsUsable reports per deployment whether every start parameter of its current
 // version has an option for the caller, the usable flag of release lists (SMS-08). Deployments
-// without the execute right, or unknown ones, are not usable. Unlike DeploymentParameters per
-// deployment it checks the rights once and holds no database connection while it asks other
-// services: a list of 46 releases one by one took longer than the mobile app waits.
+// without the execute right, or unknown ones, are not usable. It checks the rights once and
+// holds no database connection while it asks other services; each description costs
+// device-selection about 100 ms of work, so a list of a few dozen releases takes seconds.
+// A flag that is not computed when ctx ends is missing from the result; its computation goes
+// on and serves the next call from a cache for a few minutes.
 func (this *Controller) DeploymentsUsable(ctx context.Context, token string, namespace string, ids []string) (map[string]bool, error) {
 	user, _, err := this.begin(token, namespace)
 	if err != nil {
@@ -73,8 +117,13 @@ func (this *Controller) DeploymentsUsable(ctx context.Context, token string, nam
 	if err != nil {
 		return nil, err
 	}
+	type pending struct {
+		id, key string
+		start   *bpmn.Element
+	}
 	result := map[string]bool{}
-	starts := map[string]*bpmn.Element{}
+	var todo []pending
+	now := time.Now()
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		for _, id := range ids {
 			result[id] = false
@@ -85,35 +134,60 @@ func (this *Controller) DeploymentsUsable(ctx context.Context, token string, nam
 			if !access.Admin && d.Owner != access.Owner && !slices.Contains(access.Ids, d.Id) {
 				continue
 			}
+			key := user.GetUserId() + "|" + d.Id + "|" + strconv.Itoa(d.Version)
+			if usable, ok := this.usable.get(key, now); ok {
+				result[id] = usable
+				continue
+			}
 			proc, err := this.engine.Process(tx, d.Id, d.Version)
 			if err != nil {
 				return err
 			}
-			starts[id] = proc.NoneStartEvent()
+			delete(result, id)
+			todo = append(todo, pending{id: id, key: key, start: proc.NoneStartEvent()})
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, err
+	if err != nil || len(todo) == 0 {
+		return result, err
 	}
-	shared := prepare.WithSelectablesCache(ctx)
+	// the work outlives ctx, so that a flag missing now is cached for the next call
+	work := prepare.WithSelectablesCache(context.WithoutCancel(ctx))
 	var mux sync.Mutex
-	var wg sync.WaitGroup
-	slots := make(chan struct{}, usableConcurrency)
-	for id, start := range starts {
-		wg.Add(1)
-		slots <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-slots }()
-			parameters, err := this.describe(shared, token, start)
-			usable := err == nil && !slices.ContainsFunc(parameters, func(p model.ParameterDescription) bool { return p.HasNoValidOption })
-			mux.Lock()
-			result[id] = usable
-			mux.Unlock()
-		}()
+	computed := map[string]bool{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var wg sync.WaitGroup
+		slots := make(chan struct{}, usableConcurrency)
+		for _, p := range todo {
+			wg.Add(1)
+			slots <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-slots }()
+				parameters, err := this.describe(work, token, p.start)
+				if err != nil {
+					return
+				}
+				usable := !slices.ContainsFunc(parameters, func(d model.ParameterDescription) bool { return d.HasNoValidOption })
+				this.usable.set(p.key, usable, time.Now())
+				mux.Lock()
+				computed[p.id] = usable
+				mux.Unlock()
+			}()
+		}
+		wg.Wait()
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
 	}
-	wg.Wait()
+	mux.Lock()
+	defer mux.Unlock()
+	for id, usable := range computed {
+		result[id] = usable
+	}
 	return result, nil
 }
 

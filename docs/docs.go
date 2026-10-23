@@ -6406,7 +6406,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "The usable flag of release lists (SMS-08): per id, false without the execute right, for an unknown deployment, or when a required IoT parameter offers nothing to select.",
+                "description": "The usable flag of release lists (SMS-08): per id, false without the execute right, for an unknown deployment, or when a required IoT parameter offers nothing to select. Computed flags are kept for five minutes per user and version; an id whose flag was not computed before the request ended is missing from the answer.",
                 "produces": [
                     "application/json"
                 ],

@@ -95,6 +95,8 @@ type Controller struct {
 	userToken auth.UserTokenSource
 	// nil without synchronisation with gateways (DEP-09)
 	networks Networks
+	// usable flags of release lists, computed in the background past the request (SMS-08)
+	usable usableFlags
 }
 
 // SetIo enables the process-io API (IO-02).

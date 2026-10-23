@@ -471,7 +471,7 @@ func (h *handlers) getDeploymentSource(w http.ResponseWriter, r *http.Request) {
 // getDeploymentsUsable godoc
 //
 //	@Summary		whether every start parameter of each deployment has an option for the caller
-//	@Description	The usable flag of release lists (SMS-08): per id, false without the execute right, for an unknown deployment, or when a required IoT parameter offers nothing to select.
+//	@Description	The usable flag of release lists (SMS-08): per id, false without the execute right, for an unknown deployment, or when a required IoT parameter offers nothing to select. Computed flags are kept for five minutes per user and version; an id whose flag was not computed before the request ended is missing from the answer.
 //	@Tags			deployments
 //	@Security		Bearer
 //	@Produce		json

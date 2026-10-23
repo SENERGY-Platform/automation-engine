@@ -17,12 +17,14 @@
 package deprecated
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -810,19 +812,28 @@ func (this *Handler) releases(r *http.Request) ([]model.Deployment, []model.Depl
 	return resultDeployments, versions, total, nil
 }
 
+// usableBudget is how long a release list waits for its usable flags; the mobile app gives up
+// after 5 s. A flag not ready by then is left out, which the app reads as usable, and the next
+// list gets it from the cache of the engine.
+var usableBudget = 3 * time.Second
+
 // usableFlags reports per deployment whether it is usable, as smart-service-repository
-// computed the flags; an error leaves every release unusable
-func (this *Handler) usableFlags(r *http.Request, deployments []model.Deployment) []bool {
+// computed the flags; nil for a flag not computed within usableBudget or after an error
+func (this *Handler) usableFlags(r *http.Request, deployments []model.Deployment) []*bool {
 	ids := make([]string, 0, len(deployments))
 	for _, d := range deployments {
 		if !slices.Contains(ids, d.Id) {
 			ids = append(ids, d.Id)
 		}
 	}
-	usable, _ := this.c.DeploymentsUsable(r.Context(), token(r), smartServices, ids)
-	result := make([]bool, len(deployments))
+	ctx, cancel := context.WithTimeout(r.Context(), usableBudget)
+	defer cancel()
+	usable, _ := this.c.DeploymentsUsable(ctx, token(r), smartServices, ids)
+	result := make([]*bool, len(deployments))
 	for i, d := range deployments {
-		result[i] = usable[d.Id]
+		if flag, ok := usable[d.Id]; ok {
+			result[i] = &flag
+		}
 	}
 	return result
 }
@@ -849,7 +860,7 @@ func (this *Handler) listReleases(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	var usable []bool
+	var usable []*bool
 	if boolParam(r, "add-usable-flag") {
 		usable = this.usableFlags(r, deployments)
 	}
@@ -857,7 +868,7 @@ func (this *Handler) listReleases(w http.ResponseWriter, r *http.Request) {
 	for i, v := range versions {
 		item := release(deployments[i], v.Version, v.CreatedAt.Unix(), v.ChangedResources)
 		if usable != nil {
-			item.Usable = &usable[i]
+			item.Usable = usable[i]
 		}
 		result = append(result, item)
 	}
@@ -888,7 +899,7 @@ func (this *Handler) listExtendedReleases(w http.ResponseWriter, r *http.Request
 		writeError(w, err)
 		return
 	}
-	var usable []bool
+	var usable []*bool
 	if boolParam(r, "add-usable-flag") {
 		usable = this.usableFlags(r, deployments)
 	}
@@ -896,7 +907,7 @@ func (this *Handler) listExtendedReleases(w http.ResponseWriter, r *http.Request
 	for i, v := range versions {
 		item := this.extendedRelease(r, deployments[i], v)
 		if usable != nil {
-			item.Usable = &usable[i]
+			item.Usable = usable[i]
 		}
 		result = append(result, item)
 	}

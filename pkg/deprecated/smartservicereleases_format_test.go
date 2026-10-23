@@ -19,9 +19,14 @@ package deprecated_test
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"testing"
+	"time"
+
+	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
+	"github.com/SENERGY-Platform/automation-engine/pkg/deprecated"
 )
 
 // smart-service-repository answered with options [] for an IoT parameter without any device
@@ -191,5 +196,36 @@ func TestReleaseListWithUsableFlag(t *testing.T) {
 				t.Errorf("%v: %v has no flag", query, item.Id)
 			}
 		}
+	}
+}
+
+// device-selection costs about 100 ms per query, and the mobile app waits 5 s for a release
+// list. A flag not computed within the budget is left out, which the app reads as usable; the
+// computation goes on, and the next list has it.
+func TestReleaseListLeavesOutUsableFlagsThatTakeTooLong(t *testing.T) {
+	defer deprecated.SetUsableBudget(200 * time.Millisecond)()
+	selection := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(600 * time.Millisecond)
+		_, _ = w.Write([]byte(`[{"device":{"id":"d1","name":"lamp"},"services":[{"id":"s1","name":"switch"}],"servicePathOptions":{"s1":[{"path":"value"}]}}]`))
+	}))
+	t.Cleanup(selection.Close)
+	e, _ := newEnvWith(t, func(config *configuration.Config) { config.DeviceSelectionUrl = selection.URL })
+	release := e.createRelease(alice, e.createDesign(alice, "Slow", fixture(t, "maintenance.bpmn")).Id, "slow")
+	type item struct {
+		Id     string `json:"id"`
+		Usable *bool  `json:"usable"`
+	}
+	var list []item
+	start := time.Now()
+	e.call(alice, http.MethodGet, "/smart-services/releases?add-usable-flag=true&latest=true", nil, &list)
+	if len(list) != 1 || list[0].Usable != nil || time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("answers within the budget without the flag: %v %+v", time.Since(start), list)
+	}
+	e.waitFor("the flag computed in the background", func() bool {
+		e.call(alice, http.MethodGet, "/smart-services/releases?add-usable-flag=true&latest=true", nil, &list)
+		return len(list) == 1 && list[0].Usable != nil
+	})
+	if list[0].Id != release.Id {
+		t.Errorf("%+v", list)
 	}
 }
