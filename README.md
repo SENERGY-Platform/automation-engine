@@ -180,6 +180,8 @@ Namespaces from `NAMESPACES` are created only if they do not exist yet; after th
 
 OpenAPI in `docs/swagger.json` and `docs/swagger.yaml`, generated with `go generate ./...` from the Go types in `pkg/model` and the annotations in `pkg/api`. Regenerate after changes to the API or the types and check the files in.
 
+A model or a deployment of BPMN sent without `bpmndi:BPMNDiagram` is stored with a generated one, so that the designer can show it: flow nodes in layers along the sequence flows, lanes as bands, participants of a collaboration as pools, boundary events on the lower edge of their activity, a subprocess with content collapsed with a diagram of its own. Annotations, data objects and message flows get no position. A model with a diagram is stored as sent.
+
 AsyncAPI 3.0.0 in `docs/asyncapi.json`: the Kafka topics and MQTT topics the engine reads and writes (device commands, device and import data, platform signals, gateway, synchronisation). Also generated with `go generate ./...`, by `docs/asyncapi-gen`; the payload schemas come from the Go types of the messages, the topic names from the defaults of the configuration. Unlike other platform services, there is no conversion from 2.4.0 by hand, and CI checks the file as it does the OpenAPI.
 
 Go client in `pkg/client`: `client.New(url)` for a running server, `client.NewTestClient(ctx)` for tests without network and containers; both implement the same interface.

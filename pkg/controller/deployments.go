@@ -106,7 +106,7 @@ func (this *Controller) source(ctx context.Context, tx *store.Tx, user jwt.Token
 			}
 		}
 	case input.Xml != "":
-		result = resolvedDeployment{xml: input.Xml, svg: input.Svg}
+		result = resolvedDeployment{xml: withDiagram(input.Xml), svg: input.Svg}
 	default:
 		return result, model.BadRequest("model_id or xml is required")
 	}

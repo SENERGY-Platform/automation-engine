@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
@@ -145,7 +146,7 @@ func TestModelLifecycleWithVersionsAndValidationHints(t *testing.T) {
 			t.Fatalf("versions newest first without content: %+v %v", versions, err)
 		}
 		first, err := c.GetModelVersion(ctx, alice, ns, m.Id, 1)
-		if err != nil || first.Xml != invalid || first.Svg != "<svg/>" {
+		if err != nil || first.Xml != withDiagram(t, invalid) || first.Svg != "<svg/>" {
 			t.Fatalf("version 1 keeps its content: %v", err)
 		}
 		if _, err = c.GetModel(ctx, bob, ns, m.Id); !errors.Is(err, model.ErrNotFound) {
@@ -318,7 +319,7 @@ func TestDeploymentUpdateAndDelete(t *testing.T) {
 			t.Fatalf("versions: %+v %v", versions, err)
 		}
 		v1, err := c.GetDeploymentVersion(ctx, alice, ns, d.Id, 1)
-		if err != nil || v1.Xml != waitingModel() {
+		if err != nil || v1.Xml != withDiagram(t, waitingModel()) {
 			t.Fatalf("version 1 keeps its BPMN: %v", err)
 		}
 		if err = c.DeleteDeployment(ctx, alice, ns, d.Id); err != nil {
@@ -398,6 +399,46 @@ func TestErrorsAreTyped(t *testing.T) {
 			if err := call(); !errors.Is(err, expected) {
 				t.Errorf("expected %v, got %v", expected, err)
 			}
+		}
+	})
+}
+
+// withDiagram is a model without diagram as the engine stores it
+func withDiagram(t *testing.T, xml string) string {
+	t.Helper()
+	result, added, err := bpmn.WithDiagram(xml)
+	if err != nil || !added {
+		t.Fatalf("%v %v", added, err)
+	}
+	return result
+}
+
+// A client may send a model without bpmndi:BPMNDiagram; the engine adds one, so that the
+// designer can show the model, for models and for deployments of raw BPMN.
+func TestModelsWithoutDiagramGetOne(t *testing.T) {
+	each(t, func(t *testing.T, c client.Client) {
+		m, err := c.CreateModel(ctx, alice, ns, model.ModelInput{Xml: waitingModel()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, err := c.GetModelVersion(ctx, alice, ns, m.Id, 1)
+		if err != nil || !strings.Contains(v.Xml, "BPMNDiagram") || !strings.Contains(v.Xml, `bpmnElement="wait"`) {
+			t.Fatalf("the model is stored with a diagram: %v\n%v", err, v.Xml)
+		}
+		withDiagram := v.Xml
+		if _, err = c.UpdateModel(ctx, alice, ns, m.Id, model.ModelInput{Xml: withDiagram}); err != nil {
+			t.Fatal(err)
+		}
+		if v, err = c.GetModelVersion(ctx, alice, ns, m.Id, 2); err != nil || v.Xml != withDiagram {
+			t.Fatalf("a model with a diagram stays as sent: %v", err)
+		}
+		d, err := c.CreateDeployment(ctx, alice, ns, model.DeploymentInput{Xml: waitingModel()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		dv, err := c.GetDeploymentVersion(ctx, alice, ns, d.Id, 1)
+		if err != nil || !strings.Contains(dv.Xml, "BPMNDiagram") {
+			t.Fatalf("a deployment of raw BPMN gets a diagram as well: %v", err)
 		}
 	})
 }

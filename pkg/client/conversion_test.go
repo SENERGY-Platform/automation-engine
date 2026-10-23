@@ -283,8 +283,8 @@ func TestOldDesignerModelDeploysThroughTheNewApi(t *testing.T) {
 	if err != nil || engine.Conversion != nil {
 		t.Errorf("a model of the engine is not converted: %+v %v", engine.Conversion, err)
 	}
-	if v, err := c.GetDeploymentVersion(ctx, alice, ns, engine.Id, 1); err != nil || v.Xml != waitingModel() {
-		t.Errorf("and deployed byte for byte: %v", err)
+	if v, err := c.GetDeploymentVersion(ctx, alice, ns, engine.Id, 1); err != nil || v.Xml != withDiagram(t, waitingModel()) {
+		t.Errorf("and deployed as sent, with a diagram added: %v", err)
 	}
 
 	unsupported := b.Process(b.Start("start"), `<bpmn:serviceTask id="mystery" camunda:type="external" camunda:topic="mystery"/>`, b.End("end"),

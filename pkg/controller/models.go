@@ -89,6 +89,15 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// withDiagram adds a diagram to a model a client sent without one, so that the designer can
+// show it; anything else stays as sent
+func withDiagram(xml string) string {
+	if result, added, err := bpmn.WithDiagram(xml); err == nil && added {
+		return result
+	}
+	return xml
+}
+
 func (this *Controller) CreateModel(ctx context.Context, token string, namespace string, input model.ModelInput) (result model.Model, err error) {
 	user, ns, err := this.begin(token, namespace)
 	if err != nil {
@@ -98,6 +107,7 @@ func (this *Controller) CreateModel(ctx context.Context, token string, namespace
 	if err != nil {
 		return result, err
 	}
+	input.Xml = withDiagram(input.Xml)
 	processName, issues, err := this.modelIssues(ns, input.Xml)
 	if err != nil {
 		return result, err
@@ -121,6 +131,7 @@ func (this *Controller) UpdateModel(ctx context.Context, token string, namespace
 	if err != nil {
 		return result, err
 	}
+	input.Xml = withDiagram(input.Xml)
 	processName, issues, err := this.modelIssues(ns, input.Xml)
 	if err != nil {
 		return result, err
