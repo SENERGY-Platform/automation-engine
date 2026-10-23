@@ -18,6 +18,7 @@ Applies to script tasks, conditions on sequence flows, input and output mappings
 - The variables of the instance and the local variables of the element are globals. In event conditions, they are the value under `senergy:value_variable_name` and the variables from `senergy:variables`.
 - The result is the value of the last expression. Conditions must return a boolean.
 - Values are JSON: numbers are doubles, missing values `null`.
+- `JSON.parse` returns a value that is no string as it is, in module scripts as well. Camunda handed some values over as JSON text that the engine keeps as objects, e.g. the value of a device event, and models parse them.
 - Limits per evaluation: run time `SCRIPT_TIMEOUT` (default 2 s, fixed 2 s for event conditions), result up to `MAX_VARIABLE_BYTES` (default 1 MiB), 100 log entries, call depth 1000. No access to the network, the file system or engine internals.
 
 ### `log(...args: any[]): void`

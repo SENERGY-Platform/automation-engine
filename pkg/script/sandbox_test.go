@@ -130,3 +130,26 @@ func TestTruthyAcceptsOnlyBooleans(t *testing.T) {
 		t.Fatal("expected error for string")
 	}
 }
+
+// Camunda handed some variables over as JSON text that the engine keeps as objects, e.g. the
+// value of a device event; models parse them, so JSON.parse returns what is no string as it is.
+func TestJsonParseReturnsAValueThatIsNoStringAsItIs(t *testing.T) {
+	s := NewSandbox()
+	vars := map[string]any{"event": map[string]any{"Latitude": 51.3, "Longitude": 12.4}, "list": []any{"a"}, "text": `{"Latitude": 51.3}`, "n": float64(3)}
+	cases := map[string]any{
+		"JSON.parse(event).Latitude": 51.3,
+		"JSON.parse(list)[0]":        "a",
+		"JSON.parse(text).Latitude":  51.3,
+		"JSON.parse(n)":              float64(3),
+		`JSON.parse('{"a":1}', (k, v) => k == "a" ? v + 1 : v).a`: float64(2),
+	}
+	for src, expected := range cases {
+		got, err := s.Run(src, vars)
+		if err != nil || !reflect.DeepEqual(got.Value, expected) {
+			t.Errorf("%v: %#v %v", src, got.Value, err)
+		}
+	}
+	if _, err := s.Run(`JSON.parse("{")`, nil); err == nil {
+		t.Error("invalid JSON text still fails")
+	}
+}

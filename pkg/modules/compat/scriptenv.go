@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	enginescript "github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	"github.com/dop251/goja"
 )
@@ -150,6 +151,10 @@ func (this Scripts) Run(ctx context.Context, userId string, prefix string, input
 	defer timer.Stop()
 	env.vm = vm
 	vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
+	// as in BPMN scripts, so that JSON.parse behaves the same wherever a design calls it
+	if err = enginescript.LenientJsonParse(vm); err != nil {
+		return nil, nil, err
+	}
 	for key, value := range env.environment() {
 		if err = vm.Set(key, value); err != nil {
 			return nil, nil, err

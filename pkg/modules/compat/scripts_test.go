@@ -184,3 +184,13 @@ func TestScriptCriteriaWithoutAspectReachDeviceRepositoryWithoutAspect(t *testin
 		t.Errorf("device-repository was asked for %#v, not %#v", iot.criteria, expected)
 	}
 }
+
+// Module scripts parse as BPMN scripts do: a value that is no string comes back as it is.
+func TestModuleScriptsParseLikeBpmnScripts(t *testing.T) {
+	changes, _, err := scripts(nil, nil).Run(context.Background(), "user", compat.PreScriptPrefix,
+		map[string]any{"prescript": `variables.write("lat", JSON.parse(variables.read("location")).Latitude)`}, nil,
+		map[string]any{"location": map[string]any{"Latitude": 51.3}}, nil)
+	if err != nil || changes["lat"] != 51.3 {
+		t.Fatalf("%v %v", changes, err)
+	}
+}

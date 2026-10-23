@@ -79,6 +79,19 @@ func (this *Error) Unwrap() error {
 	return this.Err
 }
 
+// LenientJsonParse makes JSON.parse return a value that is no string as it is. Camunda handed
+// some variables over as JSON text that the engine keeps as objects, e.g. the value of a device
+// event, and models parse them; parsing an object would read "[object Object]".
+func LenientJsonParse(vm *goja.Runtime) error {
+	_, err := vm.RunString(`(function () {
+	var parse = JSON.parse;
+	JSON.parse = function (text, reviver) {
+		return typeof text === "string" ? parse.call(JSON, text, reviver) : text;
+	};
+})()`)
+	return err
+}
+
 // Check compiles the source without running it.
 func Check(src string) error {
 	_, err := goja.Compile("", src, false)
@@ -94,6 +107,9 @@ func (this *Sandbox) Run(src string, variables map[string]any) (result Result, e
 	}
 	fail := func(err error) (Result, error) {
 		return Result{}, &Error{Err: err, Logs: result.Logs}
+	}
+	if err = LenientJsonParse(vm); err != nil {
+		return fail(err)
 	}
 	for name, value := range variables {
 		if err = vm.Set(name, value); err != nil {
