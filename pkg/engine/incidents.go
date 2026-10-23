@@ -54,7 +54,7 @@ func (this *runner) handleIncident(message string) error {
 		if handling.Restart {
 			text += "\n\nprocess will be restarted"
 		}
-		return this.e.queueNotification(this.tx, this.inst.Owner, "Process-Incident in "+this.inst.DeploymentName, text)
+		return this.e.queueNotification(this.tx, this.inst.Owner, this.inst.Namespace, "Process-Incident in "+this.inst.DeploymentName, text)
 	}
 	return nil
 }
@@ -69,15 +69,16 @@ func (this *Engine) restartBackoff(namespace string, consecutive int) time.Durat
 	return min(backoff, maximum)
 }
 
-// QueueNotification queues a notification to a user, sent after commit with retries.
-func (this *Engine) QueueNotification(ctx context.Context, userId string, title string, message string) error {
+// QueueNotification queues a notification to a user, sent after commit with retries; namespace
+// is the one of the resource it is about, empty for none.
+func (this *Engine) QueueNotification(ctx context.Context, userId string, namespace string, title string, message string) error {
 	return this.store.Tx(ctx, func(tx *store.Tx) error {
-		return this.queueNotification(tx, userId, title, message)
+		return this.queueNotification(tx, userId, namespace, title, message)
 	})
 }
 
-func (this *Engine) queueNotification(tx *store.Tx, userId string, title string, message string) error {
-	return tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: userId, Title: title, Message: message, Topic: NotificationTopic, CreatedAt: this.now()})
+func (this *Engine) queueNotification(tx *store.Tx, userId string, namespace string, title string, message string) error {
+	return tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: userId, Title: title, Message: message, Topic: NotificationTopic, Namespace: namespace, CreatedAt: this.now()})
 }
 
 // processRestarts restarts instances whose restart after an incident is due. It counts
@@ -129,7 +130,7 @@ func (this *Engine) processRestarts(ctx context.Context, now time.Time) error {
 				// event of the failed run nor one without definition (see restartStart); the instance
 				// stays ended with its incident and the owner is told
 				this.logger.Warn("restart after incident not possible", "instance_id", inst.Id, "deployment_id", inst.DeploymentId, "error", err)
-				return this.queueNotification(tx, inst.Owner, "ERROR: unable to restart process after incident in: "+inst.DeploymentName, fmt.Sprintf("Restart-Error: %v\n\nIncident: %v", err, inst.EndReason))
+				return this.queueNotification(tx, inst.Owner, inst.Namespace, "ERROR: unable to restart process after incident in: "+inst.DeploymentName, fmt.Sprintf("Restart-Error: %v\n\nIncident: %v", err, inst.EndReason))
 			}
 			return err
 		}))
@@ -161,7 +162,7 @@ func (this *Engine) countRestart(tx *store.Tx, deployment model.Deployment, now 
 			return false, err
 		}
 		this.logger.Warn("deployment marked faulty after restart loop", "deployment_id", deployment.Id, "restarts", policy.MaxRestarts, "window", policy.Window)
-		return false, this.queueNotification(tx, deployment.Owner, "Deployment stopped restarting: "+deployment.Name,
+		return false, this.queueNotification(tx, deployment.Owner, deployment.Namespace, "Deployment stopped restarting: "+deployment.Name,
 			fmt.Sprintf("Instances of this deployment were restarted %v times within %v after incidents. Automatic restarts are paused until the deployment is updated or reset.", policy.MaxRestarts, policy.Window))
 	}
 	return true, tx.SetRestartStats(deployment.Id, stats)

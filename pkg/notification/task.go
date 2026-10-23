@@ -58,7 +58,7 @@ func text(input map[string]any, name string) string {
 
 // Execute sends title and message; a failed delivery is retried by the engine.
 func (this *Task) Execute(ctx context.Context, task engine.Task) (engine.TaskResult, error) {
-	n := store.Notification{Id: uuid.NewString(), UserId: task.Owner, Title: text(task.Input, "title"), Message: text(task.Input, "message"), Topic: Topic, CreatedAt: time.Now()}
+	n := store.Notification{Id: uuid.NewString(), UserId: task.Owner, Title: text(task.Input, "title"), Message: text(task.Input, "message"), Topic: Topic, Namespace: task.Namespace, CreatedAt: time.Now()}
 	if n.Title == "" && n.Message == "" {
 		return engine.TaskResult{}, &engine.PermanentError{Message: "notification needs the input title or message"}
 	}

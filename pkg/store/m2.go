@@ -219,23 +219,25 @@ func (this *Tx) RetryRemoval(topic string, id string, due time.Time, message str
 
 // Notification is a message to a user, sent after commit through the notifier (INC-02).
 type Notification struct {
-	Id        string
-	UserId    string
-	Title     string
-	Message   string
-	Topic     string
+	Id      string
+	UserId  string
+	Title   string
+	Message string
+	Topic   string
+	// of the resource the notification is about; empty for none, e.g. the storage budget
+	Namespace string
 	Attempts  int
 	CreatedAt time.Time
 }
 
 func (this *Tx) InsertNotification(n Notification) error {
-	_, err := this.exec("INSERT INTO notifications (id, user_id, title, message, topic, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		n.Id, n.UserId, n.Title, n.Message, n.Topic, millis(n.CreatedAt), millis(n.CreatedAt))
+	_, err := this.exec("INSERT INTO notifications (id, user_id, title, message, topic, namespace, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		n.Id, n.UserId, n.Title, n.Message, n.Topic, n.Namespace, millis(n.CreatedAt), millis(n.CreatedAt))
 	return err
 }
 
 func (this *Tx) DueNotifications(now time.Time, limit int) (result []Notification, err error) {
-	rows, err := this.query("SELECT id, user_id, title, message, topic, attempts, created_at FROM notifications WHERE due_at <= ? ORDER BY due_at LIMIT ?", millis(now), limit)
+	rows, err := this.query("SELECT id, user_id, title, message, topic, namespace, attempts, created_at FROM notifications WHERE due_at <= ? ORDER BY due_at LIMIT ?", millis(now), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +245,7 @@ func (this *Tx) DueNotifications(now time.Time, limit int) (result []Notificatio
 	for rows.Next() {
 		var n Notification
 		var created int64
-		if err = rows.Scan(&n.Id, &n.UserId, &n.Title, &n.Message, &n.Topic, &n.Attempts, &created); err != nil {
+		if err = rows.Scan(&n.Id, &n.UserId, &n.Title, &n.Message, &n.Topic, &n.Namespace, &n.Attempts, &created); err != nil {
 			return nil, err
 		}
 		n.CreatedAt = fromMillis(created)

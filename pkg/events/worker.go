@@ -70,7 +70,7 @@ type Consumer func(ctx context.Context, topics []string, handle func(Message) er
 
 type Correlator interface {
 	Correlate(ctx context.Context, request engine.CorrelationRequest) (model.CorrelationResult, error)
-	QueueNotification(ctx context.Context, userId string, title string, message string) error
+	QueueNotification(ctx context.Context, userId string, namespace string, title string, message string) error
 }
 
 // Worker is the event worker role: it holds the descriptions in memory, subscribes to exactly
@@ -343,7 +343,7 @@ func (this *Worker) notifyError(ctx context.Context, d model.EventDescription, e
 		source = "import " + d.ImportId
 	}
 	message := fmt.Sprintf("The event %v of deployment %v could not be evaluated for %v: %v", d.ElementId, d.DeploymentId, strings.TrimSpace(source), err)
-	if notifyErr := this.correlator.QueueNotification(ctx, d.Owner, "Event evaluation failed", message); notifyErr != nil {
+	if notifyErr := this.correlator.QueueNotification(ctx, d.Owner, d.Namespace, "Event evaluation failed", message); notifyErr != nil {
 		this.logger.WarnContext(ctx, "unable to queue event error notification", "error", notifyErr)
 	}
 }

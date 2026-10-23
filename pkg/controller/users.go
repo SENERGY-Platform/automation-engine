@@ -108,7 +108,7 @@ func (this *Controller) DeleteUserData(ctx context.Context, userId string) error
 		now := this.engine.Now()
 		for _, d := range deps.Dependents {
 			message := fmt.Sprintf("Your %v %v in %v was deleted because the account that owned its deployment was deleted.", singular(d.Kind), d.Id, d.Namespace)
-			if err = tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: d.Owner, Title: "Instance deleted", Message: message, Topic: "deletion", CreatedAt: now}); err != nil {
+			if err = tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: d.Owner, Title: "Instance deleted", Message: message, Topic: "deletion", Namespace: d.Namespace, CreatedAt: now}); err != nil {
 				return err
 			}
 		}

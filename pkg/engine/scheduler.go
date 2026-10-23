@@ -516,7 +516,7 @@ func (this *Engine) enforceBudget(ctx context.Context, now time.Time) error {
 		this.lastBudgetWarning = now
 		message := fmt.Sprintf("The process engine uses %d of %d MiB; the oldest history of processes is removed beyond its retention.", used>>20, budget>>20)
 		// on a gateway the cloud addresses the warning to the owner of the network
-		if err = this.QueueNotification(ctx, "", BudgetWarning, message); err != nil {
+		if err = this.QueueNotification(ctx, "", "", BudgetWarning, message); err != nil {
 			this.logger.Warn("unable to queue the storage warning", "error", err)
 		}
 	}

@@ -94,13 +94,21 @@ func (this *Notifier) Send(ctx context.Context, n store.Notification) error {
 	return nil
 }
 
+// copyToDevelopers names the namespace as a tag and in the body, so that a process and a smart
+// service of the same name can be told apart
 func (this *Notifier) copyToDevelopers(n store.Notification) error {
 	if this.developer != nil {
+		tags := []string{"process-incident", "user-notification", n.UserId}
+		body := fmt.Sprintf("Notification For %v\n", n.UserId)
+		if n.Namespace != "" {
+			tags = append(tags, n.Namespace)
+			body += fmt.Sprintf("Namespace: %v\n", n.Namespace)
+		}
 		err := this.developer.SendMessage(devnotifications.Message{
 			Sender: "github.com/SENERGY-Platform/automation-engine",
 			Title:  "Process-Incident-User-Notification",
-			Tags:   []string{"process-incident", "user-notification", n.UserId},
-			Body:   fmt.Sprintf("Notification For %v\nTitle: %v\nMessage: %v\n", n.UserId, n.Title, n.Message),
+			Tags:   tags,
+			Body:   body + fmt.Sprintf("Title: %v\nMessage: %v\n", n.Title, n.Message),
 		})
 		if err != nil {
 			this.logger.Warn("unable to send developer notification", "error", err)

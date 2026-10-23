@@ -23,10 +23,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
+	devnotifications "github.com/SENERGY-Platform/developer-notifications/pkg/client"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -87,5 +90,22 @@ func TestNotifyCarriesTraceContextAndBaggage(t *testing.T) {
 	}
 	if header.Get("traceparent") == "" || header.Get("baggage") != tracing.KeyInstanceId+"=i" {
 		t.Fatalf("the notifier is a platform service and gets trace context and baggage: %v", header)
+	}
+}
+
+// The copy to developer-notifications names the namespace, so that a process and a smart
+// service of the same name can be told apart.
+func TestDeveloperCopyNamesTheNamespace(t *testing.T) {
+	var received devnotifications.Message
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&received)
+	}))
+	defer server.Close()
+	n := New("", server.URL, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := n.Notify(context.Background(), store.Notification{UserId: "u", Title: "Process-Incident in x", Message: "boom", Namespace: "smart-services"}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(received.Tags, "smart-services") || !strings.Contains(received.Body, "Namespace: smart-services\n") {
+		t.Fatalf("%+v", received)
 	}
 }

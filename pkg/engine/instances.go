@@ -573,7 +573,7 @@ func (this *Engine) restartOnUpdate(tx *store.Tx, instanceId string) error {
 	if inst.Owner == "" {
 		return nil
 	}
-	return this.queueNotification(tx, inst.Owner, "Process stopped at update: "+inst.DeploymentName,
+	return this.queueNotification(tx, inst.Owner, inst.Namespace, "Process stopped at update: "+inst.DeploymentName,
 		fmt.Sprintf("The deployment was updated with the strategy restart, but instance %v could not be restarted on the new version and was stopped.\n\n%v", inst.Id, refusal))
 }
 

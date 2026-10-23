@@ -56,7 +56,7 @@ func TestTheStoredSmartServicesNamespaceOfAnOlderDatabaseRunsOnlyInTheCloud(t *t
 						return err
 					}
 				}
-				return store.ExecForTest(tx, "DELETE FROM schema_migrations WHERE version >= 12")
+				return store.ExecForTest(tx, "DELETE FROM schema_migrations WHERE version = 12")
 			})
 			cloudOnly := func(s *store.Store) map[string]bool {
 				result := map[string]bool{}

@@ -496,7 +496,7 @@ Today eight independent workers run against the smart-service-engine, all via `s
   Today there are three ways: HTTP from the worker, polling of `/engine-rest/incident` every 5 s and Kafka `camunda_incident` (unused, legacy).
 - **INC-02 (M)** Handling per deployment (`incident_handling`), as today:
   - stop the instance;
-  - with `notify`, a notification to the notifier and to developer-notifications;
+  - with `notify`, a notification to the notifier and to developer-notifications; the copy to developer-notifications names the namespace (tag and line `Namespace:`), so that processes and smart services of the same name can be told apart;
   - with `restart`, a new run of the same instance (RUN-11).
 
   The default stays `restart: false, notify: true`.

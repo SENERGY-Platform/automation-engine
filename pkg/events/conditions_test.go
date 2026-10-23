@@ -49,7 +49,7 @@ func (this *recordingCorrelator) Correlate(_ context.Context, request engine.Cor
 	return model.CorrelationResult{}, nil
 }
 
-func (this *recordingCorrelator) QueueNotification(context.Context, string, string, string) error {
+func (this *recordingCorrelator) QueueNotification(context.Context, string, string, string, string) error {
 	return nil
 }
 
