@@ -305,6 +305,11 @@ func (this *deployHandler) elementInputs(task Task, proc *bpmn.Process, deployme
 		params := model.ElementParameters{}
 		for _, m := range e.Inputs {
 			if value, ok := input(task, prefix+"parameter."+m.Name); ok {
+				if keep, err := keepsModel(prefix+"parameter."+m.Name, value, m.Value.Text); err != nil {
+					return err
+				} else if keep {
+					continue
+				}
 				if params.Inputs == nil {
 					params.Inputs = map[string]string{}
 				}
@@ -321,7 +326,11 @@ func (this *deployHandler) elementInputs(task Task, proc *bpmn.Process, deployme
 			}
 		}
 		if value, ok := input(task, prefix+"time"); ok && e.Timer != nil {
-			params.Timer = value
+			if keep, err := keepsModel(prefix+"time", value, e.Timer.Value); err != nil {
+				return err
+			} else if !keep {
+				params.Timer = value
+			}
 		}
 		if e.Type == bpmn.StartEvent {
 			for _, field := range e.FormFields {
@@ -338,6 +347,21 @@ func (this *deployHandler) elementInputs(task Task, proc *bpmn.Process, deployme
 		}
 	}
 	return nil
+}
+
+// keepsModel reports whether a value is the JUEL expression the model has at that place. Designs
+// pass such an expression, e.g. "${timer}", for the process to evaluate at runtime, as Camunda
+// did with what process-deployment inserted. The engine converts the expressions of the model at
+// deploy, so the model keeps its own, as in the deploy dialog; a parameter is a value and cannot
+// carry a different expression, which is rejected rather than taken as text.
+func keepsModel(name string, value string, original string) (bool, error) {
+	if !strings.Contains(value, "${") && !strings.Contains(value, "#{") {
+		return false, nil
+	}
+	if strings.TrimSpace(value) == strings.TrimSpace(original) {
+		return true, nil
+	}
+	return false, fmt.Errorf("%v: the expression %q is not the one of the model; a deploy parameter is a value", name, value)
 }
 
 // selectionOf converts the iot option of smart services into a device selection

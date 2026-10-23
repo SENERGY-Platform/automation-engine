@@ -308,3 +308,54 @@ func TestEveryProcessDeploymentTaskCreatesItsOwnDeploymentAndModule(t *testing.T
 		t.Errorf("%v %+v", ids, processes.created)
 	}
 }
+
+// withModel lets the fake repository answer with xml as the model to deploy
+func withModel(t *testing.T, xml string) {
+	previous := processModelXml
+	processModelXml = xml
+	t.Cleanup(func() { processModelXml = previous })
+}
+
+// A design passes the JUEL expression of the model, e.g. "${timer}", for the process to evaluate
+// at runtime, as Camunda did. The model keeps its expression, which the engine converts at
+// deploy; as a parameter it would be a date "${timer}" and fail validation.
+func TestProcessDeploymentKeepsTheExpressionOfTheModel(t *testing.T) {
+	withModel(t, b.Process(
+		b.StartWithForm("StartEvent_1"),
+		b.Task(processTaskId, b.InText("inputs", "${available_current}")),
+		b.CatchTimer("timer", "timeDate", "${timer}"),
+		b.End("end"),
+		b.Flow("StartEvent_1", processTaskId), b.Flow(processTaskId, "timer"), b.Flow("timer", "end"),
+	))
+	deployed := deployProcess(t, map[string]any{
+		"process_deployment." + processTaskId + ".parameter.inputs": "${available_current}",
+		"process_deployment.timer.time":                             "${timer}",
+	}, nil, nil).deployed(t)
+	if len(deployed.Parameters) != 0 {
+		t.Errorf("the expressions of the model stay: %#v", deployed.Parameters)
+	}
+}
+
+func TestProcessDeploymentTakesAValueForATimerWithExpression(t *testing.T) {
+	withModel(t, b.Process(
+		b.StartWithForm("StartEvent_1"), b.CatchTimer("timer", "timeDuration", "${delay}"), b.End("end"),
+		b.Flow("StartEvent_1", "timer"), b.Flow("timer", "end"),
+	))
+	deployed := deployProcess(t, map[string]any{"process_deployment.timer.time": "PT5M"}, nil, nil).deployed(t)
+	if deployed.Parameters["timer"].Timer != "PT5M" {
+		t.Errorf("%#v", deployed.Parameters)
+	}
+}
+
+// Another expression than the model's cannot be passed as a value; taken as text, it would fail
+// at deploy or, for an input, reach the device as "${...}".
+func TestProcessDeploymentRejectsAnExpressionOtherThanTheModels(t *testing.T) {
+	withModel(t, b.Process(
+		b.StartWithForm("StartEvent_1"), b.CatchTimer("timer", "timeDate", "${timer}"), b.End("end"),
+		b.Flow("StartEvent_1", "timer"), b.Flow("timer", "end"),
+	))
+	result := deployProcess(t, map[string]any{"process_deployment.timer.time": "${other}"}, nil, nil)
+	if result.err == nil || len(result.processes.created) != 0 {
+		t.Fatalf("expected an error without deployment: %v %+v", result.err, result.processes.created)
+	}
+}
