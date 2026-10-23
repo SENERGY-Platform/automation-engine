@@ -128,3 +128,28 @@ func TestADesignWithAReleaseOfAThirdUserIsNotMoved(t *testing.T) {
 		t.Errorf("the design stays with its owner: %+v", unchanged)
 	}
 }
+
+// The new owner holds its rights in permissions-v2 when the owner change answers; a caller that
+// writes rights right afterwards, as content-review does, found them missing while only the
+// sync wrote them (SNRGY-5022).
+func TestAnOwnerChangeWritesTheRightsBeforeItAnswers(t *testing.T) {
+	e, deps := newEnvWith(t, nil)
+	var created struct {
+		Id string `json:"_id"`
+	}
+	e.call(alice, http.MethodPost, "/repository/processes", map[string]any{"name": "Heating", "bpmn_xml": waitingProcess(), "svgXML": "<svg/>"}, &created)
+	e.waitFor("the model registered for alice", func() bool {
+		resource, err, _ := deps.Permissions.GetResource(ops, "processes_models", created.Id)
+		return err == nil && resource.UserPermissions["alice"].Administrate
+	})
+	if status, _ := e.call(ops, http.MethodPut, "/repository/processes/"+created.Id+"/owner", map[string]string{"owner": "bob"}, nil); status != http.StatusOK {
+		t.Fatal(status)
+	}
+	resource, err, _ := deps.Permissions.GetResource(ops, "processes_models", created.Id)
+	if err != nil || !resource.UserPermissions["bob"].Administrate {
+		t.Fatalf("bob administrates the model at once: %+v %v", resource, err)
+	}
+	if !resource.UserPermissions["alice"].Administrate {
+		t.Errorf("the previous owner keeps her entry: %+v", resource)
+	}
+}

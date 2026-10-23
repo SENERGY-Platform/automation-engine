@@ -64,6 +64,12 @@ type AdministrateChecker interface {
 	HasAdministrate(ctx context.Context, namespace string, kind model.Kind, id string, user string) (bool, error)
 }
 
+// Registrar gives the owner of a resource its rights in permissions-v2 right away instead of
+// with the next sync (SEC-11)
+type Registrar interface {
+	Register(ctx context.Context, namespace string, kind model.Kind, id string, owner string) error
+}
+
 // UserRemover removes a deleted user's rights on resources of others (SEC-08).
 type UserRemover interface {
 	RemoveUser(ctx context.Context, userId string, owners permissions.Owners) error
@@ -327,7 +333,8 @@ func (this *Controller) SetOwner(ctx context.Context, token string, namespace st
 		return err
 	}
 	if input.Owner == current {
-		return nil
+		// a repeated change completes the rights a failed registration left pending
+		return this.registerOwner(ctx, namespace, kind, id, current)
 	}
 	if !user.IsAdmin() {
 		checker, ok := this.auth.(AdministrateChecker)
@@ -342,9 +349,27 @@ func (this *Controller) SetOwner(ctx context.Context, token string, namespace st
 			return model.BadRequest("the new owner must administrate the resource already")
 		}
 	}
-	return this.store.Tx(ctx, func(tx *store.Tx) error {
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		return tx.SetOwner(kind, id, input.Owner)
 	})
+	if err != nil {
+		return err
+	}
+	return this.registerOwner(ctx, namespace, kind, id, input.Owner)
+}
+
+// registerOwner gives the owner its rights before the owner change answers, so that a caller
+// can write rights right after it; on an error the sync gives them later, and the caller learns
+// that they are not there yet
+func (this *Controller) registerOwner(ctx context.Context, namespace string, kind model.Kind, id string, owner string) error {
+	registrar, ok := this.auth.(Registrar)
+	if !ok {
+		return nil
+	}
+	if err := registrar.Register(ctx, namespace, kind, id, owner); err != nil {
+		return model.Unavailable("the owner of %v %v is changed, its rights in permissions-v2 follow with the next sync: %v", kind, id, err)
+	}
+	return nil
 }
 
 // ResetRestarts clears the faulty mark of a deployment after a restart loop (INC-04).

@@ -3937,7 +3937,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "admins only, as process-model-repository v1.3.0: the id stays, the owner gets all rights, other entries in permissions-v2 stay",
+                "description": "admins only, as process-model-repository v1.3.0: the id stays, the owner holds all rights in permissions-v2 when the call answers 200, other entries there stay. 503 means the owner is changed but its rights are not written yet; the engine tries again every second, and repeating the call writes them at once",
                 "consumes": [
                     "application/json"
                 ],
@@ -3988,6 +3988,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "type": "string"
                         }
@@ -4649,7 +4655,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "admins only, as smart-service-repository v0.7.0: the design and every release of it (the deployment of the design with all its versions) move to the owner, all ids stay; the owner gets all rights on the releases, other entries in permissions-v2 stay; instances are not touched",
+                "description": "admins only, as smart-service-repository v0.7.0: the design and every release of it (the deployment of the design with all its versions) move to the owner, all ids stay; the owner holds all rights on the releases in permissions-v2 when the call answers 200, other entries there stay; instances are not touched. 503 means the owner is changed but its rights are not written yet; the engine tries again every second, and repeating the call writes them at once",
                 "consumes": [
                     "application/json"
                 ],
@@ -4706,6 +4712,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "type": "string"
                         }
@@ -9831,7 +9843,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Allowed for admins and users who administrate the resource; the new owner must administrate it already.",
+                "description": "Allowed for admins and users who administrate the resource; the new owner must administrate it already. With 204 the owner holds all rights in permissions-v2. 503 means the owner is changed but its rights are not written yet; the engine tries again every second, and repeating the call writes them at once.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9889,6 +9901,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/model.Error"
                         }

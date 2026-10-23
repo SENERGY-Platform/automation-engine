@@ -61,7 +61,7 @@ func (h *handlers) deleteNamespace(w http.ResponseWriter, r *http.Request) {
 // setOwner godoc
 //
 //	@Summary		change the owner of a model, deployment or instance
-//	@Description	Allowed for admins and users who administrate the resource; the new owner must administrate it already.
+//	@Description	Allowed for admins and users who administrate the resource; the new owner must administrate it already. With 204 the owner holds all rights in permissions-v2. 503 means the owner is changed but its rights are not written yet; the engine tries again every second, and repeating the call writes them at once.
 //	@Tags			owners
 //	@Security		Bearer
 //	@Accept			json
@@ -70,7 +70,7 @@ func (h *handlers) deleteNamespace(w http.ResponseWriter, r *http.Request) {
 //	@Param			id		path	string				true	"resource id"
 //	@Param			body	body	model.OwnerInput	true	"new owner"
 //	@Success		204
-//	@Failure		400,403,404	{object}	model.Error
+//	@Failure		400,403,404,503	{object}	model.Error
 //	@Router			/namespaces/{ns}/{kind}/{id}/owner [put]
 func (h *handlers) setOwner(kind model.Kind) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

@@ -340,7 +340,7 @@ func (this *Handler) getDesign(w http.ResponseWriter, r *http.Request) {
 // setDesignOwner godoc
 //
 //	@Summary		move a design and its releases to another owner
-//	@Description	admins only, as smart-service-repository v0.7.0: the design and every release of it (the deployment of the design with all its versions) move to the owner, all ids stay; the owner gets all rights on the releases, other entries in permissions-v2 stay; instances are not touched
+//	@Description	admins only, as smart-service-repository v0.7.0: the design and every release of it (the deployment of the design with all its versions) move to the owner, all ids stay; the owner holds all rights on the releases in permissions-v2 when the call answers 200, other entries there stay; instances are not touched. 503 means the owner is changed but its rights are not written yet; the engine tries again every second, and repeating the call writes them at once
 //	@Tags		deprecated-smart-services
 //	@Deprecated
 //	@Security	Bearer
@@ -349,7 +349,7 @@ func (this *Handler) getDesign(w http.ResponseWriter, r *http.Request) {
 //	@Param		id	path	string	true	"design id"
 //	@Param		owner	body	model.OwnerInput	true	"new owner (user id)"
 //	@Success	200	{object}	SmartServiceDesign
-//	@Failure	400,403,404,409	{string}	string
+//	@Failure	400,403,404,409,503	{string}	string
 //	@Router		/deprecated/smart-services/designs/{id}/owner [put]
 func (this *Handler) setDesignOwner(w http.ResponseWriter, r *http.Request) {
 	owner, err := ownerChange(r)

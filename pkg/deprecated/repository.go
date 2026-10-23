@@ -58,7 +58,7 @@ func (this *Handler) repository() {
 // setProcessOwner godoc
 //
 //	@Summary		move a model to another owner
-//	@Description	admins only, as process-model-repository v1.3.0: the id stays, the owner gets all rights, other entries in permissions-v2 stay
+//	@Description	admins only, as process-model-repository v1.3.0: the id stays, the owner holds all rights in permissions-v2 when the call answers 200, other entries there stay. 503 means the owner is changed but its rights are not written yet; the engine tries again every second, and repeating the call writes them at once
 //	@Tags		deprecated-repository
 //	@Deprecated
 //	@Security	Bearer
@@ -67,7 +67,7 @@ func (this *Handler) repository() {
 //	@Param		id	path	string	true	"model id"
 //	@Param		owner	body	model.OwnerInput	true	"new owner (user id)"
 //	@Success	200	{object}	Process
-//	@Failure	400,403,404	{string}	string
+//	@Failure	400,403,404,503	{string}	string
 //	@Router		/deprecated/repository/processes/{id}/owner [put]
 func (this *Handler) setProcessOwner(w http.ResponseWriter, r *http.Request) {
 	owner, err := ownerChange(r)
