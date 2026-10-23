@@ -20,12 +20,18 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
+	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
+	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
+	permmodel "github.com/SENERGY-Platform/permissions-v2/pkg/model"
 )
 
 func pending(t *testing.T, s *store.Store) []store.Registration {
@@ -68,5 +74,75 @@ func TestRightsMessageWithoutOwnerAdministrateRegistersAgain(t *testing.T) {
 	}
 	if p := pending(t, s); len(p) != 1 || p[0].Owner != "alice" {
 		t.Fatalf("a withdrawn owner right is registered again (SEC-10): %+v", p)
+	}
+}
+
+// fakePermissions answers GetResource from a list of states, one per read, and records writes
+type fakePermissions struct {
+	permclient.Client
+	reads  []permmodel.ResourcePermissions
+	read   int
+	writes []permmodel.ResourcePermissions
+}
+
+func (this *fakePermissions) GetResourceContext(_ context.Context, _ string, topic string, id string) (permmodel.Resource, error, int) {
+	state := this.reads[min(this.read, len(this.reads)-1)]
+	this.read++
+	return permmodel.Resource{Id: id, TopicId: topic, ResourcePermissions: state}, nil, http.StatusOK
+}
+
+func (this *fakePermissions) SetPermissionContext(_ context.Context, _ string, _ string, _ string, permissions permmodel.ResourcePermissions) (permmodel.ResourcePermissions, error, int) {
+	this.writes = append(this.writes, permissions)
+	return permissions, nil, http.StatusOK
+}
+
+type staticNamespaces []model.Namespace
+
+func (this staticNamespaces) Get(name string) (model.Namespace, bool) {
+	for _, ns := range this {
+		if ns.Name == name {
+			return ns.WithDefaults(), true
+		}
+	}
+	return model.Namespace{}, false
+}
+
+func (this staticNamespaces) List() []model.Namespace { return this }
+
+func users(entries ...string) permmodel.ResourcePermissions {
+	result := permmodel.ResourcePermissions{UserPermissions: map[string]permmodel.PermissionsMap{}}
+	for _, user := range entries {
+		result.UserPermissions[user] = permmodel.PermissionsMap{Read: true}
+	}
+	return result
+}
+
+// permissions-v2 takes only whole resources; a share written while register works is read
+// again before the write and kept (SNRGY-5022)
+func TestRegisterKeepsAChangeMadeWhileItWorks(t *testing.T) {
+	fake := &fakePermissions{reads: []permmodel.ResourcePermissions{users("alice"), users("alice", "carol"), users("alice", "carol"), users("alice", "carol")}}
+	service := New(fake, auth.Static("Bearer admin"), nil, staticNamespaces(configuration.DefaultNamespaces()), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := service.register(context.Background(), "Bearer admin", store.Registration{Kind: model.KindModel, Id: "m", Namespace: "processes", Owner: "bob"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.writes) != 1 {
+		t.Fatalf("one write: %+v", fake.writes)
+	}
+	written := fake.writes[0].UserPermissions
+	if !written["bob"].Administrate || !written["carol"].Read || !written["alice"].Read {
+		t.Fatalf("the share of carol stays: %+v", written)
+	}
+}
+
+func TestRegisterGivesUpWhenTheResourceKeepsChanging(t *testing.T) {
+	var states []permmodel.ResourcePermissions
+	for i := range 10 {
+		states = append(states, users("alice", "u"+strconv.Itoa(i)))
+	}
+	fake := &fakePermissions{reads: states}
+	service := New(fake, auth.Static("Bearer admin"), nil, staticNamespaces(configuration.DefaultNamespaces()), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err := service.register(context.Background(), "Bearer admin", store.Registration{Kind: model.KindModel, Id: "m", Namespace: "processes", Owner: "bob"})
+	if model.AsError(err).Kind != model.KindConflict || len(fake.writes) != 0 {
+		t.Fatalf("no write over changes it has not seen: %v %+v", err, fake.writes)
 	}
 }

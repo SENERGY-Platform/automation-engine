@@ -30,7 +30,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
@@ -235,8 +237,14 @@ func (this *Service) RemoveTopics(ctx context.Context, name string) error {
 	return nil
 }
 
+// registerAttempts bounds how often register reads again because the resource changed while it
+// was working
+const registerAttempts = 3
+
 // register makes sure the resource exists in permissions-v2 and the owner administrates it;
-// shares made meanwhile are kept
+// shares made meanwhile are kept. permissions-v2 takes only whole resources and knows no
+// versions, so register reads again right before writing and starts over if someone changed
+// the resource meanwhile; a change between that read and the write can still be lost.
 func (this *Service) register(ctx context.Context, token string, r store.Registration) error {
 	ns, ok := this.namespaces.Get(r.Namespace)
 	if !ok {
@@ -247,25 +255,76 @@ func (this *Service) register(ctx context.Context, token string, r store.Registr
 		return nil
 	}
 	topic := ns.Topic(r.Kind)
-	resource, err, code := this.client.GetResourceContext(ctx, token, topic, r.Id)
-	var permissions permmodel.ResourcePermissions
-	switch {
-	case code == http.StatusNotFound:
-		permissions = toPermissions(level.InitialRights)
-	case err != nil:
-		return codeErr(err, code)
-	default:
-		permissions = resource.ResourcePermissions
-		if permissions.UserPermissions == nil {
-			permissions.UserPermissions = map[string]permmodel.PermissionsMap{}
+	read := func() (permmodel.ResourcePermissions, bool, error) {
+		resource, err, code := this.client.GetResourceContext(ctx, token, topic, r.Id)
+		switch {
+		case code == http.StatusNotFound:
+			return permmodel.ResourcePermissions{}, false, nil
+		case err != nil:
+			return permmodel.ResourcePermissions{}, false, codeErr(err, code)
 		}
-		if permissions.UserPermissions[r.Owner].Administrate {
-			return nil
-		}
+		return resource.ResourcePermissions, true, nil
 	}
-	permissions.UserPermissions[r.Owner] = permmodel.PermissionsMap{Read: true, Write: true, Execute: true, Administrate: true}
-	_, err, code = this.client.SetPermissionContext(ctx, token, topic, r.Id, permissions)
-	return codeErr(err, code)
+	for attempt := 1; ; attempt++ {
+		current, exists, err := read()
+		if err != nil {
+			return err
+		}
+		var permissions permmodel.ResourcePermissions
+		if exists {
+			if current.UserPermissions[r.Owner].Administrate {
+				return nil
+			}
+			permissions = clonePermissions(current)
+		} else {
+			permissions = toPermissions(level.InitialRights)
+		}
+		permissions.UserPermissions[r.Owner] = permmodel.PermissionsMap{Read: true, Write: true, Execute: true, Administrate: true}
+		again, existsAgain, err := read()
+		if err != nil {
+			return err
+		}
+		if existsAgain != exists || !reflect.DeepEqual(again, current) {
+			if attempt < registerAttempts {
+				continue
+			}
+			return model.Conflict("the permissions of %v %v keep changing", r.Kind, r.Id)
+		}
+		_, err, code := this.client.SetPermissionContext(ctx, token, topic, r.Id, permissions)
+		return codeErr(err, code)
+	}
+}
+
+func clonePermissions(p permmodel.ResourcePermissions) permmodel.ResourcePermissions {
+	return permmodel.ResourcePermissions{
+		UserPermissions:  orEmpty(maps.Clone(p.UserPermissions)),
+		GroupPermissions: maps.Clone(p.GroupPermissions),
+		RolePermissions:  maps.Clone(p.RolePermissions),
+	}
+}
+
+func orEmpty(m map[string]permmodel.PermissionsMap) map[string]permmodel.PermissionsMap {
+	if m == nil {
+		return map[string]permmodel.PermissionsMap{}
+	}
+	return m
+}
+
+// Register makes the owner of a resource administrate it now, as the sync would later, and
+// marks the resource registered; an owner change calls it so that the new owner's rights exist
+// when the call returns (SEC-11). On an error the sync remains, the resource stays pending.
+func (this *Service) Register(ctx context.Context, namespace string, kind model.Kind, id string, owner string) error {
+	token, err := this.adminToken()
+	if err != nil {
+		return model.Unavailable("no admin token: %v", err)
+	}
+	if err = this.register(ctx, token, store.Registration{Kind: kind, Id: id, Namespace: namespace, Owner: owner}); err != nil {
+		return err
+	}
+	return this.store.Tx(ctx, func(tx *store.Tx) error {
+		_, err := tx.MarkRegistered(kind, id, owner)
+		return err
+	})
 }
 
 // Sync registers pending resources and processes queued removals, a batch per call.
