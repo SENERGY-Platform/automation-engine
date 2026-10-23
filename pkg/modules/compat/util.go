@@ -52,6 +52,8 @@ func (this *ScriptEnvUtil) GetDevicesWithServiceFromIotOption(entity IotOption, 
 }
 
 // GetDevicesWithServiceFromEntityString finds a list of iot-options where the entity is the same the input, but the Service field is set with those that match the input criteria
+//
+// Deprecated: use getDevicesWithServiceFromIotOption with the option as a value, e.g. from inputs.getValue
 func (this *ScriptEnvUtil) GetDevicesWithServiceFromEntityString(entityStr string, criteria []devicemodel.FilterCriteria) []IotOption {
 	defer func() {
 		if caught := recover(); caught != nil {
@@ -89,6 +91,8 @@ func (this *ScriptEnvUtil) IsDeviceIotOption(entity IotOption) bool {
 }
 
 // IsDeviceIotOptionStr checks if the input is a device
+//
+// Deprecated: use isDeviceIotOption with the option as a value, e.g. from inputs.getValue
 func (this *ScriptEnvUtil) IsDeviceIotOptionStr(entityStr string) bool {
 	defer func() {
 		if caught := recover(); caught != nil {
@@ -114,6 +118,8 @@ func (this *ScriptEnvUtil) IsDeviceGroupIotOption(entity IotOption) bool {
 }
 
 // IsDeviceGroupIotOptionStr checks if the input is a device-group
+//
+// Deprecated: use isDeviceGroupIotOption with the option as a value, e.g. from inputs.getValue
 func (this *ScriptEnvUtil) IsDeviceGroupIotOptionStr(entityStr string) bool {
 	defer func() {
 		if caught := recover(); caught != nil {
@@ -139,6 +145,8 @@ func (this *ScriptEnvUtil) IsImportIotOption(entity IotOption) bool {
 }
 
 // IsImportIotOptionStr checks if the input is a import
+//
+// Deprecated: use isImportIotOption with the option as a value, e.g. from inputs.getValue
 func (this *ScriptEnvUtil) IsImportIotOptionStr(entityStr string) bool {
 	defer func() {
 		if caught := recover(); caught != nil {

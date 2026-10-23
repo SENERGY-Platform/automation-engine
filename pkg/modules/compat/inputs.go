@@ -28,6 +28,8 @@ func NewInputsScriptEnv(env *ScriptEnv) *ScriptEnvInputs {
 
 // Get value of a process worker input; a name that is no input of the task finds the variable
 // of the instance, e.g. a start parameter
+//
+// Deprecated: use getValue, which returns selections and lists as values instead of JSON text
 func (this *ScriptEnvInputs) Get(name string) interface{} {
 	defer func() {
 		if caught := recover(); caught != nil {
@@ -40,6 +42,18 @@ func (this *ScriptEnvInputs) Get(name string) interface{} {
 		return value
 	}
 	return this.env.InstanceVariables[name]
+}
+
+// GetValue returns a process worker input or a variable of the instance as a value: JSON text
+// of an object or a list, as IoT and multiple selections arrive, becomes that object or list,
+// also in each element of a list; other values stay as they are
+func (this *ScriptEnvInputs) GetValue(name string) interface{} {
+	defer func() {
+		if caught := recover(); caught != nil {
+			panic(this.env.GetVm().ToValue(caught))
+		}
+	}()
+	return parsedValue(this.Get(name))
 }
 
 // Exists checks if a process worker input or a variable of the instance exists

@@ -314,11 +314,23 @@
 /**
  * Get value of a process worker input; a name that is no input of the task finds the variable
  * of the instance, e.g. a start parameter
+ * @deprecated use getValue, which returns selections and lists as values instead of JSON text
  * @function inputs#get
  * @param { string } name
  * @returns { Object }
  * @example
  * inputs.get(name_as_string)
+ */
+
+/**
+ * GetValue returns a process worker input or a variable of the instance as a value: JSON text
+ * of an object or a list, as IoT and multiple selections arrive, becomes that object or list,
+ * also in each element of a list; other values stay as they are
+ * @function inputs#getValue
+ * @param { string } name
+ * @returns { Object }
+ * @example
+ * inputs.getValue(name_as_string)
  */
 
 /**
@@ -357,6 +369,7 @@
 
 /**
  * SetJson marshals the given value to json and sets it as a process worker output
+ * @deprecated use set; the engine keeps values as they are, Camunda needed the JSON text
  * @function outputs#setJson
  * @param { string } name
  * @param { Object } value
@@ -366,6 +379,7 @@
 
 /**
  * GetDevicesWithServiceFromEntityString finds a list of iot-options where the entity is the same the input, but the Service field is set with those that match the input criteria
+ * @deprecated use getDevicesWithServiceFromIotOption with the option as a value, e.g. from inputs.getValue
  * @function util#getDevicesWithServiceFromEntityString
  * @param { string } entityStr
  * @param { FilterCriteria[] } criteria
@@ -429,6 +443,7 @@
 
 /**
  * IsDeviceGroupIotOptionStr checks if the input is a device-group
+ * @deprecated use isDeviceGroupIotOption with the option as a value, e.g. from inputs.getValue
  * @function util#isDeviceGroupIotOptionStr
  * @param { string } entityStr
  * @returns { boolean }
@@ -447,6 +462,7 @@
 
 /**
  * IsDeviceIotOptionStr checks if the input is a device
+ * @deprecated use isDeviceIotOption with the option as a value, e.g. from inputs.getValue
  * @function util#isDeviceIotOptionStr
  * @param { string } entityStr
  * @returns { boolean }
@@ -465,6 +481,7 @@
 
 /**
  * IsImportIotOptionStr checks if the input is a import
+ * @deprecated use isImportIotOption with the option as a value, e.g. from inputs.getValue
  * @function util#isImportIotOptionStr
  * @param { string } entityStr
  * @returns { boolean }
@@ -510,11 +527,23 @@
 
 /**
  * Read value of a smart-service instance variable
+ * @deprecated use readValue, which returns selections and lists as values instead of JSON text
  * @function variables#read
  * @param { string } name
  * @returns { Object }
  * @example
  * variables.read(name_as_string)
+ */
+
+/**
+ * ReadValue returns a smart-service instance variable as a value: JSON text of an object or a
+ * list, as IoT and multiple selections arrive, becomes that object or list, also in each element
+ * of a list; other values stay as they are
+ * @function variables#readValue
+ * @param { string } name
+ * @returns { Object }
+ * @example
+ * variables.readValue(name_as_string)
  */
 
 /**

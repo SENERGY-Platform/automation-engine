@@ -47,6 +47,8 @@ func (this *ScriptEnvOutputs) Get(name string) interface{} {
 }
 
 // SetJson marshals the given value to json and sets it as a process worker output
+//
+// Deprecated: use set; the engine keeps values as they are, Camunda needed the JSON text
 func (this *ScriptEnvOutputs) SetJson(name string, value interface{}) {
 	defer func() {
 		if caught := recover(); caught != nil {

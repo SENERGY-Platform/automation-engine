@@ -40,6 +40,8 @@ func (this *ScriptEnvVariables) Write(name string, value interface{}) {
 }
 
 // Read value of a smart-service instance variable
+//
+// Deprecated: use readValue, which returns selections and lists as values instead of JSON text
 func (this *ScriptEnvVariables) Read(name string) interface{} {
 	defer func() {
 		if caught := recover(); caught != nil {
@@ -47,6 +49,18 @@ func (this *ScriptEnvVariables) Read(name string) interface{} {
 		}
 	}()
 	return this.env.Variables[name]
+}
+
+// ReadValue returns a smart-service instance variable as a value: JSON text of an object or a
+// list, as IoT and multiple selections arrive, becomes that object or list, also in each element
+// of a list; other values stay as they are
+func (this *ScriptEnvVariables) ReadValue(name string) interface{} {
+	defer func() {
+		if caught := recover(); caught != nil {
+			panic(this.env.GetVm().ToValue(caught))
+		}
+	}()
+	return parsedValue(this.Read(name))
 }
 
 // Exists checks if a smart-service instance variable exists

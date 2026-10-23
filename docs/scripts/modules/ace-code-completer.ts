@@ -182,6 +182,11 @@ const completer = {
                 {
                     caption: 'inputs.get',
                     value: 'var result_as_any = inputs.get(name_as_string);',
+                    meta: 'deprecated'
+                },
+                {
+                    caption: 'inputs.getValue',
+                    value: 'var result_as_any = inputs.getValue(name_as_string);',
                     meta: 'static'
                 },
                 {
@@ -202,7 +207,7 @@ const completer = {
                 {
                     caption: 'util.getDevicesWithServiceFromEntityString',
                     value: 'var result_as_IotOption_list = util.getDevicesWithServiceFromEntityString(entityStr_as_string, criteria_as_FilterCriteria_list);',
-                    meta: 'static'
+                    meta: 'deprecated'
                 },
                 {
                     caption: 'util.getDevicesWithServiceFromIotOption',
@@ -237,7 +242,7 @@ const completer = {
                 {
                     caption: 'util.isDeviceGroupIotOptionStr',
                     value: 'var result_as_boolean = util.isDeviceGroupIotOptionStr(entityStr_as_string);',
-                    meta: 'static'
+                    meta: 'deprecated'
                 },
                 {
                     caption: 'util.isDeviceIotOption',
@@ -247,7 +252,7 @@ const completer = {
                 {
                     caption: 'util.isDeviceIotOptionStr',
                     value: 'var result_as_boolean = util.isDeviceIotOptionStr(entityStr_as_string);',
-                    meta: 'static'
+                    meta: 'deprecated'
                 },
                 {
                     caption: 'util.isImportIotOption',
@@ -257,7 +262,7 @@ const completer = {
                 {
                     caption: 'util.isImportIotOptionStr',
                     value: 'var result_as_boolean = util.isImportIotOptionStr(entityStr_as_string);',
-                    meta: 'static'
+                    meta: 'deprecated'
                 },
                 {
                     caption: 'variables.derefName',
@@ -282,6 +287,11 @@ const completer = {
                 {
                     caption: 'variables.read',
                     value: 'var result_as_any = variables.read(name_as_string);',
+                    meta: 'deprecated'
+                },
+                {
+                    caption: 'variables.readValue',
+                    value: 'var result_as_any = variables.readValue(name_as_string);',
                     meta: 'static'
                 },
                 {
@@ -310,7 +320,7 @@ const completer = {
                 {
                     caption: 'outputs.setJson',
                     value: 'outputs.setJson(name_as_string, value_as_any)',
-                    meta: 'static'
+                    meta: 'deprecated'
                 },
                 {
                     caption: 'variables.write',
@@ -470,6 +480,11 @@ const completer = {
                 {
                     caption: 'inputs.get',
                     value: 'inputs.get(name_as_string)',
+                    meta: 'deprecated'
+                },
+                {
+                    caption: 'inputs.getValue',
+                    value: 'inputs.getValue(name_as_string)',
                     meta: 'static'
                 },
                 {
@@ -490,7 +505,7 @@ const completer = {
                 {
                     caption: 'util.getDevicesWithServiceFromEntityString',
                     value: 'util.getDevicesWithServiceFromEntityString(entityStr_as_string, criteria_as_FilterCriteria_list)',
-                    meta: 'static'
+                    meta: 'deprecated'
                 },
                 {
                     caption: 'util.getDevicesWithServiceFromIotOption',
@@ -525,7 +540,7 @@ const completer = {
                 {
                     caption: 'util.isDeviceGroupIotOptionStr',
                     value: 'util.isDeviceGroupIotOptionStr(entityStr_as_string)',
-                    meta: 'static'
+                    meta: 'deprecated'
                 },
                 {
                     caption: 'util.isDeviceIotOption',
@@ -535,7 +550,7 @@ const completer = {
                 {
                     caption: 'util.isDeviceIotOptionStr',
                     value: 'util.isDeviceIotOptionStr(entityStr_as_string)',
-                    meta: 'static'
+                    meta: 'deprecated'
                 },
                 {
                     caption: 'util.isImportIotOption',
@@ -545,7 +560,7 @@ const completer = {
                 {
                     caption: 'util.isImportIotOptionStr',
                     value: 'util.isImportIotOptionStr(entityStr_as_string)',
-                    meta: 'static'
+                    meta: 'deprecated'
                 },
                 {
                     caption: 'variables.derefName',
@@ -570,6 +585,11 @@ const completer = {
                 {
                     caption: 'variables.read',
                     value: 'variables.read(name_as_string)',
+                    meta: 'deprecated'
+                },
+                {
+                    caption: 'variables.readValue',
+                    value: 'variables.readValue(name_as_string)',
                     meta: 'static'
                 },
                 {

@@ -194,3 +194,32 @@ func TestModuleScriptsParseLikeBpmnScripts(t *testing.T) {
 		t.Fatalf("%v %v", changes, err)
 	}
 }
+
+// The platform keeps IoT and multiple selections as JSON text, as Camunda needed them;
+// getValue and readValue return them as values, while get and read keep the text.
+func TestValuesComeWithoutJsonText(t *testing.T) {
+	single := `{"device_selection":{"device_id":"lamp"}}`
+	multiple := []any{`{"device_selection":{"device_id":"a"}}`, `{"device_selection":{"device_id":"b"}}`}
+	changes, _, err := scripts(nil, nil).Run(context.Background(), "user", compat.PreScriptPrefix, map[string]any{
+		"single": single,
+		"prescript": `
+			variables.write("single", inputs.getValue("single").device_selection.device_id);
+			variables.write("text", typeof inputs.get("single"));
+			variables.write("second", variables.readValue("multiple")[1].device_selection.device_id);
+			variables.write("listText", variables.readValue("listText")[0]);
+			variables.write("number", variables.readValue("number"));
+			variables.write("plain", variables.readValue("plain"));
+			variables.write("broken", variables.readValue("broken"));
+			variables.write("fromInstance", inputs.getValue("multiple").length)`,
+	}, nil, map[string]any{"multiple": multiple, "listText": `["x","y"]`, "number": "42", "plain": "hello", "broken": "{not json"},
+		map[string]any{"multiple": multiple})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]any{"single": "lamp", "text": "string", "second": "b", "listText": "x", "number": "42", "plain": "hello", "broken": "{not json", "fromInstance": int64(2)}
+	for name, want := range expected {
+		if changes[name] != want {
+			t.Errorf("%v: %#v, want %#v", name, changes[name], want)
+		}
+	}
+}

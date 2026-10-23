@@ -83,7 +83,8 @@ Applies to the inputs `prescript*` and `postscript*` of the task types `info`, `
 ### `inputs`
 
 - `exists(name: string): boolean`<br>Exists checks if a process worker input or a variable of the instance exists
-- `get(name: string): any`<br>Get value of a process worker input; a name that is no input of the task finds the variable of the instance, e.g. a start parameter
+- `get(name: string): any`<br>Get value of a process worker input; a name that is no input of the task finds the variable of the instance, e.g. a start parameter<br>**Deprecated**: use getValue, which returns selections and lists as values instead of JSON text
+- `getValue(name: string): any`<br>GetValue returns a process worker input or a variable of the instance as a value: JSON text of an object or a list, as IoT and multiple selections arrive, becomes that object or list, also in each element of a list; other values stay as they are
 - `list(): any[]`<br>List input values sorted by their names
 - `listNames(): string[]`<br>ListNames lists sorted input names
 
@@ -91,22 +92,22 @@ Applies to the inputs `prescript*` and `postscript*` of the task types `info`, `
 
 - `get(name: string): any`<br>Get a process worker output
 - `set(name: string, value: any): void`<br>Set a process worker output
-- `setJson(name: string, value: any): void`<br>SetJson marshals the given value to json and sets it as a process worker output
+- `setJson(name: string, value: any): void`<br>SetJson marshals the given value to json and sets it as a process worker output<br>**Deprecated**: use set; the engine keeps values as they are, Camunda needed the JSON text
 
 ### `util`
 
-- `getDevicesWithServiceFromEntityString(entityStr: string, criteria: FilterCriteria[]): IotOption[]`<br>GetDevicesWithServiceFromEntityString finds a list of iot-options where the entity is the same the input, but the Service field is set with those that match the input criteria
+- `getDevicesWithServiceFromEntityString(entityStr: string, criteria: FilterCriteria[]): IotOption[]`<br>GetDevicesWithServiceFromEntityString finds a list of iot-options where the entity is the same the input, but the Service field is set with those that match the input criteria<br>**Deprecated**: use getDevicesWithServiceFromIotOption with the option as a value, e.g. from inputs.getValue
 - `getDevicesWithServiceFromIotOption(entity: IotOption, criteria: FilterCriteria[]): IotOption[]`<br>GetDevicesWithServiceFromIotOption finds a list of iot-options where the entity is the same the input, but the Service field is set with those that match the input criteria
 - `getUserId(): string`<br>GetUserId returns the user-id of the executing user
 - `getUserToken(): string`<br>GetUserToken returns a jwt-token for the executing user
 - `groupIotOptionsByDevice(entities: IotOption[]): Record<string, IotOption[]>`<br>GroupIotOptionsByDevice groups a list of IotOption by their device id; options that are not devices will be grouped under ""
 - `groupIotOptionsByService(entities: IotOption[]): Record<string, IotOption[]>`<br>GroupIotOptionsByService groups a list of IotOption by their service id; options that are not devices or dont hav a service-id will be grouped under ""
 - `isDeviceGroupIotOption(entity: IotOption): boolean`<br>IsDeviceGroupIotOption checks if the input is a device-group
-- `isDeviceGroupIotOptionStr(entityStr: string): boolean`<br>IsDeviceGroupIotOptionStr checks if the input is a device-group
+- `isDeviceGroupIotOptionStr(entityStr: string): boolean`<br>IsDeviceGroupIotOptionStr checks if the input is a device-group<br>**Deprecated**: use isDeviceGroupIotOption with the option as a value, e.g. from inputs.getValue
 - `isDeviceIotOption(entity: IotOption): boolean`<br>IsDeviceIotOption checks if the input is a device
-- `isDeviceIotOptionStr(entityStr: string): boolean`<br>IsDeviceIotOptionStr checks if the input is a device
+- `isDeviceIotOptionStr(entityStr: string): boolean`<br>IsDeviceIotOptionStr checks if the input is a device<br>**Deprecated**: use isDeviceIotOption with the option as a value, e.g. from inputs.getValue
 - `isImportIotOption(entity: IotOption): boolean`<br>IsImportIotOption checks if the input is a import
-- `isImportIotOptionStr(entityStr: string): boolean`<br>IsImportIotOptionStr checks if the input is a import
+- `isImportIotOptionStr(entityStr: string): boolean`<br>IsImportIotOptionStr checks if the input is a import<br>**Deprecated**: use isImportIotOption with the option as a value, e.g. from inputs.getValue
 
 ### `variables`
 
@@ -114,7 +115,8 @@ Applies to the inputs `prescript*` and `postscript*` of the task types `info`, `
 - `derefTemplate(templ: string): string`<br>DerefTemplate replaces variable references in the input string with the corresponding variable values
 - `derefValue(ref: string): any`<br>DerefValue returns the value of a smart-service instance variable referenced in parameter ref
 - `exists(name: string): boolean`<br>Exists checks if a smart-service instance variable exists
-- `read(name: string): any`<br>Read value of a smart-service instance variable
+- `read(name: string): any`<br>Read value of a smart-service instance variable<br>**Deprecated**: use readValue, which returns selections and lists as values instead of JSON text
+- `readValue(name: string): any`<br>ReadValue returns a smart-service instance variable as a value: JSON text of an object or a list, as IoT and multiple selections arrive, becomes that object or list, also in each element of a list; other values stay as they are
 - `ref(name: string): string`<br>Ref creates a reference to a variable (e.g. "my_var_name" --> "{{.my_var_name}}") throws exception if variable is unknown
 - `write(name: string, value: any): void`<br>Write value as smart-service instance variable
 
