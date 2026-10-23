@@ -76,7 +76,7 @@ func runPrescripts(iot client.Interface, inputs map[string]any, variables map[st
 	if variables == nil {
 		variables = map[string]any{}
 	}
-	return scripts(iot, nil).Run(context.Background(), "user", compat.PreScriptPrefix, inputs, nil, variables)
+	return scripts(iot, nil).Run(context.Background(), "user", compat.PreScriptPrefix, inputs, nil, variables, nil)
 }
 
 func knownDevice() *iotStub {

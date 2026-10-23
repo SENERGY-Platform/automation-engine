@@ -463,3 +463,44 @@ func TestStartParametersOfSmartServicesWithOptionsAndAutoSelection(t *testing.T)
 		t.Fatalf("a list in a string field is stored as JSON, as models of smart services expect: %v", values["groups"])
 	}
 }
+
+// The worker library fetched tasks without naming variables, so Camunda handed every variable
+// of the instance to the scripts as inputs; published designs read their start parameters with
+// inputs.get, e.g. the selection a label is taken from. The inputs of the task win.
+func TestModuleScriptsReadTheVariablesOfTheInstanceAsInputs(t *testing.T) {
+	srv := newServer(t, func(*configuration.Config) {})
+	c := srv.Controller
+	d, err := c.CreateDeployment(ctx, alice, "smart-services", model.DeploymentInput{Xml: b.Process(
+		b.StartWithForm("start", "input=", "room="),
+		b.Service("describe", "info",
+			b.InText("room", "from the task"),
+			b.InText("prescript", `var input = JSON.parse(inputs.get("input")); variables.write("label", input.device_selection.device_id + " in " + inputs.get("room"))`),
+			b.InText("postscript", `variables.write("after", inputs.get("input") !== undefined)`),
+			b.InText("info.module_type", "widget"),
+			b.InText("info.module_data", `{"label":"{{.label}}"}`)),
+		b.End("end"),
+		b.Flow("start", "describe"), b.Flow("describe", "end"),
+	)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := c.StartInstance(ctx, alice, "smart-services", model.StartInstanceInput{DeploymentId: d.Id, Variables: map[string]any{
+		"input": `{"device_selection":{"device_id":"lamp"}}`, "room": "from the start",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the smart service", func() bool {
+		current, _ := c.GetInstance(ctx, alice, "smart-services", inst.Id)
+		return current.Status == model.StatusReady || current.Status == model.StatusError
+	})
+	vars, _ := c.GetVariables(ctx, alice, "smart-services", inst.Id)
+	values := map[string]any{}
+	for _, v := range vars {
+		values[v.Name] = v.Value
+	}
+	if values["label"] != "lamp in from the task" || values["after"] != true {
+		current, _ := c.GetInstance(ctx, alice, "smart-services", inst.Id)
+		t.Fatalf("scripts read start parameters as inputs, the task's own inputs win: %v %+v", values, current)
+	}
+}

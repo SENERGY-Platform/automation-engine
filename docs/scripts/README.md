@@ -81,8 +81,8 @@ Applies to the inputs `prescript*` and `postscript*` of the task types `info`, `
 
 ### `inputs`
 
-- `exists(name: string): boolean`<br>Exists checks if a process worker input exists
-- `get(name: string): any`<br>Get value of a process worker input
+- `exists(name: string): boolean`<br>Exists checks if a process worker input or a variable of the instance exists
+- `get(name: string): any`<br>Get value of a process worker input; a name that is no input of the task finds the variable of the instance, e.g. a start parameter
 - `list(): any[]`<br>List input values sorted by their names
 - `listNames(): string[]`<br>ListNames lists sorted input names
 

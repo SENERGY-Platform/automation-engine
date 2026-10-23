@@ -210,9 +210,13 @@ func (this *moduleType) Execute(ctx context.Context, task engine.Task) (engine.T
 	if err != nil {
 		return engine.TaskResult{}, err
 	}
+	// the worker library fetched its tasks without naming variables, so Camunda handed every
+	// variable of the instance to the scripts as inputs, overlaid by the inputs of the task;
+	// designs read start parameters that way, e.g. inputs.get("input") for a selection
+	instanceVariables := maps.Clone(variables)
 	// the order of the worker library: prescripts on the raw inputs, templates against the
 	// variables they changed, the handler, postscripts with all outputs
-	changes, outputs, err := rt.scripts.Run(ctx, task.Owner, compat.PreScriptPrefix, task.Input, nil, variables)
+	changes, outputs, err := rt.scripts.Run(ctx, task.Owner, compat.PreScriptPrefix, task.Input, nil, variables, instanceVariables)
 	if err != nil {
 		return engine.TaskResult{}, err
 	}
@@ -229,7 +233,7 @@ func (this *moduleType) Execute(ctx context.Context, task engine.Task) (engine.T
 		return engine.TaskResult{}, err
 	}
 	maps.Copy(outputs, handlerOutputs)
-	postChanges, outputs, err := rt.scripts.Run(ctx, task.Owner, compat.PostScriptPrefix, task.Input, outputs, variables)
+	postChanges, outputs, err := rt.scripts.Run(ctx, task.Owner, compat.PostScriptPrefix, task.Input, outputs, variables, instanceVariables)
 	if err != nil {
 		return engine.TaskResult{}, err
 	}

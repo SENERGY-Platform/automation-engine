@@ -37,7 +37,7 @@ func runConsole(t *testing.T, inputs map[string]any, variables map[string]any) [
 	ctx := tracing.WithBaggage(context.Background(), tracing.KeyInstanceId, "test-instance-id")
 	buf := &bytes.Buffer{}
 	logger := slog.New(handlers.NewOpenTelemetryHandler(slog.NewJSONHandler(buf, nil)))
-	if _, _, err := scripts(nil, logger).Run(ctx, "user", compat.PreScriptPrefix, inputs, nil, variables); err != nil {
+	if _, _, err := scripts(nil, logger).Run(ctx, "user", compat.PreScriptPrefix, inputs, nil, variables, nil); err != nil {
 		t.Fatal(err)
 	}
 	records := []map[string]any{}

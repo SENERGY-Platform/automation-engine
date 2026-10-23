@@ -26,17 +26,23 @@ func NewInputsScriptEnv(env *ScriptEnv) *ScriptEnvInputs {
 	return &ScriptEnvInputs{env: env}
 }
 
-// Get value of a process worker input
+// Get value of a process worker input; a name that is no input of the task finds the variable
+// of the instance, e.g. a start parameter
 func (this *ScriptEnvInputs) Get(name string) interface{} {
 	defer func() {
 		if caught := recover(); caught != nil {
 			panic(this.env.GetVm().ToValue(caught))
 		}
 	}()
-	return this.env.Inputs[name]
+	// the worker library fetched its tasks without naming variables, so Camunda also handed over
+	// every variable of the instance
+	if value, ok := this.env.Inputs[name]; ok {
+		return value
+	}
+	return this.env.InstanceVariables[name]
 }
 
-// Exists checks if a process worker input exists
+// Exists checks if a process worker input or a variable of the instance exists
 func (this *ScriptEnvInputs) Exists(name string) bool {
 	defer func() {
 		if caught := recover(); caught != nil {
@@ -44,6 +50,9 @@ func (this *ScriptEnvInputs) Exists(name string) bool {
 		}
 	}()
 	_, exists := this.env.Inputs[name]
+	if !exists {
+		_, exists = this.env.InstanceVariables[name]
+	}
 	return exists
 }
 

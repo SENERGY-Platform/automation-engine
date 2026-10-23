@@ -303,7 +303,7 @@
  */
 
 /**
- * Exists checks if a process worker input exists
+ * Exists checks if a process worker input or a variable of the instance exists
  * @function inputs#exists
  * @param { string } name
  * @returns { boolean }
@@ -312,7 +312,8 @@
  */
 
 /**
- * Get value of a process worker input
+ * Get value of a process worker input; a name that is no input of the task finds the variable
+ * of the instance, e.g. a start parameter
  * @function inputs#get
  * @param { string } name
  * @returns { Object }

@@ -47,12 +47,14 @@ type ScriptEnv struct {
 	Variables        map[string]interface{}
 	VariablesUpdates map[string]interface{}
 	Inputs           map[string]interface{}
-	Outputs          map[string]interface{}
-	tokens           TokenSource
-	iotClient        client.Interface
-	userId           string
-	userToken        string
-	mux              sync.Mutex
+	// the variables of the instance when the task began, which inputs.get falls back to
+	InstanceVariables map[string]interface{}
+	Outputs           map[string]interface{}
+	tokens            TokenSource
+	iotClient         client.Interface
+	userId            string
+	userToken         string
+	mux               sync.Mutex
 }
 
 func NewScriptEnv(ctx context.Context, logger *slog.Logger, tokens TokenSource, iotClient client.Interface, userId string, variables map[string]interface{}, inputs map[string]interface{}, outputs map[string]interface{}) *ScriptEnv {
@@ -124,7 +126,9 @@ type Scripts struct {
 	Iot    client.Interface
 }
 
-func (this Scripts) Run(ctx context.Context, userId string, prefix string, inputs map[string]interface{}, outputs map[string]interface{}, variables map[string]interface{}) (variableChanges map[string]interface{}, result map[string]interface{}, err error) {
+// Run runs the scripts with the given prefix; instanceVariables, which may be nil, are what
+// inputs.get and inputs.exists find for a name that is no input of the task.
+func (this Scripts) Run(ctx context.Context, userId string, prefix string, inputs map[string]interface{}, outputs map[string]interface{}, variables map[string]interface{}, instanceVariables map[string]interface{}) (variableChanges map[string]interface{}, result map[string]interface{}, err error) {
 	type keyValue struct{ key, value string }
 	parts := []keyValue{}
 	for name, value := range inputs {
@@ -138,6 +142,7 @@ func (this Scripts) Run(ctx context.Context, userId string, prefix string, input
 		script.WriteString(part.value)
 	}
 	env := NewScriptEnv(ctx, this.Logger.With("script", prefix), this.Tokens, this.Iot, userId, variables, inputs, outputs)
+	env.InstanceVariables = instanceVariables
 	vm := goja.New()
 	timer := time.AfterFunc(2*time.Second, func() {
 		vm.Interrupt("script execution timeout")
