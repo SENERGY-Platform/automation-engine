@@ -161,6 +161,7 @@ Not present are: boundary events, subprocesses, call activities, user tasks, mul
   - It is configurable (decided), per namespace (NS-04): on or off, plus allow and deny lists for targets (hosts, networks, ports), separately for cloud and fog.
   - Default in the cloud: off or only with an allow list. Otherwise a user process can reach internal services in the cluster. Today the network policy of the engine blocks it there anyway (egress only to notifier, DB, port 587, DNS).
   - Default in the fog: on, with targets in the local network.
+  - On a gateway, the gateway module can set the policy itself; it then replaces the fog policy of every namespace (decided 2026-10-23). Processes taken over from Camunda gateways also call services on the internet, which the old module allowed without restriction; whether that is allowed is the owner's decision on their gateway, not the platform's.
   - Time limit and size limit for the response.
 - **BPMN-11 (M)** Script task, JavaScript, with `camunda:resultVariable`.
 - **BPMN-12 (M)** Exclusive gateway: diverging with conditions and default flow, converging without condition.

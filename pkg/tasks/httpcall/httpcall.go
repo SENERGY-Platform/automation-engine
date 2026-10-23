@@ -53,6 +53,8 @@ type Namespaces interface {
 type Type struct {
 	namespaces Namespaces
 	mode       string
+	// the policy a gateway sets for itself; it replaces the one of every namespace
+	local *model.HttpPolicy
 	// replaced in tests, e.g. to reach a test server on a loopback address
 	resolver *net.Resolver
 }
@@ -61,7 +63,16 @@ func New(namespaces Namespaces, mode string) *Type {
 	return &Type{namespaces: namespaces, mode: mode, resolver: net.DefaultResolver}
 }
 
+// SetLocalPolicy makes policy the one of every namespace, as a gateway configures it (NS-04).
+func (this *Type) SetLocalPolicy(policy model.HttpPolicy) {
+	policy = policy.WithDefaults()
+	this.local = &policy
+}
+
 func (this *Type) policy(namespace string) model.HttpPolicy {
+	if this.local != nil {
+		return *this.local
+	}
 	ns, _ := this.namespaces.Get(namespace)
 	ns = ns.WithDefaults()
 	if this.mode == Fog {

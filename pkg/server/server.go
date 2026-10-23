@@ -241,6 +241,9 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	e.RegisterTaskType(processio.TaskType, processio.NewType(io))
 	e.RegisterTaskType(notification.TaskType, notification.NewTask(notifier))
 	httpCalls := httpcall.New(registry, config.Mode)
+	if policy, local, _ := config.LocalHttpPolicy(); local {
+		httpCalls.SetLocalPolicy(policy)
+	}
 	e.RegisterTaskType(httpcall.TaskType, httpCalls)
 	moduleSettings := moduleSettings(config)
 	runtime := modules.NewRuntime(s, moduleSettings, userToken, logger)

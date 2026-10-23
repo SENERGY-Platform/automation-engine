@@ -80,3 +80,52 @@ func TestDefaultNamespacesAllowLoops(t *testing.T) {
 		}
 	}
 }
+
+// The gateway module sets the HTTP policy of the gateway as comma separated lists (NS-04).
+func TestLocalHttpPolicyFromEnvironment(t *testing.T) {
+	t.Setenv("MODE", "fog")
+	t.Setenv("MQTT_BROKER", "tcp://broker:1881")
+	t.Setenv("HTTP_ENABLED", "true")
+	t.Setenv("HTTP_ALLOW_HOSTS", "api.sunrise-sunset.org, *.example.org")
+	t.Setenv("HTTP_ALLOW_NETWORKS", "192.168.0.0/16,10.0.0.0/8")
+	t.Setenv("HTTP_ALLOW_PORTS", "80,443")
+	config, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, local, err := config.LocalHttpPolicy()
+	if err != nil || !local {
+		t.Fatalf("local %v, %v", local, err)
+	}
+	if !policy.Enabled || len(policy.AllowHosts) != 2 || policy.AllowHosts[1] != "*.example.org" || len(policy.AllowNetworks) != 2 || len(policy.AllowPorts) != 2 || policy.AllowPorts[1] != 443 {
+		t.Fatalf("unexpected %+v", policy)
+	}
+	if policy.Timeout != "10s" || policy.MaxResponseBytes != 1<<20 {
+		t.Fatalf("defaults missing: %+v", policy)
+	}
+}
+
+func TestLocalHttpPolicyUnsetKeepsNamespaces(t *testing.T) {
+	if _, local, err := Default().LocalHttpPolicy(); local || err != nil {
+		t.Fatalf("local %v, %v", local, err)
+	}
+}
+
+func TestValidateRejectsInvalidLocalHttpPolicy(t *testing.T) {
+	for name, change := range map[string]func(*Config){
+		"in the cloud":          func(c *Config) { c.HttpEnabled = "true" },
+		"list without enabled":  func(c *Config) { c.Mode = "fog"; c.HttpAllowHosts = "example.org" },
+		"no boolean":            func(c *Config) { c.Mode = "fog"; c.HttpEnabled = "yes please" },
+		"invalid network":       func(c *Config) { c.Mode = "fog"; c.HttpEnabled = "true"; c.HttpAllowNetworks = "192.168.0.0" },
+		"invalid port":          func(c *Config) { c.Mode = "fog"; c.HttpEnabled = "true"; c.HttpAllowPorts = "80,https" },
+		"invalid timeout":       func(c *Config) { c.Mode = "fog"; c.HttpEnabled = "true"; c.HttpTimeout = "10" },
+		"negative response cap": func(c *Config) { c.Mode = "fog"; c.HttpEnabled = "true"; c.HttpMaxResponseBytes = -1 },
+	} {
+		config := Default()
+		config.MqttBroker = "tcp://broker:1881"
+		change(&config)
+		if err := config.validate(); err == nil {
+			t.Errorf("%v: expected error", name)
+		}
+	}
+}

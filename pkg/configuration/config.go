@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -197,6 +198,18 @@ type Config struct {
 	LegacyIoPostgres types.Secret `json:"legacy_io_postgres" env_var:"LEGACY_IO_POSTGRES"`
 	// fog: the owner of the taken over values; empty keeps the users of process-io
 	LegacyIoOwner string `json:"legacy_io_owner" env_var:"LEGACY_IO_OWNER"`
+	// fog: the HTTP policy of this gateway (NS-04), set by the gateway module so that its owner
+	// decides what processes may call. With HTTP_ENABLED set it replaces the fog policy of every
+	// namespace that came from the cloud; unset, the namespaces decide. Lists are comma
+	// separated; without allow lists, every target no deny list names is allowed.
+	HttpEnabled          string `json:"http_enabled" env_var:"HTTP_ENABLED"`
+	HttpAllowHosts       string `json:"http_allow_hosts" env_var:"HTTP_ALLOW_HOSTS"`
+	HttpDenyHosts        string `json:"http_deny_hosts" env_var:"HTTP_DENY_HOSTS"`
+	HttpAllowNetworks    string `json:"http_allow_networks" env_var:"HTTP_ALLOW_NETWORKS"`
+	HttpDenyNetworks     string `json:"http_deny_networks" env_var:"HTTP_DENY_NETWORKS"`
+	HttpAllowPorts       string `json:"http_allow_ports" env_var:"HTTP_ALLOW_PORTS"`
+	HttpTimeout          string `json:"http_timeout" env_var:"HTTP_TIMEOUT"`
+	HttpMaxResponseBytes int    `json:"http_max_response_bytes" env_var:"HTTP_MAX_RESPONSE_BYTES"`
 	// limits of the process-io store per user (LONG-11)
 	MaxIoValuesPerUser int `json:"max_io_values_per_user" env_var:"MAX_IO_VALUES_PER_USER"`
 	MaxIoValueBytes    int `json:"max_io_value_bytes" env_var:"MAX_IO_VALUE_BYTES"`
@@ -369,6 +382,11 @@ func (this Config) validate() error {
 			return fmt.Errorf("cors_allowed_origins: %q is not an origin like https://ui.example.org", origin)
 		}
 	}
+	if _, local, err := this.LocalHttpPolicy(); err != nil {
+		return err
+	} else if local && this.Mode != "fog" {
+		return fmt.Errorf("http_enabled is the policy of a gateway; in the cloud the namespaces set it")
+	}
 	seen := map[string]bool{}
 	for _, ns := range this.Namespaces {
 		if seen[ns.Name] {
@@ -380,6 +398,39 @@ func (this Config) validate() error {
 		}
 	}
 	return nil
+}
+
+// LocalHttpPolicy is the HTTP policy the gateway sets for itself; local is false without
+// http_enabled, then the policy of the namespace applies.
+func (this Config) LocalHttpPolicy() (policy model.HttpPolicy, local bool, err error) {
+	if this.HttpEnabled == "" {
+		if this.HttpAllowHosts+this.HttpDenyHosts+this.HttpAllowNetworks+this.HttpDenyNetworks+this.HttpAllowPorts+this.HttpTimeout != "" || this.HttpMaxResponseBytes != 0 {
+			return policy, false, fmt.Errorf("http_* settings apply only with http_enabled")
+		}
+		return policy, false, nil
+	}
+	policy.Enabled, err = strconv.ParseBool(this.HttpEnabled)
+	if err != nil {
+		return policy, false, fmt.Errorf("http_enabled: %q is no boolean", this.HttpEnabled)
+	}
+	policy.AllowHosts = List(this.HttpAllowHosts)
+	policy.DenyHosts = List(this.HttpDenyHosts)
+	policy.AllowNetworks = List(this.HttpAllowNetworks)
+	policy.DenyNetworks = List(this.HttpDenyNetworks)
+	for _, entry := range List(this.HttpAllowPorts) {
+		port, err := strconv.Atoi(entry)
+		if err != nil || port < 1 || port > 65535 {
+			return policy, false, fmt.Errorf("http_allow_ports: %q is no port", entry)
+		}
+		policy.AllowPorts = append(policy.AllowPorts, port)
+	}
+	if this.HttpMaxResponseBytes < 0 {
+		return policy, false, fmt.Errorf("http_max_response_bytes must not be negative")
+	}
+	policy.Timeout = this.HttpTimeout
+	policy.MaxResponseBytes = this.HttpMaxResponseBytes
+	policy = policy.WithDefaults()
+	return policy, true, policy.Validate()
 }
 
 // List splits a comma separated value and drops empty entries.

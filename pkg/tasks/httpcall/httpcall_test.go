@@ -20,6 +20,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
@@ -56,5 +57,28 @@ func TestCallsDoNotCarryTraceContextOrBaggage(t *testing.T) {
 	}
 	if header.Get("traceparent") != "" || header.Get("baggage") != "" {
 		t.Fatalf("targets outside the platform get neither trace context nor the user id: %v", header)
+	}
+}
+
+// The policy a gateway sets for itself replaces the fog policy that came with the namespace.
+func TestLocalPolicyReplacesNamespacePolicy(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+	processes := model.Namespace{Http: model.HttpSettings{Fog: model.HttpPolicy{Enabled: true, AllowNetworks: []string{"10.0.0.0/8"}}}}
+	task := engine.Task{Namespace: "processes", Input: map[string]any{"url": server.URL}}
+
+	call := New(namespaces{"processes": processes}, Fog)
+	if _, err := call.Execute(context.Background(), task); err == nil || !strings.Contains(err.Error(), "target not allowed") {
+		t.Fatalf("the namespace allows only 10.0.0.0/8: %v", err)
+	}
+
+	call.SetLocalPolicy(model.HttpPolicy{Enabled: true, AllowNetworks: []string{"127.0.0.0/8"}})
+	if result, err := call.Execute(context.Background(), task); err != nil || result.Output["statusCode"] != 200.0 {
+		t.Fatalf("the local policy allows loopback: %+v %v", result, err)
+	}
+
+	call.SetLocalPolicy(model.HttpPolicy{Enabled: false})
+	if _, err := call.Execute(context.Background(), task); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("the local policy disables calls: %v", err)
 	}
 }

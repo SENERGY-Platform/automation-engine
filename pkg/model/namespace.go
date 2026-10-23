@@ -121,6 +121,28 @@ type HttpPolicy struct {
 	MaxResponseBytes int    `json:"max_response_bytes,omitempty"`
 }
 
+func (this HttpPolicy) WithDefaults() HttpPolicy {
+	if this.Timeout == "" {
+		this.Timeout = "10s"
+	}
+	if this.MaxResponseBytes == 0 {
+		this.MaxResponseBytes = 1 << 20
+	}
+	return this
+}
+
+func (this HttpPolicy) Validate() error {
+	if _, err := time.ParseDuration(this.Timeout); this.Timeout != "" && err != nil {
+		return BadRequest("http: invalid timeout %q", this.Timeout)
+	}
+	for _, network := range append(append([]string{}, this.AllowNetworks...), this.DenyNetworks...) {
+		if _, _, err := net.ParseCIDR(network); err != nil {
+			return BadRequest("http: invalid network %q", network)
+		}
+	}
+	return nil
+}
+
 type HttpSettings struct {
 	Cloud HttpPolicy `json:"cloud"`
 	Fog   HttpPolicy `json:"fog"`
@@ -214,14 +236,8 @@ func (this Namespace) WithDefaults() Namespace {
 		this.UserDeletion = UserDeletionReject
 	}
 
-	for _, policy := range []*HttpPolicy{&this.Http.Cloud, &this.Http.Fog} {
-		if policy.Timeout == "" {
-			policy.Timeout = "10s"
-		}
-		if policy.MaxResponseBytes == 0 {
-			policy.MaxResponseBytes = 1 << 20
-		}
-	}
+	this.Http.Cloud = this.Http.Cloud.WithDefaults()
+	this.Http.Fog = this.Http.Fog.WithDefaults()
 	return this
 }
 
@@ -245,13 +261,8 @@ func (this Namespace) Validate() error {
 		return BadRequest("retention default %v exceeds the maximum %v", this.Retention.DefaultDays, this.Retention.MaxDays)
 	}
 	for _, policy := range []HttpPolicy{this.Http.Cloud, this.Http.Fog} {
-		if _, err := time.ParseDuration(policy.Timeout); policy.Timeout != "" && err != nil {
-			return BadRequest("http: invalid timeout %q", policy.Timeout)
-		}
-		for _, network := range append(append([]string{}, policy.AllowNetworks...), policy.DenyNetworks...) {
-			if _, _, err := net.ParseCIDR(network); err != nil {
-				return BadRequest("http: invalid network %q", network)
-			}
+		if err := policy.Validate(); err != nil {
+			return err
 		}
 	}
 	for _, kind := range Kinds {
