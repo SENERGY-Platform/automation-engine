@@ -88,10 +88,13 @@ func deleteInfoJson(info *model.ModuleDeleteInfo) string {
 }
 
 // UpsertModule writes a module; an existing one with the same id is replaced, created_at stays.
+// A written module counts as checked when it was written: its resource may still be starting, a
+// pipeline for instance, and the workers checked a new module only at their next pass (SMS-11).
+// The error of a replaced resource goes with it.
 func (this *Tx) UpsertModule(m model.Module) error {
-	_, err := this.exec("INSERT INTO modules (id, namespace, instance_id, created_by, element_id, owner, module_type, data, delete_info, error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?) "+
-		"ON CONFLICT (id) DO UPDATE SET instance_id = excluded.instance_id, created_by = excluded.created_by, element_id = excluded.element_id, owner = excluded.owner, module_type = excluded.module_type, data = excluded.data, delete_info = excluded.delete_info, updated_at = excluded.updated_at",
-		m.Id, m.Namespace, m.InstanceId, m.CreatedBy, m.ElementId, m.Owner, m.ModuleType, toJson(m.Data), deleteInfoJson(m.DeleteInfo), millis(m.CreatedAt), millis(m.UpdatedAt))
+	_, err := this.exec("INSERT INTO modules (id, namespace, instance_id, created_by, element_id, owner, module_type, data, delete_info, error, checked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?) "+
+		"ON CONFLICT (id) DO UPDATE SET instance_id = excluded.instance_id, created_by = excluded.created_by, element_id = excluded.element_id, owner = excluded.owner, module_type = excluded.module_type, data = excluded.data, delete_info = excluded.delete_info, error = '', checked_at = excluded.checked_at, updated_at = excluded.updated_at",
+		m.Id, m.Namespace, m.InstanceId, m.CreatedBy, m.ElementId, m.Owner, m.ModuleType, toJson(m.Data), deleteInfoJson(m.DeleteInfo), millis(m.UpdatedAt), millis(m.CreatedAt), millis(m.UpdatedAt))
 	if err != nil {
 		return err
 	}

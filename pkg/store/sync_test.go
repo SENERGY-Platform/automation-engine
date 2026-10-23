@@ -173,3 +173,37 @@ func TestModuleCheckedAtTheCutoffIsDue(t *testing.T) {
 		})
 	})
 }
+
+// A module counts as checked when it is written: its pipeline may still be starting, and the
+// workers checked a new module only at their next pass. A replaced resource drops the error.
+func TestWrittenModuleIsDueOnlyAfterTheInterval(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		tx(t, s, func(tx *store.Tx) error {
+			if err := seedInstance(tx, "d1", "i1"); err != nil {
+				return err
+			}
+			m := model.Module{Id: "m1", Namespace: "processes", InstanceId: "i1", Owner: "alice", ModuleType: "analytics", CreatedAt: t0, UpdatedAt: t0}
+			if err := tx.UpsertModule(m); err != nil {
+				return err
+			}
+			if due, err := tx.ModulesToCheck("analytics", t0.Add(-time.Minute), 10); err != nil || len(due) != 0 {
+				return fmt.Errorf("a new module is not due before the interval: %v %v", due, err)
+			}
+			if due, err := tx.ModulesToCheck("analytics", t0, 10); err != nil || len(due) != 1 {
+				return fmt.Errorf("a new module is due after the interval: %v %v", due, err)
+			}
+			if err := tx.SetModuleCheck("m1", "not running", t0.Add(time.Hour)); err != nil {
+				return err
+			}
+			m.UpdatedAt = t0.Add(2 * time.Hour)
+			if err := tx.UpsertModule(m); err != nil {
+				return err
+			}
+			due, err := tx.ModulesToCheck("analytics", t0.Add(2*time.Hour), 10)
+			if err != nil || len(due) != 1 || due[0].Error != "" {
+				return fmt.Errorf("a replaced resource drops the error and counts as checked when written: %+v %v", due, err)
+			}
+			return nil
+		})
+	})
+}
