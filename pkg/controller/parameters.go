@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"maps"
+	"slices"
+	"sync"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
@@ -51,6 +53,68 @@ func (this *Controller) DeploymentParameters(ctx context.Context, token string, 
 		return nil, err
 	}
 	return this.describe(ctx, token, start)
+}
+
+// usableConcurrency bounds the deployments DeploymentsUsable describes at once; each asks
+// device-selection and device-repository
+const usableConcurrency = 16
+
+// DeploymentsUsable reports per deployment whether every start parameter of its current
+// version has an option for the caller, the usable flag of release lists (SMS-08). Deployments
+// without the execute right, or unknown ones, are not usable. Unlike DeploymentParameters per
+// deployment it checks the rights once and holds no database connection while it asks other
+// services: a list of 46 releases one by one took longer than the mobile app waits.
+func (this *Controller) DeploymentsUsable(ctx context.Context, token string, namespace string, ids []string) (map[string]bool, error) {
+	user, _, err := this.begin(token, namespace)
+	if err != nil {
+		return nil, err
+	}
+	access, err := this.auth.Access(ctx, user, namespace, KindDeployment, Execute)
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]bool{}
+	starts := map[string]*bpmn.Element{}
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		for _, id := range ids {
+			result[id] = false
+			d, err := tx.GetDeployment(id, false)
+			if err != nil || d.Namespace != namespace {
+				continue
+			}
+			if !access.Admin && d.Owner != access.Owner && !slices.Contains(access.Ids, d.Id) {
+				continue
+			}
+			proc, err := this.engine.Process(tx, d.Id, d.Version)
+			if err != nil {
+				return err
+			}
+			starts[id] = proc.NoneStartEvent()
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	shared := prepare.WithSelectablesCache(ctx)
+	var mux sync.Mutex
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, usableConcurrency)
+	for id, start := range starts {
+		wg.Add(1)
+		slots <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			parameters, err := this.describe(shared, token, start)
+			usable := err == nil && !slices.ContainsFunc(parameters, func(p model.ParameterDescription) bool { return p.HasNoValidOption })
+			mux.Lock()
+			result[id] = usable
+			mux.Unlock()
+		}()
+	}
+	wg.Wait()
+	return result, nil
 }
 
 // MaintenanceParameters describes the parameters of a maintenance procedure (SMS-13).

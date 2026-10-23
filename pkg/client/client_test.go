@@ -442,3 +442,21 @@ func TestModelsWithoutDiagramGetOne(t *testing.T) {
 		}
 	})
 }
+
+// The usable flags of a release list come in one call: per id whether the caller may execute the
+// deployment and every start parameter offers an option (SMS-08).
+func TestDeploymentsUsable(t *testing.T) {
+	each(t, func(t *testing.T, c client.Client) {
+		d, err := c.CreateDeployment(ctx, alice, ns, model.DeploymentInput{Xml: waitingModel()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		usable, err := c.DeploymentsUsable(ctx, alice, ns, []string{d.Id, "unknown"})
+		if err != nil || !usable[d.Id] || usable["unknown"] {
+			t.Fatalf("own deployment usable, unknown not: %v %v", usable, err)
+		}
+		if usable, err = c.DeploymentsUsable(ctx, bob, ns, []string{d.Id}); err != nil || usable[d.Id] {
+			t.Fatalf("without the execute right not usable: %v %v", usable, err)
+		}
+	})
+}

@@ -468,6 +468,28 @@ func (h *handlers) getDeploymentSource(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, result, err)
 }
 
+// getDeploymentsUsable godoc
+//
+//	@Summary		whether every start parameter of each deployment has an option for the caller
+//	@Description	The usable flag of release lists (SMS-08): per id, false without the execute right, for an unknown deployment, or when a required IoT parameter offers nothing to select.
+//	@Tags			deployments
+//	@Security		Bearer
+//	@Produce		json
+//	@Param			ns	path		string	true	"namespace"
+//	@Param			ids	query		string	true	"comma separated deployment ids"
+//	@Success		200	{object}	map[string]bool
+//	@Failure		400	{object}	model.Error
+//	@Router			/namespaces/{ns}/deployments-usable [get]
+func (h *handlers) getDeploymentsUsable(w http.ResponseWriter, r *http.Request) {
+	ids := newQuery(r).list("ids")
+	if len(ids) == 0 {
+		writeError(w, model.BadRequest("ids is required"))
+		return
+	}
+	result, err := h.c.DeploymentsUsable(r.Context(), token(r), r.PathValue("ns"), ids)
+	respond(w, http.StatusOK, result, err)
+}
+
 // getStartParameters godoc
 //
 //	@Summary	start parameters of the current version, without fields marked ignore_on_start

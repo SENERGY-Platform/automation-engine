@@ -7185,6 +7185,41 @@ paths:
       summary: deploy a model version or own BPMN
       tags:
       - deployments
+  /namespaces/{ns}/deployments-usable:
+    get:
+      description: 'The usable flag of release lists (SMS-08): per id, false without
+        the execute right, for an unknown deployment, or when a required IoT parameter
+        offers nothing to select.'
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: comma separated deployment ids
+        in: query
+        name: ids
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: whether every start parameter of each deployment has an option for
+        the caller
+      tags:
+      - deployments
   /namespaces/{ns}/deployments/{id}:
     delete:
       parameters:

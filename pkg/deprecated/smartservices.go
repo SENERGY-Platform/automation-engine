@@ -23,11 +23,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
-	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 )
 
@@ -812,58 +810,21 @@ func (this *Handler) releases(r *http.Request) ([]model.Deployment, []model.Depl
 	return resultDeployments, versions, total, nil
 }
 
-// usableConcurrency bounds the deployments described at once for add-usable-flag; each asks
-// permissions-v2 and device-selection
-const usableConcurrency = 16
-
-// usableFlags reports per deployment whether it is usable, concurrently and once per id, as
-// smart-service-repository computed the flags in parallel; one after another a list of 46
-// releases took 10 to 16 s, past the timeout of the mobile app
+// usableFlags reports per deployment whether it is usable, as smart-service-repository
+// computed the flags; an error leaves every release unusable
 func (this *Handler) usableFlags(r *http.Request, deployments []model.Deployment) []bool {
-	index := map[string]int{}
-	var ids []string
+	ids := make([]string, 0, len(deployments))
 	for _, d := range deployments {
-		if _, known := index[d.Id]; !known {
-			index[d.Id] = len(ids)
+		if !slices.Contains(ids, d.Id) {
 			ids = append(ids, d.Id)
 		}
 	}
-	flags := make([]bool, len(ids))
-	// releases of one user ask device-selection the same criteria again and again
-	shared := r.WithContext(prepare.WithSelectablesCache(r.Context()))
-	concurrently(usableConcurrency, len(ids), func(i int) {
-		flags[i] = this.usable(shared, ids[i])
-	})
+	usable, _ := this.c.DeploymentsUsable(r.Context(), token(r), smartServices, ids)
 	result := make([]bool, len(deployments))
 	for i, d := range deployments {
-		result[i] = flags[index[d.Id]]
+		result[i] = usable[d.Id]
 	}
 	return result
-}
-
-// concurrently runs f for 0 to count-1 with at most limit calls at a time and waits for all
-func concurrently(limit int, count int, f func(i int)) {
-	slots := make(chan struct{}, limit)
-	var wg sync.WaitGroup
-	for i := range count {
-		wg.Add(1)
-		slots <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-slots }()
-			f(i)
-		}()
-	}
-	wg.Wait()
-}
-
-// usable reports whether every parameter of a release has a valid option for the user
-func (this *Handler) usable(r *http.Request, deploymentId string) bool {
-	parameters, err := this.c.DeploymentParameters(r.Context(), token(r), smartServices, deploymentId)
-	if err != nil {
-		return false
-	}
-	return !slices.ContainsFunc(parameters, func(p model.ParameterDescription) bool { return p.HasNoValidOption })
 }
 
 // listReleases godoc

@@ -68,6 +68,7 @@ type Controller interface {
 	GetDeploymentVersion(ctx context.Context, token string, namespace string, id string, version int) (model.DeploymentVersion, error)
 	GetDeploymentSource(ctx context.Context, token string, namespace string, id string, version int) (model.ModelVersion, error)
 	GetStartParameters(ctx context.Context, token string, namespace string, deploymentId string) ([]model.StartParameter, error)
+	DeploymentsUsable(ctx context.Context, token string, namespace string, ids []string) (map[string]bool, error)
 	// PrepareDeployment lists start parameters and the selectable devices per element (DEP-01)
 	PrepareDeployment(ctx context.Context, token string, namespace string, input model.PrepareInput) (model.PreparedDeployment, error)
 	// ListEventDescriptions shows what event workers evaluate for a deployment (DEP-07)

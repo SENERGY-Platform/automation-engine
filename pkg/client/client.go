@@ -283,6 +283,11 @@ func (this *ClientImpl) GetDeploymentSource(ctx context.Context, token string, n
 	return result, err
 }
 
+func (this *ClientImpl) DeploymentsUsable(ctx context.Context, token string, namespace string, ids []string) (result map[string]bool, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "deployments-usable"), url.Values{"ids": {strings.Join(ids, ",")}}, nil, &result)
+	return result, err
+}
+
 func (this *ClientImpl) GetStartParameters(ctx context.Context, token string, namespace string, deploymentId string) (result []model.StartParameter, err error) {
 	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "deployments", deploymentId, "start-parameters"), nil, nil, &result)
 	return result, err
