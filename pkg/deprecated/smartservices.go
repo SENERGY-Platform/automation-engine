@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -810,6 +811,49 @@ func (this *Handler) releases(r *http.Request) ([]model.Deployment, []model.Depl
 	return resultDeployments, versions, total, nil
 }
 
+// usableConcurrency bounds the deployments described at once for add-usable-flag; each asks
+// permissions-v2 and device-selection
+const usableConcurrency = 16
+
+// usableFlags reports per deployment whether it is usable, concurrently and once per id, as
+// smart-service-repository computed the flags in parallel; one after another a list of 46
+// releases took 10 to 16 s, past the timeout of the mobile app
+func (this *Handler) usableFlags(r *http.Request, deployments []model.Deployment) []bool {
+	index := map[string]int{}
+	var ids []string
+	for _, d := range deployments {
+		if _, known := index[d.Id]; !known {
+			index[d.Id] = len(ids)
+			ids = append(ids, d.Id)
+		}
+	}
+	flags := make([]bool, len(ids))
+	concurrently(usableConcurrency, len(ids), func(i int) {
+		flags[i] = this.usable(r, ids[i])
+	})
+	result := make([]bool, len(deployments))
+	for i, d := range deployments {
+		result[i] = flags[index[d.Id]]
+	}
+	return result
+}
+
+// concurrently runs f for 0 to count-1 with at most limit calls at a time and waits for all
+func concurrently(limit int, count int, f func(i int)) {
+	slots := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+	for i := range count {
+		wg.Add(1)
+		slots <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			f(i)
+		}()
+	}
+	wg.Wait()
+}
+
 // usable reports whether every parameter of a release has a valid option for the user
 func (this *Handler) usable(r *http.Request, deploymentId string) bool {
 	parameters, err := this.c.DeploymentParameters(r.Context(), token(r), smartServices, deploymentId)
@@ -841,12 +885,15 @@ func (this *Handler) listReleases(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	var usable []bool
+	if boolParam(r, "add-usable-flag") {
+		usable = this.usableFlags(r, deployments)
+	}
 	result := make([]SmartServiceRelease, 0, len(versions))
 	for i, v := range versions {
 		item := release(deployments[i], v.Version, v.CreatedAt.Unix(), v.ChangedResources)
-		if boolParam(r, "add-usable-flag") {
-			usable := this.usable(r, deployments[i].Id)
-			item.Usable = &usable
+		if usable != nil {
+			item.Usable = &usable[i]
 		}
 		result = append(result, item)
 	}
@@ -877,12 +924,15 @@ func (this *Handler) listExtendedReleases(w http.ResponseWriter, r *http.Request
 		writeError(w, err)
 		return
 	}
+	var usable []bool
+	if boolParam(r, "add-usable-flag") {
+		usable = this.usableFlags(r, deployments)
+	}
 	result := make([]SmartServiceReleaseExtended, 0, len(versions))
 	for i, v := range versions {
 		item := this.extendedRelease(r, deployments[i], v)
-		if boolParam(r, "add-usable-flag") {
-			usable := this.usable(r, deployments[i].Id)
-			item.Usable = &usable
+		if usable != nil {
+			item.Usable = &usable[i]
 		}
 		result = append(result, item)
 	}

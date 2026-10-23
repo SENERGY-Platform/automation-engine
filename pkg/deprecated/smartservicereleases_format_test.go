@@ -168,3 +168,28 @@ func TestExtendedReleaseShowsTheReleasedDesign(t *testing.T) {
 		t.Errorf("the list shows it as well: %+v", list)
 	}
 }
+
+// The mobile app lists releases with add-usable-flag; each release gets its flag, computed
+// once per deployment also when the list holds several versions of it.
+func TestReleaseListWithUsableFlag(t *testing.T) {
+	e := newEnv(t)
+	first := e.createDesign(alice, "First", fixture(t, "nameanddesc.bpmn"))
+	e.createRelease(alice, first.Id, "first v1")
+	e.createRelease(alice, first.Id, "first v2")
+	second := e.createDesign(alice, "Second", fixture(t, "maintenance.bpmn"))
+	e.createRelease(alice, second.Id, "second")
+	for _, query := range []string{"?add-usable-flag=true&latest=true&rights=x", "?add-usable-flag=true"} {
+		var list []struct {
+			Id     string `json:"id"`
+			Usable *bool  `json:"usable"`
+		}
+		if status, _ := e.call(alice, http.MethodGet, "/smart-services/releases"+query, nil, &list); status != http.StatusOK || len(list) < 2 {
+			t.Fatalf("%v: %v %+v", query, status, list)
+		}
+		for _, item := range list {
+			if item.Usable == nil {
+				t.Errorf("%v: %v has no flag", query, item.Id)
+			}
+		}
+	}
+}
