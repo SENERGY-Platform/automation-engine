@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
@@ -109,5 +110,45 @@ func TestIotParameterWithoutOptionsIsReported(t *testing.T) {
 	}
 	if _, err = NewDescriber(server.URL, nil).Describe(context.Background(), "", &bpmn.Element{FormFields: []bpmn.FormField{{Id: "x", Properties: map[string]string{"auto_select_all": "true"}}}}); model.AsError(err).Kind != model.KindValidation {
 		t.Fatalf("auto_select_all needs multiple: %v", err)
+	}
+}
+
+// The release list of the mobile app describes many releases at once whose parameters ask the
+// same criteria; within one request each distinct query goes to device-selection once, also
+// when the descriptions run in parallel.
+func TestSelectablesCacheSendsEachQueryOnce(t *testing.T) {
+	var mux sync.Mutex
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.Lock()
+		requests++
+		mux.Unlock()
+		_, _ = w.Write([]byte(selectables))
+	}))
+	defer server.Close()
+	start := &bpmn.Element{Id: "start", FormFields: []bpmn.FormField{
+		{Id: "a", Type: "string", Properties: map[string]string{"iot": "device"}},
+		{Id: "b", Type: "string", Properties: map[string]string{"iot": "device"}},
+		{Id: "c", Type: "string", Properties: map[string]string{"iot": "device_group"}},
+	}}
+	describer := NewDescriber(server.URL, nil)
+	ctx := WithSelectablesCache(context.Background())
+	var wg sync.WaitGroup
+	for range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			described, err := describer.Describe(ctx, "Bearer user", start)
+			if err != nil || len(described[0].Options) == 0 {
+				t.Errorf("%+v %v", described, err)
+			}
+		}()
+	}
+	wg.Wait()
+	if requests != 2 {
+		t.Fatalf("two distinct queries within the request, sent once each: %v", requests)
+	}
+	if _, err := describer.Describe(context.Background(), "Bearer user", start); err != nil || requests != 5 {
+		t.Fatalf("without the cache every parameter asks: %v %v", requests, err)
 	}
 }

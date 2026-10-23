@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
@@ -303,6 +304,50 @@ func (this *Describer) selectables(ctx context.Context, token string, typeFilter
 	if err != nil {
 		return nil, err
 	}
+	cache, _ := ctx.Value(selectablesCacheKey{}).(*selectablesCache)
+	if cache == nil {
+		return this.querySelectables(ctx, token, query, body)
+	}
+	entry := cache.entry(query.Encode() + "\n" + string(body))
+	entry.once.Do(func() {
+		entry.result, entry.err = this.querySelectables(ctx, token, query, body)
+	})
+	return entry.result, entry.err
+}
+
+type selectablesCacheKey struct{}
+
+type selectablesCache struct {
+	mux     sync.Mutex
+	entries map[string]*selectablesEntry
+}
+
+type selectablesEntry struct {
+	once   sync.Once
+	result []models.Selectable
+	err    error
+}
+
+func (this *selectablesCache) entry(key string) *selectablesEntry {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	e, ok := this.entries[key]
+	if !ok {
+		e = &selectablesEntry{}
+		this.entries[key] = e
+	}
+	return e
+}
+
+// WithSelectablesCache lets the parameter descriptions under ctx share their answers from
+// device-selection: a query asked again, also while the first one runs, is sent once. Only for
+// the descriptions of one request, since the answers depend on its token; the release list of
+// the mobile app asks the same criteria for many releases.
+func WithSelectablesCache(ctx context.Context) context.Context {
+	return context.WithValue(ctx, selectablesCacheKey{}, &selectablesCache{entries: map[string]*selectablesEntry{}})
+}
+
+func (this *Describer) querySelectables(ctx context.Context, token string, query url.Values, body []byte) (result []models.Selectable, err error) {
 	// built by hand: the client of device-selection takes no context and does not know
 	// import_path_trim_first_element (vault: The device-selection client takes no context)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, this.deviceSelectionUrl+"/v2/query/selectables?"+query.Encode(), bytes.NewReader(body))

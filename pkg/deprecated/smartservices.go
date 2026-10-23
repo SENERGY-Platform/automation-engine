@@ -27,6 +27,7 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 )
 
@@ -828,8 +829,10 @@ func (this *Handler) usableFlags(r *http.Request, deployments []model.Deployment
 		}
 	}
 	flags := make([]bool, len(ids))
+	// releases of one user ask device-selection the same criteria again and again
+	shared := r.WithContext(prepare.WithSelectablesCache(r.Context()))
 	concurrently(usableConcurrency, len(ids), func(i int) {
-		flags[i] = this.usable(r, ids[i])
+		flags[i] = this.usable(shared, ids[i])
 	})
 	result := make([]bool, len(deployments))
 	for i, d := range deployments {
