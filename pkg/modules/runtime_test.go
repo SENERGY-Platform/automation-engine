@@ -504,3 +504,53 @@ func TestModuleScriptsReadTheVariablesOfTheInstanceAsInputs(t *testing.T) {
 		t.Fatalf("scripts read start parameters as inputs, the task's own inputs win: %v %+v", values, current)
 	}
 }
+
+// smart-service-repository kept a multiple selection as the list it was given, while Camunda got
+// it as JSON text; designs read the list with variables.read, e.g. variables.read("geraet")[0],
+// and the text with inputs.get.
+func TestModuleScriptsReadAMultipleSelectionAsListThroughVariables(t *testing.T) {
+	srv := newServer(t, func(*configuration.Config) {})
+	c := srv.Controller
+	start := `<bpmn:startEvent id="start"><bpmn:extensionElements><camunda:formData>` +
+		`<camunda:formField id="geraet" label="devices" type="string"><camunda:properties><camunda:property id="multiple" value="true"/></camunda:properties></camunda:formField>` +
+		`<camunda:formField id="single" label="device" type="string"/>` +
+		`</camunda:formData></bpmn:extensionElements></bpmn:startEvent>`
+	d, err := c.CreateDeployment(ctx, alice, "smart-services", model.DeploymentInput{Xml: b.Process(
+		start,
+		b.Service("describe", "info",
+			b.InText("prescript", `var device = JSON.parse(variables.read("geraet")[0]);
+				variables.write("first", device.device_selection.device_id);
+				variables.write("text", typeof inputs.get("geraet"));
+				variables.write("single_text", typeof variables.read("single"))`),
+			b.InText("info.module_type", "widget"),
+			b.InText("info.module_data", `{"first":"{{.first}}"}`)),
+		b.End("end"),
+		b.Flow("start", "describe"), b.Flow("describe", "end"),
+	)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := c.StartInstance(ctx, alice, "smart-services", model.StartInstanceInput{DeploymentId: d.Id, Variables: map[string]any{
+		"geraet": []any{`{"device_selection":{"device_id":"meter"}}`},
+		"single": `{"device_selection":{"device_id":"lamp"}}`,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the smart service", func() bool {
+		current, _ := c.GetInstance(ctx, alice, "smart-services", inst.Id)
+		return current.Status == model.StatusReady || current.Status == model.StatusError
+	})
+	vars, _ := c.GetVariables(ctx, alice, "smart-services", inst.Id)
+	values := map[string]any{}
+	for _, v := range vars {
+		values[v.Name] = v.Value
+	}
+	if values["first"] != "meter" || values["text"] != "string" || values["single_text"] != "string" {
+		current, _ := c.GetInstance(ctx, alice, "smart-services", inst.Id)
+		t.Fatalf("variables.read gives the list, inputs.get the text, a single selection stays text: %v %+v", values, current)
+	}
+	if _, isText := values["geraet"].(string); !isText {
+		t.Errorf("the instance keeps the JSON text: %#v", values["geraet"])
+	}
+}

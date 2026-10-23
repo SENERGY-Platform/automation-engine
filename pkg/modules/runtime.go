@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
+	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules/compat"
@@ -200,11 +201,16 @@ type moduleType struct {
 func (this *moduleType) Execute(ctx context.Context, task engine.Task) (engine.TaskResult, error) {
 	rt := this.runtime
 	variables := map[string]any{}
+	var lists map[string]bool
 	err := rt.store.Tx(ctx, func(tx *store.Tx) error {
 		list, err := tx.GetVariables(task.RootInstanceId)
 		for _, v := range list {
 			variables[v.Name] = v.Value
 		}
+		if err != nil {
+			return err
+		}
+		lists, err = listParameters(tx, task.RootInstanceId)
 		return err
 	})
 	if err != nil {
@@ -214,6 +220,17 @@ func (this *moduleType) Execute(ctx context.Context, task engine.Task) (engine.T
 	// variable of the instance to the scripts as inputs, overlaid by the inputs of the task;
 	// designs read start parameters that way, e.g. inputs.get("input") for a selection
 	instanceVariables := maps.Clone(variables)
+	// smart-service-repository kept a multiple selection as the list it was given, Camunda got it
+	// as JSON text, which the engine stores (SMS-08); variables.read and templates read the
+	// list, e.g. variables.read("meters")[0]
+	for name := range lists {
+		if text, ok := variables[name].(string); ok {
+			var list []any
+			if json.Unmarshal([]byte(text), &list) == nil {
+				variables[name] = list
+			}
+		}
+	}
 	// the order of the worker library: prescripts on the raw inputs, templates against the
 	// variables they changed, the handler, postscripts with all outputs
 	changes, outputs, err := rt.scripts.Run(ctx, task.Owner, compat.PreScriptPrefix, task.Input, nil, variables, instanceVariables)
@@ -248,6 +265,36 @@ func (this *moduleType) Execute(ctx context.Context, task engine.Task) (engine.T
 		effects.Messages = append(effects.Messages, done)
 	}
 	return engine.TaskResult{Output: outputs, Effects: effects}, nil
+}
+
+// listParameters names the start fields of the instance's process that take a multiple
+// selection as text, those whose value is a list stored as JSON text
+func listParameters(tx *store.Tx, instanceId string) (map[string]bool, error) {
+	inst, err := tx.GetInstance(instanceId, false)
+	if err != nil {
+		return nil, err
+	}
+	version, err := tx.GetDeploymentVersion(inst.DeploymentId, inst.DeploymentVersion)
+	if errors.Is(err, model.ErrNotFound) {
+		// without its version nothing tells the fields apart; the variables stay as stored
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	proc, _, err := bpmn.Parse(version.Xml)
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]bool{}
+	for _, e := range proc.Ordered() {
+		for _, field := range e.FormFields {
+			if field.Type == "string" && field.Properties["multiple"] == "true" {
+				result[field.Id] = true
+			}
+		}
+	}
+	return result, nil
 }
 
 // Undo removes the resources of modules a result created that the engine could not apply.
