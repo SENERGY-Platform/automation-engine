@@ -24,6 +24,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -60,6 +61,8 @@ type Remover struct {
 	http      *http.Client
 	logger    *slog.Logger
 	now       func() time.Time
+	// importDeployUrl replaces the Kong address in delete URLs of migrated imports
+	importDeployUrl string
 }
 
 func NewRemover(s *store.Store, userToken auth.UserTokenSource, logger *slog.Logger) *Remover {
@@ -71,6 +74,16 @@ func NewRemover(s *store.Store, userToken auth.UserTokenSource, logger *slog.Log
 func (this *Remover) SetResources(resources Resources) {
 	this.resources = resources
 }
+
+// SetImportDeployUrl sends the removal of imports the module worker created to import-deploy
+// directly. The worker deleted them through Kong, and the migration kept that URL (MIG-01);
+// Kong denies the client of the engine there, because Ladon has no policy for it (SNRGY-5025).
+func (this *Remover) SetImportDeployUrl(url string) {
+	this.importDeployUrl = url
+}
+
+// kongImportUrl is the delete URL of an import as the module worker stored it
+var kongImportUrl = regexp.MustCompile(`/import/deploy/instances/([^/?]+)$`)
 
 // Run processes due removals until ctx is done.
 func (this *Remover) Run(ctx context.Context, interval time.Duration) {
@@ -128,6 +141,9 @@ func (this *Remover) remove(ctx context.Context, r store.ModuleRemoval) error {
 	}
 	if info.Url == "" {
 		return nil
+	}
+	if match := kongImportUrl.FindStringSubmatch(info.Url); match != nil && this.importDeployUrl != "" {
+		info.Url = this.importDeployUrl + "/instances/" + match[1]
 	}
 	return Delete(ctx, this.http, this.userToken, info)
 }

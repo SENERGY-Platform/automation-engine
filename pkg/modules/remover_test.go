@@ -128,3 +128,43 @@ func TestRemoverDeletesResourcesOfDeletedInstancesAndRetriesFailures(t *testing.
 		}
 	})
 }
+
+func TestRemoverDeletesImportsOfTheModuleWorkerAtImportDeploy(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		var mux sync.Mutex
+		calls := map[string]string{}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mux.Lock()
+			defer mux.Unlock()
+			calls[r.URL.Path] = r.Method + " " + r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+		instance := instanceWith(t, s, "smart-services",
+			model.Module{Id: "migrated", ModuleType: TypeImport, DeleteInfo: &model.ModuleDeleteInfo{Url: "http://kong.invalid:8000/import/deploy/instances/urn:infai:ses:import:1", UserId: "alice"}},
+			model.Module{Id: "created", ModuleType: TypeImport, DeleteInfo: &model.ModuleDeleteInfo{Url: server.URL + "/instances/urn:infai:ses:import:2", UserId: "alice"}},
+		)
+		err := s.Tx(context.Background(), func(tx *store.Tx) error {
+			return tx.DeleteInstance(instance)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		remover := NewRemover(s, func(user string) (string, error) { return "Bearer token-of-" + user, nil }, logger)
+		remover.SetImportDeployUrl(server.URL)
+		if err = remover.Process(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if calls["/instances/urn:infai:ses:import:1"] != "DELETE Bearer token-of-alice" || calls["/instances/urn:infai:ses:import:2"] != "DELETE Bearer token-of-alice" {
+			t.Fatalf("imports are deleted at import-deploy, not through Kong: %v", calls)
+		}
+		var due []store.ModuleRemoval
+		_ = s.Tx(context.Background(), func(tx *store.Tx) error {
+			due, err = tx.DueModuleRemovals(time.Now().Add(24*time.Hour), 10)
+			return err
+		})
+		if len(due) != 0 {
+			t.Fatalf("both removals are done: %v", due)
+		}
+	})
+}
