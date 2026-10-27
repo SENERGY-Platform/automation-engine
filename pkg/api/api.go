@@ -29,8 +29,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/docs"
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/swaggo/swag"
 )
 
 const maxBodyBytes = 32 << 20
@@ -119,6 +121,7 @@ func (h *handlers) routes() []route {
 	return []route{
 		{"GET /health", h.health},
 		{"GET /ready", h.ready},
+		{"GET /doc", h.doc},
 
 		{"GET /namespaces", h.listNamespaces},
 		{"GET /namespaces/{ns}", h.getNamespace},
@@ -370,6 +373,24 @@ func recovery(next http.Handler, logger *slog.Logger) http.Handler {
 //	@Router		/health [get]
 func (h *handlers) health(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
+}
+
+// doc godoc
+//
+//	@Summary		OpenAPI document of this API
+//	@Description	The document generated into docs/; api-docs-provider collects it from every service behind Kong for API Docs and the API Playground of the web-ui, and sets host and base path itself.
+//	@Tags			operation
+//	@Produce		json
+//	@Success		200
+//	@Router			/doc [get]
+func (h *handlers) doc(w http.ResponseWriter, r *http.Request) {
+	doc, err := swag.ReadDoc(docs.SwaggerInfo.InstanceName())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write([]byte(doc))
 }
 
 // ready godoc

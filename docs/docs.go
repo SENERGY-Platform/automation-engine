@@ -5710,6 +5710,23 @@ const docTemplate = `{
                 }
             }
         },
+        "/doc": {
+            "get": {
+                "description": "The document generated into docs/; api-docs-provider collects it from every service behind Kong for API Docs and the API Playground of the web-ui, and sets host and base path itself.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "operation"
+                ],
+                "summary": "OpenAPI document of this API",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "tags": [
