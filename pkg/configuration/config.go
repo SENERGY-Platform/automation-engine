@@ -91,6 +91,10 @@ type Config struct {
 	// OTLP collector over gRPC for traces; empty selects the platform default of
 	// gin-middleware/otelx, "off" disables tracing
 	OtelEndpoint string `json:"otel_endpoint" env_var:"OTEL_ENDPOINT"`
+
+	// api-docs-provider, e.g. http://api.swagger:5000: the cloud engine uploads docs/asyncapi.json on
+	// start, as the other platform services do, for API Docs of the web-ui; empty uploads nothing
+	ApiDocsProviderBaseUrl string `json:"api_docs_provider_base_url" env_var:"API_DOCS_PROVIDER_BASE_URL"`
 	// services and options of the module task types of smart services (TASK-29)
 	DeviceManagerUrl string `json:"device_manager_url" env_var:"DEVICE_MANAGER_URL"`
 	FlowEngineUrl    string `json:"flow_engine_url" env_var:"FLOW_ENGINE_URL"`

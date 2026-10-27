@@ -676,6 +676,7 @@ func (this *Server) Start(ctx context.Context) {
 // Run starts the background loops and serves the API and the metrics until ctx is done.
 func (this *Server) Run(ctx context.Context) error {
 	this.Start(ctx)
+	go this.publishAsyncApi(ctx)
 	if this.config.InternalPort > 0 {
 		internal := &http.Server{Addr: net.JoinHostPort("", strconv.Itoa(this.config.InternalPort)), Handler: this.internalHandler(), ReadHeaderTimeout: 10 * time.Second}
 		go func() {
