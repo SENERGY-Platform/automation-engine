@@ -48,6 +48,13 @@ func (this *Tx) UpdateModel(m model.Model) error {
 	return err
 }
 
+// DeploymentsOfOthers counts the deployments of owners other than owner that carry the id as
+// their own or as the id of their model, e.g. the releases of a design (SNRGY-4993).
+func (this *Tx) DeploymentsOfOthers(id string, owner string) (count int, err error) {
+	err = this.queryRow("SELECT COUNT(*) FROM deployments WHERE (id = ? OR model_id = ?) AND owner <> ?", id, id, owner).Scan(&count)
+	return count, err
+}
+
 func (this *Tx) GetModel(id string, lock bool) (model.Model, error) {
 	m, err := scanModel(this.queryRow("SELECT "+modelColumns+" FROM models WHERE id = ?"+this.forUpdate(lock), id))
 	return m, notFound(err, "model %v not found", id)

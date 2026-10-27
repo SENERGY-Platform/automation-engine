@@ -25,6 +25,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/migrate/rewrite"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 	"github.com/google/uuid"
 )
 
@@ -103,6 +104,39 @@ func (this *Controller) CreateModel(ctx context.Context, token string, namespace
 	if err != nil {
 		return result, err
 	}
+	return this.createModel(ctx, user, ns, uuid.NewString(), input)
+}
+
+// PutModel creates a model with the given id or updates it, as smart-service-repository did with
+// designs (SNRGY-5035). An id that a model the caller cannot see or a deployment of another user
+// carries is refused with a conflict, so that nobody takes over the releases of others
+// (SNRGY-4993).
+func (this *Controller) PutModel(ctx context.Context, token string, namespace string, id string, input model.ModelInput) (result model.Model, err error) {
+	if err = validId(id); err != nil {
+		return result, err
+	}
+	user, ns, err := this.begin(token, namespace)
+	if err != nil {
+		return result, err
+	}
+	var existing model.Model
+	err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+		existing, err = tx.GetModel(id, false)
+		return err
+	})
+	if err != nil && !isNotFound(err) {
+		return result, err
+	}
+	if err == nil {
+		if existing.Namespace != namespace || this.check(ctx, user, namespace, KindModel, id, existing.Owner, Read) != nil {
+			return result, model.Conflict("model id %v is already used", id)
+		}
+		return this.UpdateModel(ctx, token, namespace, id, input)
+	}
+	return this.createModel(ctx, user, ns, id, input)
+}
+
+func (this *Controller) createModel(ctx context.Context, user jwt.Token, ns model.Namespace, id string, input model.ModelInput) (result model.Model, err error) {
 	modelOwner, err := owner(user, input.Owner)
 	if err != nil {
 		return result, err
@@ -114,10 +148,17 @@ func (this *Controller) CreateModel(ctx context.Context, token string, namespace
 	}
 	now := time.Now().UTC()
 	result = model.Model{
-		Id: uuid.NewString(), Namespace: ns.Name, Name: firstNonEmpty(input.Name, processName), Description: input.Description,
+		Id: id, Namespace: ns.Name, Name: firstNonEmpty(input.Name, processName), Description: input.Description,
 		Owner: modelOwner, Version: 1, CreatedAt: now, UpdatedAt: now, Issues: issues,
 	}
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		others, err := tx.DeploymentsOfOthers(id, modelOwner)
+		if err != nil {
+			return err
+		}
+		if others > 0 {
+			return model.Conflict("model id %v is already used by deployments of another user", id)
+		}
 		if err := tx.InsertModel(result); err != nil {
 			return err
 		}

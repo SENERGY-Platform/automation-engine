@@ -4486,6 +4486,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "string"
                         }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "string"
+                        }
                     }
                 }
             }
@@ -4553,7 +4559,7 @@ const docTemplate = `{
                 "tags": [
                     "deprecated-smart-services"
                 ],
-                "summary": "update a design",
+                "summary": "create or update a design",
                 "deprecated": true,
                 "parameters": [
                     {
@@ -4594,6 +4600,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "string"
                         }

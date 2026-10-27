@@ -4479,6 +4479,12 @@
                         "schema": {
                             "type": "string"
                         }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "string"
+                        }
                     }
                 }
             }
@@ -4546,7 +4552,7 @@
                 "tags": [
                     "deprecated-smart-services"
                 ],
-                "summary": "update a design",
+                "summary": "create or update a design",
                 "deprecated": true,
                 "parameters": [
                     {
@@ -4587,6 +4593,12 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "string"
                         }

@@ -52,13 +52,21 @@ type Counter interface {
 	DeprecatedRequest(route string)
 }
 
+// Controller is the API with what the old APIs need beyond it.
+type Controller interface {
+	api.Controller
+	// PutModel creates a model with the given id or stores a new version of it, as the old
+	// repositories did (SNRGY-5035)
+	PutModel(ctx context.Context, token string, namespace string, id string, input model.ModelInput) (model.Model, error)
+}
+
 type Handler struct {
-	c       api.Controller
+	c       Controller
 	counter Counter
 	mux     *http.ServeMux
 }
 
-func New(c api.Controller, counter Counter) *Handler {
+func New(c Controller, counter Counter) *Handler {
 	this := &Handler{c: c, counter: counter, mux: http.NewServeMux()}
 	this.engine()
 	this.deployments()

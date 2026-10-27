@@ -5909,6 +5909,10 @@ paths:
           description: Not Found
           schema:
             type: string
+        "409":
+          description: Conflict
+          schema:
+            type: string
       security:
       - Bearer: []
       summary: create a design
@@ -6010,9 +6014,13 @@ paths:
           description: Not Found
           schema:
             type: string
+        "409":
+          description: Conflict
+          schema:
+            type: string
       security:
       - Bearer: []
-      summary: update a design
+      summary: create or update a design
       tags:
       - deprecated-smart-services
   /deprecated/smart-services/designs/{id}/owner:

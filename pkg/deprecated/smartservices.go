@@ -398,7 +398,7 @@ func (this *Handler) setDesignOwner(w http.ResponseWriter, r *http.Request) {
 	respond(w, design(moved, v), err)
 }
 
-func (this *Handler) saveDesign(w http.ResponseWriter, r *http.Request, save func(input model.ModelInput) (model.Model, error)) {
+func (this *Handler) saveDesign(w http.ResponseWriter, r *http.Request, save func(d SmartServiceDesign, input model.ModelInput) (model.Model, error)) {
 	d, err := decode[SmartServiceDesign](r)
 	if err != nil {
 		writeError(w, err)
@@ -410,7 +410,7 @@ func (this *Handler) saveDesign(w http.ResponseWriter, r *http.Request, save fun
 			d.Description = process.Description
 		}
 	}
-	m, err := save(model.ModelInput{Name: d.Name, Description: d.Description, Xml: d.BpmnXml, Svg: d.SvgXml})
+	m, err := save(d, model.ModelInput{Name: d.Name, Description: d.Description, Xml: d.BpmnXml, Svg: d.SvgXml})
 	if err != nil {
 		writeError(w, err)
 		return
@@ -428,17 +428,21 @@ func (this *Handler) saveDesign(w http.ResponseWriter, r *http.Request, save fun
 //	@Produce	json
 //	@Param		design	body	SmartServiceDesign	true	"design"
 //	@Success	200	{object}	SmartServiceDesign
-//	@Failure	400,403,404	{string}	string
+//	@Failure	400,403,404,409	{string}	string
 //	@Router		/deprecated/smart-services/designs [post]
 func (this *Handler) createDesign(w http.ResponseWriter, r *http.Request) {
-	this.saveDesign(w, r, func(input model.ModelInput) (model.Model, error) {
+	this.saveDesign(w, r, func(d SmartServiceDesign, input model.ModelInput) (model.Model, error) {
+		if d.Id != "" {
+			// a given id is taken, as smart-service-repository did (SNRGY-5035)
+			return this.c.PutModel(r.Context(), token(r), smartServices, d.Id, input)
+		}
 		return this.c.CreateModel(r.Context(), token(r), smartServices, input)
 	})
 }
 
 // updateDesign godoc
 //
-//	@Summary		update a design
+//	@Summary		create or update a design
 //	@Tags		deprecated-smart-services
 //	@Deprecated
 //	@Security	Bearer
@@ -446,11 +450,16 @@ func (this *Handler) createDesign(w http.ResponseWriter, r *http.Request) {
 //	@Param		id	path	string	true	"design id"
 //	@Param		design	body	SmartServiceDesign	true	"design"
 //	@Success	200	{object}	SmartServiceDesign
-//	@Failure	400,403,404	{string}	string
+//	@Failure	400,403,404,409	{string}	string
 //	@Router		/deprecated/smart-services/designs/{id} [put]
 func (this *Handler) updateDesign(w http.ResponseWriter, r *http.Request) {
-	this.saveDesign(w, r, func(input model.ModelInput) (model.Model, error) {
-		return this.c.UpdateModel(r.Context(), token(r), smartServices, r.PathValue("id"), input)
+	this.saveDesign(w, r, func(d SmartServiceDesign, input model.ModelInput) (model.Model, error) {
+		id := r.PathValue("id")
+		if d.Id != "" && d.Id != id {
+			return model.Model{}, model.BadRequest("path id does not match body id")
+		}
+		// an unknown id creates the design, as smart-service-repository did (SNRGY-5035)
+		return this.c.PutModel(r.Context(), token(r), smartServices, id, input)
 	})
 }
 
