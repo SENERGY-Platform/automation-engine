@@ -36,6 +36,10 @@ const (
 	closeBase         = 4000
 )
 
+// DefaultLivePingPeriod keeps a quiet live stream open: the NGINX ingress in front of the engine
+// closes a connection that sends nothing for 60 seconds
+const DefaultLivePingPeriod = 20 * time.Second
+
 // BearerProtocol is the WebSocket subprotocol a browser offers together with its token, as
 // new WebSocket(url, ["bearer", token]); the answer names only "bearer" (DBG-08).
 const BearerProtocol = "bearer"
@@ -119,6 +123,12 @@ func (h *handlers) watchInstance(w http.ResponseWriter, r *http.Request) {
 		defer timer.Stop()
 		expired = timer.C
 	}
+	pingPeriod := h.settings.LivePingPeriod
+	if pingPeriod <= 0 {
+		pingPeriod = DefaultLivePingPeriod
+	}
+	ping := time.NewTicker(pingPeriod)
+	defer ping.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -126,6 +136,14 @@ func (h *handlers) watchInstance(w http.ResponseWriter, r *http.Request) {
 		case <-expired:
 			conn.Close(CloseTokenExpired, "token expired")
 			return
+		case <-ping.C:
+			// the pong is read by CloseRead; a client that does not answer is gone
+			pingCtx, cancel := context.WithTimeout(ctx, pingPeriod)
+			err = conn.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				return
+			}
 		case message, ok := <-messages:
 			if !ok {
 				conn.Close(websocket.StatusNormalClosure, "")

@@ -17,10 +17,13 @@
 package client_test
 
 import (
+	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -286,4 +289,79 @@ func TestBrowsersSendTheTokenPastKongOnlyIfTheEngineVerifiesIt(t *testing.T) {
 	if err = wsjson.Read(streamCtx, unverifiedProtocol, &message); websocket.CloseStatus(err) != 4401 {
 		t.Fatalf("without own signature checks the subprotocol token is ignored, got %+v %v", message, err)
 	}
+}
+
+func TestTheLiveStreamPingsSoThatProxiesKeepAQuietStreamOpen(t *testing.T) {
+	streamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	config := configuration.Default()
+	config.MinTimerDuration = "0s"
+	config.SqlitePath = storetest.MemoryDsn()
+	config.PollInterval = "50ms"
+	srv, err := server.New(streamCtx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), server.Dependencies{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Start(streamCtx)
+	d := waitingDeployment(t, srv.Controller)
+	inst, err := srv.Controller.StartInstance(ctx, alice, ns, model.StartInstanceInput{DeploymentId: d.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := api.Settings{LivePingPeriod: 50 * time.Millisecond}
+	httpServer := httptest.NewServer(api.New(srv.Controller, srv.Store, slog.New(slog.NewTextHandler(io.Discard, nil)), settings))
+	defer httpServer.Close()
+
+	// raw frames, because a WebSocket client library answers pings without showing them
+	conn, err := net.Dial("tcp", strings.TrimPrefix(httpServer.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	request := "GET /namespaces/" + ns + "/instances/" + inst.Id + "/live HTTP/1.1\r\nHost: engine\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n" +
+		"Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nAuthorization: " + alice + "\r\n\r\n"
+	if _, err = conn.Write([]byte(request)); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(conn)
+	response, err := http.ReadResponse(reader, nil)
+	if err != nil || response.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("upgrade: %v %v", response, err)
+	}
+	// the instance waits, so after the snapshot only pings come (opcode 9)
+	for i := 0; i < 3; i++ {
+		opcode := readFrame(t, reader)
+		if opcode == 9 {
+			return
+		}
+	}
+	t.Fatal("no ping on a quiet live stream")
+}
+
+// readFrame reads one unmasked server frame and returns its opcode
+func readFrame(t *testing.T, reader *bufio.Reader) byte {
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(reader, header); err != nil {
+		t.Fatal(err)
+	}
+	length := uint64(header[1] & 0x7f)
+	switch length {
+	case 126:
+		extended := make([]byte, 2)
+		if _, err := io.ReadFull(reader, extended); err != nil {
+			t.Fatal(err)
+		}
+		length = uint64(binary.BigEndian.Uint16(extended))
+	case 127:
+		extended := make([]byte, 8)
+		if _, err := io.ReadFull(reader, extended); err != nil {
+			t.Fatal(err)
+		}
+		length = binary.BigEndian.Uint64(extended)
+	}
+	if _, err := io.CopyN(io.Discard, reader, int64(length)); err != nil {
+		t.Fatal(err)
+	}
+	return header[0] & 0x0f
 }
