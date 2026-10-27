@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -213,10 +214,10 @@ func TestBrowsersSendTheTokenAsFirstMessageOnlyIfTheEngineVerifiesIt(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	dial := func(settings api.Settings) *websocket.Conn {
+	dial := func(settings api.Settings, header http.Header) *websocket.Conn {
 		httpServer := httptest.NewServer(api.New(srv.Controller, srv.Store, slog.New(slog.NewTextHandler(io.Discard, nil)), settings))
 		t.Cleanup(httpServer.Close)
-		conn, _, err := websocket.Dial(streamCtx, "ws"+strings.TrimPrefix(httpServer.URL, "http")+"/namespaces/"+ns+"/instances/"+inst.Id+"/live", nil)
+		conn, _, err := websocket.Dial(streamCtx, "ws"+strings.TrimPrefix(httpServer.URL, "http")+"/namespaces/"+ns+"/instances/"+inst.Id+"/live", &websocket.DialOptions{HTTPHeader: header})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -224,19 +225,42 @@ func TestBrowsersSendTheTokenAsFirstMessageOnlyIfTheEngineVerifiesIt(t *testing.
 		return conn
 	}
 
-	unverified := dial(api.Settings{})
+	unverified := dial(api.Settings{}, nil)
 	defer unverified.CloseNow()
 	var message model.DebugMessage
 	if err = wsjson.Read(streamCtx, unverified, &message); websocket.CloseStatus(err) != 4401 {
 		t.Fatalf("without own signature checks the token must come through Kong in the header (DBG-08), got %v", err)
 	}
 
-	verified := dial(api.Settings{VerifiesTokens: true})
+	// stands in for the signature check against Keycloak: only the token of alice is signed
+	verify := func(token string) error {
+		if token != alice {
+			return errors.New("signature is invalid")
+		}
+		return nil
+	}
+	verified := dial(api.Settings{VerifyToken: verify}, nil)
 	defer verified.CloseNow()
 	if err = wsjson.Write(streamCtx, verified, api.AuthMessage{Type: "auth", Token: strings.TrimPrefix(alice, "Bearer ")}); err != nil {
 		t.Fatal(err)
 	}
 	if err = wsjson.Read(streamCtx, verified, &message); err != nil || message.Type != model.DebugSnapshot {
 		t.Fatalf("the first message authenticates the stream: %+v %v", message, err)
+	}
+
+	forged := dial(api.Settings{VerifyToken: verify}, nil)
+	defer forged.CloseNow()
+	if err = wsjson.Write(streamCtx, forged, api.AuthMessage{Type: "auth", Token: client.TestToken("mallory")}); err != nil {
+		t.Fatal(err)
+	}
+	if err = wsjson.Read(streamCtx, forged, &message); websocket.CloseStatus(err) != 4401 {
+		t.Fatalf("an unsigned first-message token is refused, got %+v %v", message, err)
+	}
+
+	// the stream verifies a token in the header as well, also when the other requests trust Kong
+	header := dial(api.Settings{VerifyToken: verify}, http.Header{"Authorization": {client.TestToken("mallory")}})
+	defer header.CloseNow()
+	if err = wsjson.Read(streamCtx, header, &message); websocket.CloseStatus(err) != 4401 {
+		t.Fatalf("an unsigned header token is refused by the live stream, got %+v %v", message, err)
 	}
 }

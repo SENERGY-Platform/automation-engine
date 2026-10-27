@@ -44,9 +44,14 @@ type Config struct {
 	PostgresMaxConns int    `json:"postgres_max_conns" env_var:"POSTGRES_MAX_CONNS"`
 	SqlitePath       string `json:"sqlite_path" env_var:"SQLITE_PATH"`
 
-	// with a certificate URL, token signatures are verified; otherwise Kong has verified them (SEC-04)
+	// with a certificate URL, the live stream verifies token signatures, because its token may come
+	// as first message and then does not pass Kong (DBG-08); other requests only with verify_tokens,
+	// otherwise Kong has verified them (SEC-04)
 	// e.g. https://<keycloak>/auth/realms/<realm>/protocol/openid-connect/certs
 	KeycloakCertUrl string `json:"keycloak_cert_url" env_var:"KEYCLOAK_CERT_URL"`
+	// verify the signatures of the tokens of all requests with keycloak_cert_url, not only those of
+	// the live stream; callers that build unsigned tokens, as user-management does, are then refused
+	VerifyTokens bool `json:"verify_tokens" env_var:"VERIFY_TOKENS"`
 
 	// time zone for timers; empty uses the local zone of the process (TZ)
 	Timezone string `json:"timezone" env_var:"TIMEZONE"`
@@ -373,6 +378,9 @@ func (this Config) validate() error {
 	// the device-repository mirror of a gateway needs no token
 	if this.DeviceRepositoryUrl != "" && this.AuthEndpoint == "" && this.Mode != "fog" {
 		return fmt.Errorf("device commands need auth_endpoint for token exchange")
+	}
+	if this.VerifyTokens && this.KeycloakCertUrl == "" {
+		return fmt.Errorf("verify_tokens needs keycloak_cert_url")
 	}
 	if this.PermissionsV2Url != "" && (this.AuthEndpoint == "" || this.AuthClientId == "") {
 		return fmt.Errorf("permissions_v2_url needs auth_endpoint and auth_client_id for internal calls")

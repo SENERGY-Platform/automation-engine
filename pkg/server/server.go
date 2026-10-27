@@ -267,7 +267,13 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	if config.KeycloakCertUrl != "" {
 		certs = &jwt.KeycloakCertProvider{CertUrl: config.KeycloakCertUrl}
 	}
-	c := controller.New(s, e, registry, authorizer, certs)
+	// the controller verifies every token only with verify_tokens; the live stream verifies its own
+	// regardless, see apiSettings
+	var verifyAll *jwt.KeycloakCertProvider
+	if config.VerifyTokens {
+		verifyAll = certs
+	}
+	c := controller.New(s, e, registry, authorizer, verifyAll)
 	var characteristics prepare.Characteristics
 	if config.DeviceRepositoryUrl != "" {
 		characteristics = devicerepositoryclient.NewClient(config.DeviceRepositoryUrl, nil)
@@ -364,10 +370,16 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		agent = fogsync.NewGateway(settings, s, e, registry, broker, logger)
 		agent.SetLocal(c)
 	}
-	apiSettings := api.Settings{VerifiesTokens: certs != nil, Gateway: fog, Cors: api.Cors{
+	apiSettings := api.Settings{Gateway: fog, Cors: api.Cors{
 		Origins: configuration.List(config.CorsAllowedOrigins),
 		Headers: configuration.List(config.CorsAllowedHeaders),
 	}}
+	if certs != nil {
+		apiSettings.VerifyToken = func(token string) error {
+			_, err := jwt.ParseWithValidation(certs, token)
+			return err
+		}
+	}
 	if !fog {
 		// the old APIs exist only in the cloud; Kong rewrites their paths (API-08)
 		apiSettings.Deprecated = deprecated.New(c, m)

@@ -70,7 +70,7 @@ func (h *handlers) watchInstance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	token := token(r)
 	if token == "" {
-		if !h.settings.VerifiesTokens {
+		if h.settings.VerifyToken == nil {
 			conn.Close(closeBase+http.StatusUnauthorized, "send the token in the Authorization header")
 			return
 		}
@@ -85,6 +85,12 @@ func (h *handlers) watchInstance(w http.ResponseWriter, r *http.Request) {
 		token = message.Token
 		if !strings.HasPrefix(strings.ToLower(token), "bearer ") {
 			token = "Bearer " + token
+		}
+	}
+	if h.settings.VerifyToken != nil {
+		if err = h.settings.VerifyToken(token); err != nil {
+			conn.Close(closeBase+http.StatusUnauthorized, "invalid token")
+			return
 		}
 	}
 	// control frames are handled from here on; ctx ends when the client goes away

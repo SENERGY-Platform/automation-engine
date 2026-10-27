@@ -50,6 +50,18 @@ func TestValidateRejectsUnknownRole(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsVerifyTokensWithoutCertUrl(t *testing.T) {
+	config := Default()
+	config.VerifyTokens = true
+	if err := config.validate(); err == nil {
+		t.Fatal("verifying every token needs the certificates of Keycloak")
+	}
+	config.KeycloakCertUrl = "http://keycloak:8080/auth/realms/master/protocol/openid-connect/certs"
+	if err := config.validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateRejectsCorsOriginWithPath(t *testing.T) {
 	for _, origin := range []string{"https://ui.example.org/", "ui.example.org", "https://ui.example.org/app"} {
 		config := Default()

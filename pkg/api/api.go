@@ -89,9 +89,10 @@ func gatewayOnly(next http.Handler) http.Handler {
 
 // Settings of the API that depend on the deployment.
 type Settings struct {
-	// the engine verifies token signatures itself; then a live stream may take its token as
-	// first message, which does not pass Kong (DBG-08)
-	VerifiesTokens bool
+	// verifies the signature of a token; set, the live stream checks its token with it, whether it
+	// comes in the header or as first message, which does not pass Kong (DBG-08). Other requests
+	// are verified by the controller, and only with verify_tokens.
+	VerifyToken func(token string) error
 	// the engine runs on a gateway: the API is read-only and needs no token (FOG, M6)
 	Gateway bool
 	// serves the old APIs below /deprecated/ (API-02); nil serves none
