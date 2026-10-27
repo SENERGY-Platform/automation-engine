@@ -109,6 +109,10 @@ type Dependencies struct {
 	Broker mqtt.Broker
 	// cloud: the broker the gateways reach (SYNC-04), e.g. mqtt.NewMemory() in tests
 	SyncBroker mqtt.Broker
+	// cloud: the owners of networks (FOG-11); device-repository if not given
+	HubOwners controller.HubOwners
+	// fog: the owner of the network of the gateway (FOG-11); the cert-manager of the cloud proxy if not given
+	NetworkOwner fogsync.NetworkOwner
 }
 
 func openStore(ctx context.Context, config configuration.Config) (*store.Store, error) {
@@ -362,6 +366,13 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		settings.CallTimeout = configuration.Duration(config.SyncCallTimeout)
 		networks = fogsync.NewCloud(settings, s, syncBroker, logger)
 		c.SetNetworks(networks)
+		hubOwners := deps.HubOwners
+		if hubOwners == nil && config.DeviceRepositoryUrl != "" {
+			hubOwners = devices.NewHubs(config.DeviceRepositoryUrl)
+		}
+		if hubOwners != nil {
+			c.SetHubOwners(hubOwners, adminToken)
+		}
 	}
 	var agent *fogsync.Gateway
 	if fog {
@@ -369,6 +380,11 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		settings.EngineVersion, settings.StorageBudget = Version(), int64(config.StorageBudget)
 		agent = fogsync.NewGateway(settings, s, e, registry, broker, logger)
 		agent.SetLocal(c)
+		networkOwner := deps.NetworkOwner
+		if networkOwner == nil && config.NetworkInfoUrl != "" {
+			networkOwner = fogsync.NetworkInfo(config.NetworkInfoUrl)
+		}
+		agent.SetNetworkOwner(networkOwner)
 	}
 	apiSettings := api.Settings{Gateway: fog, Cors: api.Cors{
 		Origins: configuration.List(config.CorsAllowedOrigins),
@@ -666,10 +682,28 @@ func (this *Server) Start(ctx context.Context) {
 		if err := this.Networks.Start(ctx); err != nil {
 			this.logger.Error("unable to subscribe to the gateways", "error", err)
 		}
+		go this.takeOverNetworkOwners(ctx, 10*time.Minute)
 	}
 	this.importLegacyIo(ctx)
 	if err := this.startLocal(ctx); err != nil {
 		this.logger.Error("unable to subscribe at the broker of the gateway", "error", err)
+	}
+}
+
+// takeOverNetworkOwners corrects the owners of gateway resources once after the start, again
+// after interval while the owner of a network cannot be read (FOG-11)
+func (this *Server) takeOverNetworkOwners(ctx context.Context, interval time.Duration) {
+	for {
+		err := this.Controller.TakeOverNetworkOwners(ctx)
+		if err == nil || ctx.Err() != nil {
+			return
+		}
+		this.logger.Warn("unable to give resources of gateways the owner of their network", "error", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
 	}
 }
 

@@ -18,6 +18,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"time"
@@ -104,6 +105,18 @@ func TestDependencies(ctx context.Context) (server.Dependencies, error) {
 		}
 	}
 	return server.Dependencies{Permissions: permissions, AdminToken: auth.Static(admin), UserToken: auth.UnsignedTokens}, nil
+}
+
+// TestHubOwners stands in for device-repository as the source of the owners of networks, by
+// network id (FOG-11).
+type TestHubOwners map[string]string
+
+func (this TestHubOwners) HubOwner(_ context.Context, _ string, networkId string) (string, error) {
+	owner, ok := this[networkId]
+	if !ok {
+		return "", fmt.Errorf("GET /hubs/%v: 404 not found", networkId)
+	}
+	return owner, nil
 }
 
 // TestToken creates an unsigned token for user with the given realm roles, e.g. "admin".

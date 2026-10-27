@@ -102,7 +102,7 @@ func (this *Controller) ResourceUsage(ctx context.Context, token string, namespa
 		for _, u := range usages {
 			result.Versions++
 			result.Instances += u.instances
-			if this.check(ctx, user, ns.Name, KindDeployment, u.deployment.Id, u.deployment.Owner, Read) == nil {
+			if this.checkResource(ctx, user, ns.Name, KindDeployment, u.deployment.Id, u.deployment.Owner, u.deployment.NetworkId, Read) == nil {
 				result.Readable = append(result.Readable, model.ResourceUsageDeployment{Id: u.deployment.Id, Version: u.version, Current: u.version == u.deployment.Version,
 					ModelId: u.deployment.ModelId, Name: u.deployment.Name})
 			}
@@ -142,7 +142,7 @@ func (this *Controller) modelInUse(ctx context.Context, tx *store.Tx, user jwt.T
 		for _, u := range usages {
 			total.Versions++
 			total.Instances += u.instances
-			if this.check(ctx, user, ns.Name, KindDeployment, u.deployment.Id, u.deployment.Owner, Read) == nil {
+			if this.checkResource(ctx, user, ns.Name, KindDeployment, u.deployment.Id, u.deployment.Owner, u.deployment.NetworkId, Read) == nil {
 				total.Readable = append(total.Readable, model.ResourceUsageDeployment{Id: u.deployment.Id, Version: u.version, Name: u.deployment.Name})
 			}
 		}

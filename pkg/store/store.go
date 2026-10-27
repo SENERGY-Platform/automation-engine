@@ -386,6 +386,9 @@ type Access struct {
 	Admin bool
 	Owner string
 	Ids   []string
+	// deployments or instances of gateways the user holds rights on although the namespace does
+	// not share them, e.g. as the one who deployed or started them (FOG-11)
+	Gateway []string
 }
 
 // where builds a condition with a list of conditions joined by AND
@@ -428,16 +431,22 @@ func (this *where) access(prefix string, access Access) {
 	if access.Admin {
 		return
 	}
-	if len(access.Ids) == 0 {
-		this.add(prefix+"owner = ?", access.Owner)
+	allowed := &where{}
+	allowed.add(prefix+"owner = ?", access.Owner)
+	if len(access.Ids) > 0 {
+		allowed.in(prefix+"id", access.Ids)
+	}
+	if len(access.Gateway) > 0 {
+		gateway := &where{}
+		gateway.add(prefix + "network_id <> ''")
+		gateway.in(prefix+"id", access.Gateway)
+		allowed.add("("+strings.Join(gateway.conditions, " AND ")+")", gateway.args...)
+	}
+	if len(allowed.conditions) == 1 {
+		this.add(allowed.conditions[0], allowed.args...)
 		return
 	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(access.Ids)), ", ")
-	args := []any{access.Owner}
-	for _, id := range access.Ids {
-		args = append(args, id)
-	}
-	this.add("("+prefix+"owner = ? OR "+prefix+"id IN ("+placeholders+"))", args...)
+	this.add("("+strings.Join(allowed.conditions, " OR ")+")", allowed.args...)
 }
 
 // search finds the term in any of the columns, ignoring case

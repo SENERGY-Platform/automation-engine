@@ -12927,6 +12927,14 @@
                     "description": "reject sequence flow cycles at deploy, so that every run ends; for namespaces whose task\ntypes create modules, which are removed with every new run (SMS-03)",
                     "type": "boolean"
                 },
+                "gateway_creator_rights": {
+                    "description": "rights in permissions-v2 that whoever deploys or starts on a gateway without being the\nowner of its network gets on the new deployment or instance, which belongs to that owner\n(FOG-11). Not set is read, write and administrate; no right set grants nothing.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.Rights"
+                        }
+                    ]
+                },
                 "http": {
                     "description": "targets of the task type http, separately for cloud and gateway (NS-04)",
                     "allOf": [

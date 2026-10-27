@@ -199,17 +199,24 @@ func (this *Controller) createDeployment(ctx context.Context, token string, name
 	if err != nil {
 		return result, err
 	}
-	deploymentOwner, err := owner(user, input.Owner)
-	if err != nil {
-		return result, err
-	}
 	if err = ns.CheckGateway(input.NetworkId); err != nil {
 		return result, err
 	}
+	var deploymentOwner string
 	if input.NetworkId != "" {
 		if err = this.checkNetwork(ctx, user, input.NetworkId, Administrate); err != nil {
 			return result, err
 		}
+		// a deployment of a gateway belongs to the owner of the network, not to the deploying user (FOG-11)
+		if deploymentOwner, err = this.networkOwner(ctx, token, input.NetworkId, input.Owner); err != nil {
+			return result, err
+		}
+		// before the deployment exists, so that a failure leaves nothing the user cannot see
+		if err = this.grant(ctx, user, ns, KindDeployment, id, deploymentOwner); err != nil {
+			return result, err
+		}
+	} else if deploymentOwner, err = owner(user, input.Owner); err != nil {
+		return result, err
 	}
 	plan, err := this.planSelections(ctx, user, ns, input, model.Deployment{Id: id, Namespace: ns.Name, Owner: deploymentOwner, NetworkId: input.NetworkId}, 1)
 	if err != nil {
@@ -316,7 +323,7 @@ func (this *Controller) PutDeployment(ctx context.Context, token string, namespa
 			// the id is taken in another namespace
 			return model.Conflict("deployment id %v is already used", id)
 		}
-		if err = this.check(ctx, user, namespace, KindDeployment, id, result.Owner, Write); err != nil {
+		if err = this.checkResource(ctx, user, namespace, KindDeployment, id, result.Owner, result.NetworkId, Write); err != nil {
 			return err
 		}
 		if input.Owner != "" && input.Owner != result.Owner {
@@ -404,7 +411,7 @@ func (this *Controller) readDeployment(ctx context.Context, tx *store.Tx, token 
 	if err = inNamespace(d.Namespace, namespace, KindDeployment, id); err != nil {
 		return d, err
 	}
-	return d, this.check(ctx, user, namespace, KindDeployment, id, d.Owner, right)
+	return d, this.checkResource(ctx, user, namespace, KindDeployment, id, d.Owner, d.NetworkId, right)
 }
 
 func (this *Controller) GetDeployment(ctx context.Context, token string, namespace string, id string) (result model.Deployment, err error) {
@@ -420,7 +427,7 @@ func (this *Controller) ListDeployments(ctx context.Context, token string, names
 	if err != nil {
 		return result, err
 	}
-	access, err := this.auth.Access(ctx, user, namespace, KindDeployment, Read)
+	access, err := this.access(ctx, user, namespace, KindDeployment, Read)
 	if err != nil {
 		return result, err
 	}

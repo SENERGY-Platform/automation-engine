@@ -790,6 +790,8 @@ With devices and hubs there were problems as long as the assignment to the user 
 
   A new run (RUN-11) keeps the owner of the instance. An owner change on the deployment does not change the owner of existing instances.
 
+  Deployments of a gateway and their instances are the exception: they always belong to the owner of the network (FOG-11).
+
 ---
 
 ## 15. API
@@ -874,6 +876,12 @@ A client library exists only for Go. For JavaScript/TypeScript there is none (de
 - **FOG-08 (M)** Notifications go via the cloud-proxy.
 - **FOG-09 (M)** Task type "HTTP call" into the local network (BPMN-10).
 - **FOG-10 (S)** The engine brings its schema changes itself. Today wrapper and sync client migrate the Camunda tables from outside (vault: "Camunda does not apply its own schema updates").
+- **FOG-11 (M)** Deployments of a gateway and their instances belong to the owner of the network (decided 2026-10-27). The gateway reaches the cloud with the token of the user its certificate names (FOG-08), and the notifier accepts a notification only for the user of the token, so a different owner received no notifications from the gateway (401 "You may only send messages to yourself").
+  - The cloud takes `owner_id` of the hub in device-repository: on creation and start, an `owner` other than that is rejected (400), and so is an owner change to someone else (SEC-11). A pass after the start corrects existing deployments and instances and registers the rights of the network owner; earlier owners keep their rights in permissions-v2.
+  - The gateway takes `user_id` of the network from the cert-manager of the cloud proxy (`NETWORK_INFO_URL`), sets it on what the cloud sends and rewrites its existing deployments, event descriptions and instances. Without the setting, or while the network is unknown, the gateway keeps the owners it received.
+  - Instances a gateway reports get the owner of their deployment in the cloud, whatever owner the gateway names, so that a gateway with an older process module does not turn the owner back.
+  - Whoever deploys or starts on a gateway without being the owner of its network gets rights on the new resource in permissions-v2, so that the user keeps access to it (decided 2026-10-27). The namespace sets them in `gateway_creator_rights`; not set means read, write and administrate, which let the user see, stop and delete it, and no right set grants nothing. Without execute, starting a deployment someone else made needs a share of the owner. The rights are written together with the administrate of the owner before the resource is created; if that fails, nothing is created (503). For resources of gateways, the engine evaluates rights in permissions-v2 also where the namespace does not share the kind (`processes`), in single access and in the lists of deployments, instances and incidents.
+  - Incidents keep the owner they were recorded with. IO values of instances follow the owner, so values written under a previous owner are no longer read by them.
 
 ---
 

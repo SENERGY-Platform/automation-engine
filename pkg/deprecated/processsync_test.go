@@ -57,13 +57,16 @@ func newFogEnv(t *testing.T) *env {
 	config.SqlitePath = storetest.MemoryDsn()
 	config.PollInterval = "20ms"
 	config.SyncResendAfter = "300ms"
-	// device-repository knows the name of the hub, which the fog views show
+	// device-repository knows the name of the hub, which the fog views show, and its owner (FOG-11)
 	hubs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/hubs" {
+		switch r.URL.Path {
+		case "/hubs":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"id": hub, "name": "Keller"}})
+		case "/hubs/" + hub:
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": hub, "name": "Keller", "owner_id": "alice"})
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		_ = json.NewEncoder(w).Encode([]map[string]any{{"id": hub, "name": "Keller"}})
 	}))
 	t.Cleanup(hubs.Close)
 	config.DeviceRepositoryUrl = hubs.URL

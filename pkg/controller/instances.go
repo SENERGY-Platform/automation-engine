@@ -44,10 +44,6 @@ func (this *Controller) startInstance(ctx context.Context, token string, namespa
 	if err != nil {
 		return model.Instance{}, err
 	}
-	instanceOwner, err := owner(user, input.Owner)
-	if err != nil {
-		return model.Instance{}, err
-	}
 	if input.DeploymentId == "" {
 		return model.Instance{}, model.BadRequest("deployment_id is required")
 	}
@@ -69,11 +65,21 @@ func (this *Controller) startInstance(ctx context.Context, token string, namespa
 			return err
 		}
 		// an existing id that the caller cannot see conflicts without details
-		if existing.Namespace != namespace || this.check(ctx, user, namespace, KindInstance, id, existing.Owner, Read) != nil {
+		if existing.Namespace != namespace || this.checkResource(ctx, user, namespace, KindInstance, id, existing.Owner, existing.NetworkId, Read) != nil {
 			return model.Conflict("instance id %v is already used", id)
 		}
 		return nil
 	})
+	if err != nil {
+		return model.Instance{}, err
+	}
+	var instanceOwner string
+	if deployment.NetworkId != "" {
+		// an instance of a gateway belongs to the owner of the network, not to the starting user (FOG-11)
+		instanceOwner, err = this.networkOwner(ctx, token, deployment.NetworkId, input.Owner)
+	} else {
+		instanceOwner, err = owner(user, input.Owner)
+	}
 	if err != nil {
 		return model.Instance{}, err
 	}
@@ -126,7 +132,7 @@ func (this *Controller) readInstance(ctx context.Context, tx *store.Tx, token st
 	if err = inNamespace(inst.Namespace, namespace, KindInstance, id); err != nil {
 		return inst, err
 	}
-	return inst, this.check(ctx, user, namespace, KindInstance, id, inst.Owner, right)
+	return inst, this.checkResource(ctx, user, namespace, KindInstance, id, inst.Owner, inst.NetworkId, right)
 }
 
 func (this *Controller) GetInstance(ctx context.Context, token string, namespace string, id string) (result model.Instance, err error) {
@@ -177,7 +183,7 @@ func (this *Controller) ListInstances(ctx context.Context, token string, namespa
 	if err != nil {
 		return result, err
 	}
-	access, err := this.auth.Access(ctx, user, namespace, KindInstance, Read)
+	access, err := this.access(ctx, user, namespace, KindInstance, Read)
 	if err != nil {
 		return result, err
 	}
@@ -361,7 +367,7 @@ func (this *Controller) ListIncidents(ctx context.Context, token string, namespa
 	if err != nil {
 		return result, err
 	}
-	access, err := this.auth.Access(ctx, user, namespace, KindInstance, Read)
+	access, err := this.access(ctx, user, namespace, KindInstance, Read)
 	if err != nil {
 		return result, err
 	}

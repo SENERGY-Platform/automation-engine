@@ -22,11 +22,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -45,6 +47,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 	"github.com/SENERGY-Platform/models/go/models"
+	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
 	permmodel "github.com/SENERGY-Platform/permissions-v2/pkg/model"
 )
 
@@ -62,6 +65,44 @@ type env struct {
 	online atomic.Bool
 	// the broker of the cloud, for a gateway that replaces the first one
 	cloudBroker *mqtt.Memory
+	owners      *owners
+	permissions permclient.Client
+	// the admin token of the cloud fails, as with Keycloak unreachable
+	adminTokenFails atomic.Bool
+}
+
+// owners stands in for device-repository, which names the owner of a hub to the cloud, and for
+// the cert-manager of the cloud proxy, which names it to the gateway (FOG-11)
+type owners struct {
+	mux     sync.Mutex
+	hubs    map[string]string
+	gateway string
+}
+
+func (this *owners) HubOwner(_ context.Context, _ string, id string) (string, error) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	owner, ok := this.hubs[id]
+	if !ok {
+		return "", fmt.Errorf("GET /hubs/%v: 404", id)
+	}
+	return owner, nil
+}
+
+func (this *owners) Gateway(_ context.Context) (string, error) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	return this.gateway, nil
+}
+
+// set makes owner the owner of the hub in device-repository and, if gateway, on the gateway
+func (this *owners) set(owner string, gateway bool) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	this.hubs[network] = owner
+	if gateway {
+		this.gateway = owner
+	}
 }
 
 // bridge forwards like mgw-device-cloud-connector: processes/{network}/cmd/# of the cloud to
@@ -85,7 +126,8 @@ func newEnv(t *testing.T, configure ...func(*configuration.Config)) *env {
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	this := &env{t: t}
+	// the gateway does not know its owner until a test names it
+	this := &env{t: t, owners: &owners{hubs: map[string]string{network: "alice"}}}
 	this.online.Store(true)
 	cloudBroker, gatewayBroker := mqtt.NewMemory(), mqtt.NewMemory()
 	this.cloudBroker = cloudBroker
@@ -122,6 +164,15 @@ func newEnv(t *testing.T, configure ...func(*configuration.Config)) *env {
 		t.Fatal(err)
 	}
 	deps.SyncBroker = cloudBroker
+	deps.HubOwners = this.owners
+	this.permissions = deps.Permissions
+	adminToken := deps.AdminToken
+	deps.AdminToken = func() (string, error) {
+		if this.adminTokenFails.Load() {
+			return "", errors.New("keycloak unreachable")
+		}
+		return adminToken()
+	}
 	deps.EventSeries, deps.EventUnmarshaller = series{}, unmarshaller{}
 	if this.cloud, err = server.New(ctx, config, logger, deps); err != nil {
 		t.Fatal(err)
@@ -132,7 +183,7 @@ func newEnv(t *testing.T, configure ...func(*configuration.Config)) *env {
 	gatewayConfig.SqlitePath = storetest.MemoryDsn()
 	gatewayConfig.PollInterval = "20ms"
 	gatewayConfig.Mode, gatewayConfig.MqttBroker = "fog", "memory"
-	if this.gateway, err = server.New(ctx, gatewayConfig, logger, server.Dependencies{Broker: gatewayBroker}); err != nil {
+	if this.gateway, err = server.New(ctx, gatewayConfig, logger, server.Dependencies{Broker: gatewayBroker, NetworkOwner: this.owners.Gateway}); err != nil {
 		t.Fatal(err)
 	}
 	this.gateway.Start(ctx)

@@ -2116,6 +2116,9 @@
                     "forbid_cycles": {
                         "type": "boolean"
                     },
+                    "gateway_creator_rights": {
+                        "$ref": "#/components/schemas/ModelRights"
+                    },
                     "http": {
                         "$ref": "#/components/schemas/ModelHttpSettings"
                     },

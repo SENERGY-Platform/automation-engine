@@ -208,6 +208,10 @@ type Config struct {
 	LegacyIoPostgres types.Secret `json:"legacy_io_postgres" env_var:"LEGACY_IO_POSTGRES"`
 	// fog: the owner of the taken over values; empty keeps the users of process-io
 	LegacyIoOwner string `json:"legacy_io_owner" env_var:"LEGACY_IO_OWNER"`
+	// fog: the network of the gateway at the cert-manager of the cloud proxy, e.g.
+	// http://{gateway}:8080/api/network; its user_id owns the deployments and instances of the
+	// gateway (FOG-11). Empty keeps the owners the cloud sends.
+	NetworkInfoUrl string `json:"network_info_url" env_var:"NETWORK_INFO_URL"`
 	// fog: the HTTP policy of this gateway (NS-04), set by the gateway module so that its owner
 	// decides what processes may call. With HTTP_ENABLED set it replaces the fog policy of every
 	// namespace that came from the cloud; unset, the namespaces decide. Lists are comma
@@ -372,6 +376,9 @@ func (this Config) validate() error {
 	}
 	if this.Mode == "fog" && this.SyncMqttBroker != "" {
 		return fmt.Errorf("sync_mqtt_broker is for the cloud; a gateway reaches the cloud through its own broker")
+	}
+	if this.Mode != "fog" && this.NetworkInfoUrl != "" {
+		return fmt.Errorf("network_info_url is for a gateway; the cloud reads the owners of networks from device-repository")
 	}
 	if this.Mode == "fog" && this.MqttBroker == "" {
 		return fmt.Errorf("mode fog needs mqtt_broker, the broker of the gateway")

@@ -70,6 +70,14 @@ type Registrar interface {
 	Register(ctx context.Context, namespace string, kind model.Kind, id string, owner string) error
 }
 
+// Granter gives users other than the owner rights on resources of gateways and evaluates them
+// also where the namespace does not share the kind (FOG-11).
+type Granter interface {
+	Grant(ctx context.Context, namespace string, kind model.Kind, id string, owner string, user string, rights model.Rights) error
+	CheckGranted(ctx context.Context, token jwt.Token, namespace string, kind model.Kind, id string, right Right) (bool, error)
+	GrantedIds(ctx context.Context, token jwt.Token, namespace string, kind model.Kind, right Right) ([]string, error)
+}
+
 // UserRemover removes a deleted user's rights on resources of others (SEC-08).
 type UserRemover interface {
 	RemoveUser(ctx context.Context, userId string, owners permissions.Owners) error
@@ -101,6 +109,9 @@ type Controller struct {
 	userToken auth.UserTokenSource
 	// nil without synchronisation with gateways (DEP-09)
 	networks Networks
+	// owners of networks and the token to read them without a caller (FOG-11)
+	hubOwners  HubOwners
+	adminToken auth.TokenSource
 	// usable flags of release lists, computed in the background past the request (SMS-08)
 	usable usableFlags
 }
@@ -225,7 +236,24 @@ func (this *Controller) begin(token string, namespace string) (jwt.Token, model.
 // check verifies a right on a resource; a resource the user may not read is reported as not
 // found, so that its existence does not leak
 func (this *Controller) check(ctx context.Context, token jwt.Token, namespace string, kind model.Kind, id string, owner string, right Right) error {
-	ok, err := this.auth.Check(ctx, token, namespace, kind, id, owner, right)
+	return this.checkResource(ctx, token, namespace, kind, id, owner, "", right)
+}
+
+// checkResource is check for a deployment or instance of networkId; on a gateway the rights
+// granted to whoever deployed or started it count as well (FOG-11)
+func (this *Controller) checkResource(ctx context.Context, token jwt.Token, namespace string, kind model.Kind, id string, owner string, networkId string, right Right) error {
+	allowed := func(right Right) (bool, error) {
+		ok, err := this.auth.Check(ctx, token, namespace, kind, id, owner, right)
+		if err != nil || ok || networkId == "" {
+			return ok, err
+		}
+		granter, isGranter := this.auth.(Granter)
+		if !isGranter {
+			return false, nil
+		}
+		return granter.CheckGranted(ctx, token, namespace, kind, id, right)
+	}
+	ok, err := allowed(right)
 	if err != nil {
 		return err
 	}
@@ -233,11 +261,41 @@ func (this *Controller) check(ctx context.Context, token jwt.Token, namespace st
 		return nil
 	}
 	if right != Read {
-		if readable, err := this.auth.Check(ctx, token, namespace, kind, id, owner, Read); err == nil && readable {
+		if readable, err := allowed(Read); err == nil && readable {
 			return model.Forbidden("missing right %c on %v %v", right, kind, id)
 		}
 	}
 	return model.NotFound("%v %v not found", kind, id)
+}
+
+// access restricts lists to what the user may read, with the deployments and instances of
+// gateways granted to the user (FOG-11)
+func (this *Controller) access(ctx context.Context, token jwt.Token, namespace string, kind model.Kind, right Right) (store.Access, error) {
+	access, err := this.auth.Access(ctx, token, namespace, kind, right)
+	if err != nil || access.Admin || this.networks == nil || (kind != KindDeployment && kind != KindInstance) {
+		return access, err
+	}
+	if granter, ok := this.auth.(Granter); ok {
+		access.Gateway, err = granter.GrantedIds(ctx, token, namespace, kind, right)
+	}
+	return access, err
+}
+
+// grant gives the user who deploys or starts on a gateway the rights of the namespace on the new
+// resource, which belongs to the owner of the network (FOG-11)
+func (this *Controller) grant(ctx context.Context, token jwt.Token, ns model.Namespace, kind model.Kind, id string, owner string) error {
+	granter, ok := this.auth.(Granter)
+	if !ok || token.IsAdmin() || token.GetUserId() == owner {
+		return nil
+	}
+	rights := *ns.WithDefaults().GatewayCreatorRights
+	if !rights.Any() {
+		return nil
+	}
+	if err := granter.Grant(ctx, ns.Name, kind, id, owner, token.GetUserId(), rights); err != nil {
+		return model.Unavailable("rights of %v on %v %v: %v", token.GetUserId(), kind, id, err)
+	}
+	return nil
 }
 
 // owner resolves the owner of a new resource: the caller, or for admins a given owner (SEC-11)
@@ -317,10 +375,14 @@ func (this *Controller) SetOwner(ctx context.Context, token string, namespace st
 	if input.Owner == "" {
 		return model.BadRequest("owner is required")
 	}
-	var current, resourceNamespace string
+	var current, resourceNamespace, networkId string
 	var exists bool
 	err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
 		current, resourceNamespace, exists, err = tx.Owner(kind, id)
+		if err != nil || !exists {
+			return err
+		}
+		networkId, err = networkOf(tx, kind, id)
 		return err
 	})
 	if err != nil {
@@ -331,6 +393,12 @@ func (this *Controller) SetOwner(ctx context.Context, token string, namespace st
 	}
 	if err = this.check(ctx, user, namespace, kind, id, current, Administrate); err != nil {
 		return err
+	}
+	if networkId != "" {
+		// resources of a gateway keep the owner of the network (FOG-11)
+		if _, err = this.networkOwner(ctx, token, networkId, input.Owner); err != nil {
+			return err
+		}
 	}
 	if input.Owner == current {
 		// a repeated change completes the rights a failed registration left pending
@@ -356,6 +424,19 @@ func (this *Controller) SetOwner(ctx context.Context, token string, namespace st
 		return err
 	}
 	return this.registerOwner(ctx, namespace, kind, id, input.Owner)
+}
+
+// networkOf is the network of a deployment or an instance, empty for resources of the cloud
+func networkOf(tx *store.Tx, kind model.Kind, id string) (string, error) {
+	switch kind {
+	case KindDeployment:
+		d, err := tx.GetDeployment(id, false)
+		return d.NetworkId, err
+	case KindInstance:
+		i, err := tx.GetInstance(id, false)
+		return i.NetworkId, err
+	}
+	return "", nil
 }
 
 // registerOwner gives the owner its rights before the owner change answers, so that a caller

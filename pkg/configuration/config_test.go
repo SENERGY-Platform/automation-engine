@@ -141,3 +141,15 @@ func TestValidateRejectsInvalidLocalHttpPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateAcceptsNetworkInfoUrlOnlyOnAGateway(t *testing.T) {
+	config := Default()
+	config.NetworkInfoUrl = "http://gateway:8080/api/network"
+	if err := config.validate(); err == nil {
+		t.Error("the cloud reads the owners of networks from device-repository (FOG-11)")
+	}
+	config.Mode, config.MqttBroker = "fog", "tcp://broker:1881"
+	if err := config.validate(); err != nil {
+		t.Errorf("a gateway reads the owner of its network from the cloud proxy: %v", err)
+	}
+}

@@ -18,6 +18,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -135,13 +136,17 @@ func (this *Tx) ListIncidents(namespace string, options model.IncidentListOption
 	w.add("namespace = ?", namespace)
 	if !access.Admin {
 		// incidents are visible with the instance they belong to
-		if len(access.Ids) == 0 {
-			w.add("owner = ?", access.Owner)
-		} else {
-			sub := &where{}
-			sub.in("instance_id", access.Ids)
-			w.add("(owner = ? OR "+sub.conditions[0]+")", append([]any{access.Owner}, sub.args...)...)
+		allowed := &where{}
+		allowed.add("owner = ?", access.Owner)
+		if len(access.Ids) > 0 {
+			allowed.in("instance_id", access.Ids)
 		}
+		if len(access.Gateway) > 0 {
+			gateway := &where{}
+			gateway.in("id", access.Gateway)
+			allowed.add("instance_id IN (SELECT id FROM instances WHERE network_id <> '' AND "+gateway.conditions[0]+")", gateway.args...)
+		}
+		w.add("("+strings.Join(allowed.conditions, " OR ")+")", allowed.args...)
 	}
 	if options.InstanceId != "" {
 		w.add("instance_id = ?", options.InstanceId)

@@ -44,10 +44,12 @@ type GatewaySettings struct {
 	// instances per batch of the change stream
 	BatchSize     int
 	StorageBudget int64
+	// how often the owner of the network is read (FOG-11)
+	OwnerInterval time.Duration
 }
 
 func DefaultGatewaySettings() GatewaySettings {
-	return GatewaySettings{ResendAfter: 30 * time.Second, MaxResendAfter: 5 * time.Minute, StatusInterval: 5 * time.Minute, BatchSize: 100}
+	return GatewaySettings{ResendAfter: 30 * time.Second, MaxResendAfter: 5 * time.Minute, StatusInterval: 5 * time.Minute, BatchSize: 100, OwnerInterval: time.Minute}
 }
 
 // Local is the API of the gateway the cloud reads through requests: the history stays on the
@@ -93,6 +95,11 @@ type Gateway struct {
 
 	local   Local
 	watches map[string]*watch
+
+	// the owner of the network, to whom everything on the gateway belongs (FOG-11)
+	networkOwner NetworkOwner
+	knownOwner   string
+	ownerReadAt  time.Time
 
 	// the protocol version of this side, Version except in tests
 	protocol int
@@ -177,6 +184,8 @@ func (this *Gateway) Tick(ctx context.Context) error {
 	if statusDue {
 		errs = append(errs, this.SendStatus(ctx))
 	}
+	// before the change stream, so that the instances it changed go out with this tick
+	errs = append(errs, this.refreshOwner(ctx))
 	this.endExpiredWatches()
 	return errors.Join(append(errs, this.SendChanges(ctx))...)
 }
@@ -449,8 +458,9 @@ func (this *Gateway) apply(ctx context.Context, r Resource) error {
 // descriptions come from the cloud, which reads the device repository (SYNC-06)
 func (this *Gateway) applyDeployment(ctx context.Context, id string, spec DeploymentSpec) error {
 	d, v := spec.Deployment, spec.Version
-	// on the gateway the deployment is local
+	// on the gateway the deployment is local and belongs to the owner of the network (FOG-11)
 	d.Id, d.NetworkId, v.DeploymentId = id, "", id
+	d.Owner = this.ownerOr(d.Owner)
 	if _, ok := this.namespaces.Get(d.Namespace); !ok {
 		return fmt.Errorf("namespace %v is not known on the gateway", d.Namespace)
 	}
@@ -458,7 +468,7 @@ func (this *Gateway) applyDeployment(ctx context.Context, id string, spec Deploy
 		return fmt.Errorf("deployment %v has no consistent version (%v, %v)", id, d.Version, v.Version)
 	}
 	for i := range spec.Descriptions {
-		spec.Descriptions[i].DeploymentId, spec.Descriptions[i].Version = id, d.Version
+		spec.Descriptions[i].DeploymentId, spec.Descriptions[i].Version, spec.Descriptions[i].Owner = id, d.Version, d.Owner
 	}
 	return this.store.Tx(ctx, func(tx *store.Tx) error {
 		existing, err := tx.GetDeployment(id, true)
@@ -537,7 +547,7 @@ func (this *Gateway) applyInstance(ctx context.Context, r Resource) error {
 		}
 		return this.engine.StopInstance(ctx, r.Id, "stopped")
 	}
-	_, _, err := this.engine.StartInstance(ctx, engine.StartRequest{InstanceId: r.Id, DeploymentId: r.Instance.DeploymentId, Owner: r.Instance.Owner, Variables: r.Instance.Variables})
+	_, _, err := this.engine.StartInstance(ctx, engine.StartRequest{InstanceId: r.Id, DeploymentId: r.Instance.DeploymentId, Owner: this.ownerOr(r.Instance.Owner), Variables: r.Instance.Variables})
 	return err
 }
 

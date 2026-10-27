@@ -242,10 +242,18 @@ func (this *Service) RemoveTopics(ctx context.Context, name string) error {
 const registerAttempts = 3
 
 // register makes sure the resource exists in permissions-v2 and the owner administrates it;
-// shares made meanwhile are kept. permissions-v2 takes only whole resources and knows no
-// versions, so register reads again right before writing and starts over if someone changed
-// the resource meanwhile; a change between that read and the write can still be lost.
+// shares made meanwhile are kept.
 func (this *Service) register(ctx context.Context, token string, r store.Registration) error {
+	return this.ensure(ctx, token, r, map[string]permmodel.PermissionsMap{r.Owner: ownerRights})
+}
+
+var ownerRights = permmodel.PermissionsMap{Read: true, Write: true, Execute: true, Administrate: true}
+
+// ensure makes sure the resource exists in permissions-v2 and every user holds at least the
+// rights; shares made meanwhile are kept. permissions-v2 takes only whole resources and knows no
+// versions, so ensure reads again right before writing and starts over if someone changed the
+// resource meanwhile; a change between that read and the write can still be lost.
+func (this *Service) ensure(ctx context.Context, token string, r store.Registration, rights map[string]permmodel.PermissionsMap) error {
 	ns, ok := this.namespaces.Get(r.Namespace)
 	if !ok {
 		return fmt.Errorf("unknown namespace %v", r.Namespace)
@@ -272,14 +280,20 @@ func (this *Service) register(ctx context.Context, token string, r store.Registr
 		}
 		var permissions permmodel.ResourcePermissions
 		if exists {
-			if current.UserPermissions[r.Owner].Administrate {
+			covered := true
+			for user, wanted := range rights {
+				covered = covered && covers(current.UserPermissions[user], wanted)
+			}
+			if covered {
 				return nil
 			}
 			permissions = clonePermissions(current)
 		} else {
 			permissions = toPermissions(level.InitialRights)
 		}
-		permissions.UserPermissions[r.Owner] = permmodel.PermissionsMap{Read: true, Write: true, Execute: true, Administrate: true}
+		for user, wanted := range rights {
+			permissions.UserPermissions[user] = union(permissions.UserPermissions[user], wanted)
+		}
 		again, existsAgain, err := read()
 		if err != nil {
 			return err
@@ -293,6 +307,58 @@ func (this *Service) register(ctx context.Context, token string, r store.Registr
 		_, err, code := this.client.SetPermissionContext(ctx, token, topic, r.Id, permissions)
 		return codeErr(err, code)
 	}
+}
+
+func covers(held permmodel.PermissionsMap, wanted permmodel.PermissionsMap) bool {
+	return (held.Read || !wanted.Read) && (held.Write || !wanted.Write) && (held.Execute || !wanted.Execute) && (held.Administrate || !wanted.Administrate)
+}
+
+func union(a permmodel.PermissionsMap, b permmodel.PermissionsMap) permmodel.PermissionsMap {
+	return permmodel.PermissionsMap{Read: a.Read || b.Read, Write: a.Write || b.Write, Execute: a.Execute || b.Execute, Administrate: a.Administrate || b.Administrate}
+}
+
+// Grant gives a user other than the owner rights on a resource of a gateway, so that whoever
+// deploys or starts there keeps access to the result (FOG-11). The resource need not exist in
+// the engine yet; the owner gets its administrate with it, as the sync would, because
+// permissions-v2 takes no resource without an administrator.
+func (this *Service) Grant(ctx context.Context, namespace string, kind model.Kind, id string, owner string, user string, rights model.Rights) error {
+	token, err := this.adminToken()
+	if err != nil {
+		return model.Unavailable("no admin token: %v", err)
+	}
+	return this.ensure(ctx, token, store.Registration{Kind: kind, Id: id, Namespace: namespace, Owner: owner}, map[string]permmodel.PermissionsMap{
+		owner: ownerRights,
+		user:  {Read: rights.Read, Write: rights.Write, Execute: rights.Execute, Administrate: rights.Administrate},
+	})
+}
+
+// CheckGranted checks a right in permissions-v2 also where the namespace does not share the
+// kind, for resources of gateways (FOG-11); Check has asked permissions-v2 already where it does.
+func (this *Service) CheckGranted(ctx context.Context, token jwt.Token, namespace string, kind model.Kind, id string, right Right) (bool, error) {
+	level := this.level(namespace, kind)
+	if level.Shareable || !level.Registered() {
+		return false, nil
+	}
+	access, err, code := this.client.CheckPermissionContext(ctx, token.Jwt(), model.Topic(namespace, kind), id, right)
+	if code == http.StatusNotFound {
+		return false, nil
+	}
+	return access, codeErr(err, code)
+}
+
+// GrantedIds lists the resources of a kind the user holds a right on in permissions-v2 where the
+// namespace does not share the kind, for resources of gateways (FOG-11); Access lists them where
+// it does.
+func (this *Service) GrantedIds(ctx context.Context, token jwt.Token, namespace string, kind model.Kind, right Right) ([]string, error) {
+	level := this.level(namespace, kind)
+	if level.Shareable || !level.Registered() {
+		return nil, nil
+	}
+	ids, err, code := this.client.ListAccessibleResourceIdsContext(ctx, token.Jwt(), model.Topic(namespace, kind), permmodel.ListOptions{}, right)
+	if code == http.StatusNotFound {
+		return nil, nil
+	}
+	return ids, codeErr(err, code)
 }
 
 func clonePermissions(p permmodel.ResourcePermissions) permmodel.ResourcePermissions {

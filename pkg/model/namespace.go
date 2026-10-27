@@ -47,6 +47,11 @@ type Rights struct {
 	Administrate bool `json:"administrate"`
 }
 
+// Any reports whether at least one right is set.
+func (this Rights) Any() bool {
+	return this.Read || this.Write || this.Execute || this.Administrate
+}
+
 // Principals map group paths, role names or user ids to rights.
 type Principals struct {
 	Groups map[string]Rights `json:"groups,omitempty"`
@@ -169,6 +174,10 @@ type Namespace struct {
 	// deployments run only in the cloud: a deployment for a gateway (network_id) is rejected,
 	// and modules that deploy into this namespace keep their deployments in the cloud (NS-10)
 	CloudOnly bool `json:"cloud_only,omitempty"`
+	// rights in permissions-v2 that whoever deploys or starts on a gateway without being the
+	// owner of its network gets on the new deployment or instance, which belongs to that owner
+	// (FOG-11). Not set is read, write and administrate; no right set grants nothing.
+	GatewayCreatorRights *Rights `json:"gateway_creator_rights,omitempty"`
 
 	Models      LevelSettings `json:"models"`
 	Deployments LevelSettings `json:"deployments"`
@@ -234,6 +243,9 @@ func (this Namespace) WithDefaults() Namespace {
 	}
 	if this.UserDeletion == "" {
 		this.UserDeletion = UserDeletionReject
+	}
+	if this.GatewayCreatorRights == nil {
+		this.GatewayCreatorRights = &Rights{Read: true, Write: true, Administrate: true}
 	}
 
 	this.Http.Cloud = this.Http.Cloud.WithDefaults()

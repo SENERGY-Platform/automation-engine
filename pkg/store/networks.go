@@ -305,17 +305,22 @@ func (this *Tx) ForgetEndedInstance(networkId string, id string) error {
 // UpsertReplicatedInstance writes the state of an instance as its gateway reported it; name and
 // description belong to the cloud and stay; an
 // instance of a deployment the cloud no longer has is skipped. restart_at only shows when the
-// gateway restarts it; DueRestarts leaves instances of gateways out (FOG-07).
+// gateway restarts it; DueRestarts leaves instances of gateways out (FOG-07). The owner is that
+// of the deployment, the owner of the network, also when a gateway that does not know it yet
+// reports another (FOG-11).
 func (this *Tx) UpsertReplicatedInstance(networkId string, i model.Instance) error {
-	var exists int
-	err := this.queryRow("SELECT COUNT(*) FROM deployments WHERE id = ? AND network_id = ?", i.DeploymentId, networkId).Scan(&exists)
-	if err != nil || exists == 0 {
+	err := this.queryRow("SELECT owner FROM deployments WHERE id = ? AND network_id = ?", i.DeploymentId, networkId).Scan(&i.Owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
 	_, err = this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, 0, 0, ?, ?, ?, ?) "+
 		"ON CONFLICT (id) DO UPDATE SET deployment_version = excluded.deployment_version, deployment_name = excluded.deployment_name, run = excluded.run, state = excluded.state, "+
 		"end_reason = excluded.end_reason, start_variables = excluded.start_variables, started_at = excluded.started_at, ended_at = excluded.ended_at, "+
-		"last_activity_at = excluded.last_activity_at, restart_at = excluded.restart_at, owner = excluded.owner",
+		"last_activity_at = excluded.last_activity_at, restart_at = excluded.restart_at, owner = excluded.owner, "+
+		"perm_registered = CASE WHEN instances.owner <> excluded.owner THEN 0 ELSE instances.perm_registered END",
 		i.Id, i.Namespace, i.Owner, i.DeploymentId, i.DeploymentName, i.DeploymentVersion, i.ModelId, i.ModelVersion, i.Run, string(i.State), i.EndReason, toJson(i.StartVariables),
 		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), nullMillis(i.RestartAt), i.ParentId, networkId, i.Name, i.Description)
 	if err != nil {
@@ -362,6 +367,76 @@ func (this *Tx) networkDeploymentIds(networkId string) (result []string, err err
 // GatewayDeploymentIds lists the deployments of a namespace that run on gateways.
 func (this *Tx) GatewayDeploymentIds(namespace string) (result []string, err error) {
 	return this.ids("SELECT id FROM deployments WHERE namespace = ? AND network_id <> '' ORDER BY id", namespace)
+}
+
+// NetworksWithDeployments lists the networks that have deployments.
+func (this *Tx) NetworksWithDeployments() ([]string, error) {
+	return this.ids("SELECT DISTINCT network_id FROM deployments WHERE network_id <> '' ORDER BY network_id")
+}
+
+// SetNetworkOwner gives the deployments of a network, their event descriptions and the instances
+// of the network the owner of the network (FOG-11); the rights of the owner are registered again
+// where it changed. It returns the number of changed deployments and instances.
+func (this *Tx) SetNetworkOwner(networkId string, owner string) (int64, error) {
+	var changed int64
+	for _, table := range []string{"deployments", "instances"} {
+		result, err := this.exec("UPDATE "+table+" SET owner = ?, perm_registered = 0 WHERE network_id = ? AND owner <> ?", owner, networkId, owner)
+		if err != nil {
+			return changed, err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return changed, err
+		}
+		changed += n
+	}
+	_, err := this.exec("UPDATE event_descriptions SET owner = ? WHERE owner <> ? AND deployment_id IN (SELECT id FROM deployments WHERE network_id = ?)", owner, owner, networkId)
+	return changed, err
+}
+
+// SetGatewayOwner gives every deployment, event description and instance on a gateway the owner
+// of its network (FOG-11). Changed instances enter the change stream, so that the cloud takes
+// the owner over. It returns the number of changed deployments and instances.
+func (this *Tx) SetGatewayOwner(owner string) (int64, error) {
+	type ref struct {
+		id, namespace string
+		activitySeq   int64
+	}
+	rows, err := this.query("SELECT id, namespace, activity_seq FROM instances WHERE owner <> ?", owner)
+	if err != nil {
+		return 0, err
+	}
+	var instances []ref
+	for rows.Next() {
+		var r ref
+		if err = rows.Scan(&r.id, &r.namespace, &r.activitySeq); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		instances = append(instances, r)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return 0, err
+	}
+	if _, err = this.exec("UPDATE instances SET owner = ? WHERE owner <> ?", owner, owner); err != nil {
+		return 0, err
+	}
+	for _, r := range instances {
+		if err = this.changed(r.id, r.namespace, r.activitySeq, false); err != nil {
+			return 0, err
+		}
+	}
+	result, err := this.exec("UPDATE deployments SET owner = ? WHERE owner <> ?", owner, owner)
+	if err != nil {
+		return 0, err
+	}
+	deployments, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	_, err = this.exec("UPDATE event_descriptions SET owner = ? WHERE owner <> ?", owner, owner)
+	return deployments + int64(len(instances)), err
 }
 
 func (this *Tx) ids(query string, args ...any) (result []string, err error) {

@@ -274,6 +274,7 @@ func newEnv(t *testing.T, ctx context.Context, s settings) *env {
 	}
 	// the cloud validates device commands of gateway deployments but sends none
 	deps.SyncBroker, deps.Marshaller, deps.Producer = cloudBroker, marshaller{}, discard{}
+	deps.HubOwners = client.TestHubOwners{network: "alice"}
 	if this.cloud, err = server.New(ctx, config, logger, deps); err != nil {
 		t.Fatal(err)
 	}

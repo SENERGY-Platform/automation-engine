@@ -111,7 +111,8 @@ func TestRemovedModulesDeleteTheirResourcesOnTheGateway(t *testing.T) {
 	}
 }
 
-// Deleting a user deletes the user's deployments and instances on the gateways as well (SEC-08).
+// Deleting a user deletes the user's deployments and instances on the gateways as well (SEC-08);
+// those belong to the owner of the network, also when another user started them (FOG-11).
 func TestDeletingAUserDeletesTheirResourcesOnTheGateway(t *testing.T) {
 	e := newEnv(t)
 	operator := client.TestToken("operator", "admin")
@@ -119,16 +120,17 @@ func TestDeletingAUserDeletesTheirResourcesOnTheGateway(t *testing.T) {
 	d := e.gatewayDeploy(alice)
 	alices := e.gatewayStart(alice, d.Id)
 	carols := e.gatewayStart(carol, d.Id)
+	if carols.Owner != "alice" {
+		t.Fatalf("the instance carol started belongs to alice, the owner of the network: %v", carols.Owner)
+	}
 
 	if err := e.cloud.Controller.DeleteUser(ctx, operator, "carol"); err != nil {
 		t.Fatal(err)
 	}
-	e.waitFor("the instance of the deleted user gone from the gateway", func() bool {
-		_, err := e.gatewayInstance(carols.Id)
-		return errors.Is(err, model.ErrNotFound)
-	})
-	if gi, err := e.gatewayInstance(alices.Id); err != nil || gi.State != model.StateRunning {
-		t.Fatalf("the instance of another user keeps running: %+v %v", gi, err)
+	for _, id := range []string{alices.Id, carols.Id} {
+		if gi, err := e.gatewayInstance(id); err != nil || gi.State != model.StateRunning {
+			t.Fatalf("the instances of the owner of the network keep running: %+v %v", gi, err)
+		}
 	}
 
 	if err := e.cloud.Controller.DeleteUser(ctx, operator, "alice"); err != nil {
@@ -136,6 +138,10 @@ func TestDeletingAUserDeletesTheirResourcesOnTheGateway(t *testing.T) {
 	}
 	e.waitFor("the deployment of the deleted user gone from the gateway", func() bool {
 		_, err := e.gatewayDeployment(d.Id)
+		return errors.Is(err, model.ErrNotFound)
+	})
+	e.waitFor("the instance carol started gone from the gateway", func() bool {
+		_, err := e.gatewayInstance(carols.Id)
 		return errors.Is(err, model.ErrNotFound)
 	})
 	e.waitFor("its instance gone from the gateway", func() bool {
