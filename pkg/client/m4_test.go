@@ -197,7 +197,7 @@ func TestLiveStreamsArePerUserLimited(t *testing.T) {
 	})
 }
 
-func TestBrowsersSendTheTokenAsFirstMessageOnlyIfTheEngineVerifiesIt(t *testing.T) {
+func TestBrowsersSendTheTokenPastKongOnlyIfTheEngineVerifiesIt(t *testing.T) {
 	streamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	config := configuration.Default()
@@ -214,10 +214,10 @@ func TestBrowsersSendTheTokenAsFirstMessageOnlyIfTheEngineVerifiesIt(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	dial := func(settings api.Settings, header http.Header) *websocket.Conn {
+	dial := func(settings api.Settings, options *websocket.DialOptions) *websocket.Conn {
 		httpServer := httptest.NewServer(api.New(srv.Controller, srv.Store, slog.New(slog.NewTextHandler(io.Discard, nil)), settings))
 		t.Cleanup(httpServer.Close)
-		conn, _, err := websocket.Dial(streamCtx, "ws"+strings.TrimPrefix(httpServer.URL, "http")+"/namespaces/"+ns+"/instances/"+inst.Id+"/live", &websocket.DialOptions{HTTPHeader: header})
+		conn, _, err := websocket.Dial(streamCtx, "ws"+strings.TrimPrefix(httpServer.URL, "http")+"/namespaces/"+ns+"/instances/"+inst.Id+"/live", options)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -258,9 +258,32 @@ func TestBrowsersSendTheTokenAsFirstMessageOnlyIfTheEngineVerifiesIt(t *testing.
 	}
 
 	// the stream verifies a token in the header as well, also when the other requests trust Kong
-	header := dial(api.Settings{VerifyToken: verify}, http.Header{"Authorization": {client.TestToken("mallory")}})
+	header := dial(api.Settings{VerifyToken: verify}, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {client.TestToken("mallory")}}})
 	defer header.CloseNow()
 	if err = wsjson.Read(streamCtx, header, &message); websocket.CloseStatus(err) != 4401 {
 		t.Fatalf("an unsigned header token is refused by the live stream, got %+v %v", message, err)
+	}
+
+	// browsers offer the token as subprotocol next to "bearer"; the answer names only "bearer"
+	subprotocol := dial(api.Settings{VerifyToken: verify}, &websocket.DialOptions{Subprotocols: []string{api.BearerProtocol, strings.TrimPrefix(alice, "Bearer ")}})
+	defer subprotocol.CloseNow()
+	if subprotocol.Subprotocol() != api.BearerProtocol {
+		t.Fatalf("the engine answers with the bearer subprotocol, got %q", subprotocol.Subprotocol())
+	}
+	if err = wsjson.Read(streamCtx, subprotocol, &message); err != nil || message.Type != model.DebugSnapshot {
+		t.Fatalf("the subprotocol token authenticates the stream: %+v %v", message, err)
+	}
+
+	forgedProtocol := dial(api.Settings{VerifyToken: verify}, &websocket.DialOptions{Subprotocols: []string{api.BearerProtocol, strings.TrimPrefix(client.TestToken("mallory"), "Bearer ")}})
+	defer forgedProtocol.CloseNow()
+	if err = wsjson.Read(streamCtx, forgedProtocol, &message); websocket.CloseStatus(err) != 4401 {
+		t.Fatalf("an unsigned subprotocol token is refused, got %+v %v", message, err)
+	}
+
+	// without own signature checks a subprotocol token has not passed Kong and does not count
+	unverifiedProtocol := dial(api.Settings{}, &websocket.DialOptions{Subprotocols: []string{api.BearerProtocol, strings.TrimPrefix(alice, "Bearer ")}})
+	defer unverifiedProtocol.CloseNow()
+	if err = wsjson.Read(streamCtx, unverifiedProtocol, &message); websocket.CloseStatus(err) != 4401 {
+		t.Fatalf("without own signature checks the subprotocol token is ignored, got %+v %v", message, err)
 	}
 }

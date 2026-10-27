@@ -8091,7 +8091,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Upgrades to a WebSocket and sends model.DebugMessage values as JSON: a snapshot, deltas with sequence numbers, and the end state when the instance ends (DBG-01). The token goes in the Authorization header or, for browsers, as first message {\"type\":\"auth\",\"token\":\"...\"}, never as query parameter (DBG-08). The stream closes with code 4401 when the token expires and with 4000 plus the HTTP status of other errors.",
+                "description": "Upgrades to a WebSocket and sends model.DebugMessage values as JSON: a snapshot, deltas with sequence numbers, and the end state when the instance ends (DBG-01). The token goes in the Authorization header or, for browsers, as subprotocols [\"bearer\", token] or as first message {\"type\":\"auth\",\"token\":\"...\"}, never as query parameter (DBG-08). The stream closes with code 4401 when the token expires and with 4000 plus the HTTP status of other errors.",
                 "tags": [
                     "debugging"
                 ],

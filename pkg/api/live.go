@@ -19,6 +19,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -35,6 +36,10 @@ const (
 	closeBase         = 4000
 )
 
+// BearerProtocol is the WebSocket subprotocol a browser offers together with its token, as
+// new WebSocket(url, ["bearer", token]); the answer names only "bearer" (DBG-08).
+const BearerProtocol = "bearer"
+
 // AuthMessage is the first message of a live stream whose client cannot set headers (DBG-08).
 type AuthMessage struct {
 	Type  string `json:"type"`
@@ -44,7 +49,7 @@ type AuthMessage struct {
 // watchInstance godoc
 //
 //	@Summary		live debug stream of an instance (WebSocket)
-//	@Description	Upgrades to a WebSocket and sends model.DebugMessage values as JSON: a snapshot, deltas with sequence numbers, and the end state when the instance ends (DBG-01). The token goes in the Authorization header or, for browsers, as first message {"type":"auth","token":"..."}, never as query parameter (DBG-08). The stream closes with code 4401 when the token expires and with 4000 plus the HTTP status of other errors.
+//	@Description	Upgrades to a WebSocket and sends model.DebugMessage values as JSON: a snapshot, deltas with sequence numbers, and the end state when the instance ends (DBG-01). The token goes in the Authorization header or, for browsers, as subprotocols ["bearer", token] or as first message {"type":"auth","token":"..."}, never as query parameter (DBG-08). The stream closes with code 4401 when the token expires and with 4000 plus the HTTP status of other errors.
 //	@Tags			debugging
 //	@Security		Bearer
 //	@Param			ns				path	string	true	"namespace"
@@ -62,13 +67,19 @@ func (h *handlers) watchInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// the token authenticates, not a cookie, so other origins cannot act for a user
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, Subprotocols: []string{BearerProtocol}})
 	if err != nil {
 		return
 	}
 	defer conn.CloseNow()
 	ctx := r.Context()
 	token := token(r)
+	if token == "" && h.settings.VerifyToken != nil {
+		// like the first message, a token in the subprotocols has not passed Kong
+		if t := subprotocolToken(r); t != "" {
+			token = "Bearer " + t
+		}
+	}
 	if token == "" {
 		if h.settings.VerifyToken == nil {
 			conn.Close(closeBase+http.StatusUnauthorized, "send the token in the Authorization header")
@@ -136,6 +147,25 @@ func (h *handlers) watchInstance(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// subprotocolToken returns the token a browser offers as subprotocol next to "bearer"
+func subprotocolToken(r *http.Request) string {
+	var protocols []string
+	for _, value := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for _, p := range strings.Split(value, ",") {
+			protocols = append(protocols, strings.TrimSpace(p))
+		}
+	}
+	if !slices.Contains(protocols, BearerProtocol) {
+		return ""
+	}
+	for _, p := range protocols {
+		if p != BearerProtocol && p != "" {
+			return p
+		}
+	}
+	return ""
 }
 
 // reason shortens a close reason to the 123 bytes a close frame allows
