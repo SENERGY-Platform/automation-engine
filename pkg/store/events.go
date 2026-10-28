@@ -24,10 +24,10 @@ import (
 
 const eventColumns = "id, deployment_id, version, element_id, namespace, owner, message_name, device_id, service_id, device_group_id, import_id, topic, script, value_variable, variables, qos, characteristic_id, function_id, aspect_ids, path, service, revision"
 
-func scanEventDescription(row interface{ Scan(...any) error }) (d model.EventDescription, err error) {
+func scanEventDescription(row interface{ Scan(...any) error }, extra ...any) (d model.EventDescription, err error) {
 	var variables, aspects, service string
-	err = row.Scan(&d.Id, &d.DeploymentId, &d.Version, &d.ElementId, &d.Namespace, &d.Owner, &d.MessageName, &d.DeviceId, &d.ServiceId, &d.DeviceGroupId, &d.ImportId,
-		&d.Topic, &d.Script, &d.ValueVariable, &variables, &d.Qos, &d.CharacteristicId, &d.FunctionId, &aspects, &d.Path, &service, &d.Revision)
+	err = row.Scan(append([]any{&d.Id, &d.DeploymentId, &d.Version, &d.ElementId, &d.Namespace, &d.Owner, &d.MessageName, &d.DeviceId, &d.ServiceId, &d.DeviceGroupId, &d.ImportId,
+		&d.Topic, &d.Script, &d.ValueVariable, &variables, &d.Qos, &d.CharacteristicId, &d.FunctionId, &aspects, &d.Path, &service, &d.Revision}, extra...)...)
 	d.Variables = fromJson[map[string]string](variables)
 	d.AspectIds = fromJson[[]string](aspects)
 	if service != "" {
@@ -108,16 +108,22 @@ func (this *Tx) EventDescriptionsSince(revision int64) (result []model.EventDesc
 	}
 	// descriptions of deployments of gateways read the topics of the gateway; there the
 	// deployment has no network id
-	rows, err := this.query("SELECT "+eventColumns+" FROM event_descriptions WHERE revision > ? AND revision <= ? "+
+	// with the creation of their deployment version, before which the worker ignores messages
+	rows, err := this.query("SELECT "+eventColumns+", COALESCE((SELECT v.created_at FROM deployment_versions v WHERE v.deployment_id = event_descriptions.deployment_id AND v.version = event_descriptions.version), 0) "+
+		"FROM event_descriptions WHERE revision > ? AND revision <= ? "+
 		"AND deployment_id NOT IN (SELECT id FROM deployments WHERE network_id <> '') ORDER BY revision, id", revision, latest)
 	if err != nil {
 		return nil, nil, 0, err
 	}
 	for rows.Next() {
-		d, err := scanEventDescription(rows)
+		var activeSince int64
+		d, err := scanEventDescription(rows, &activeSince)
 		if err != nil {
 			rows.Close()
 			return nil, nil, 0, err
+		}
+		if activeSince > 0 {
+			d.ActiveSince = fromMillis(activeSince)
 		}
 		result = append(result, d)
 	}

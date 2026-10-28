@@ -40,8 +40,8 @@ github.com/SENERGY-Platform/models/go v0.0.0-20260911075423-f01521c01da2 h1:CEjL
 github.com/SENERGY-Platform/models/go v0.0.0-20260911075423-f01521c01da2/go.mod h1:5B2cSnYKuAmeco4mJPhY5eVO+oMqXLmnl9wxh1G7e9E=
 github.com/SENERGY-Platform/permissions-v2 v1.0.0 h1:poeecCpXYD8GOADLyihiMbgMCr6ARrIZ7ba1sOEHWvw=
 github.com/SENERGY-Platform/permissions-v2 v1.0.0/go.mod h1:O0DTzApbQnXzDmyQ3KzievzjRF44xQ7n6qdbfQ36Qw8=
-github.com/SENERGY-Platform/service-commons v0.0.0-20261016083822-dec36fce00ad h1:89BGue8JorkeIPcrFnPExRO4hpwur1spF3ET63ORn3o=
-github.com/SENERGY-Platform/service-commons v0.0.0-20261016083822-dec36fce00ad/go.mod h1:k1Jia3JItpaM26/SY1ZGyoGhBE8EA5zQrkwSaiFZKGQ=
+github.com/SENERGY-Platform/service-commons v0.0.0-20261028091432-9301a6bf13f8 h1:lf4Eb4RgNAHLWZeAHWfRBpMh30+9W9u8XFwJTQMizYs=
+github.com/SENERGY-Platform/service-commons v0.0.0-20261028091432-9301a6bf13f8/go.mod h1:k1Jia3JItpaM26/SY1ZGyoGhBE8EA5zQrkwSaiFZKGQ=
 github.com/beevik/etree v1.8.1 h1:MchsAnqPGCGsfQezhwcouHPlAHlcAOqWpyCVZoyWfjU=
 github.com/beevik/etree v1.8.1/go.mod h1:bh4zJxiIr62SOf9pRzN7UUYaEDa9HEKafK25+sLc0Gc=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=

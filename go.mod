@@ -14,7 +14,7 @@ require (
 	github.com/SENERGY-Platform/marshaller v0.3.0
 	github.com/SENERGY-Platform/models/go v0.0.0-20260911075423-f01521c01da2
 	github.com/SENERGY-Platform/permissions-v2 v1.0.0
-	github.com/SENERGY-Platform/service-commons v0.0.0-20261016083822-dec36fce00ad
+	github.com/SENERGY-Platform/service-commons v0.0.0-20261028091432-9301a6bf13f8
 	github.com/beevik/etree v1.8.1
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20261011204819-0c9fae1b959d

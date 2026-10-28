@@ -16,7 +16,10 @@
 
 package model
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // EventDescription tells event workers which device or import data concerns which device
 // event and how to evaluate it (DEP-07, EVT-03, EVT-04). It is derived at deploy time from the
@@ -50,4 +53,8 @@ type EventDescription struct {
 	// the service to unmarshal with; artificial for imports
 	Service  json.RawMessage `json:"service,omitempty"`
 	Revision int64           `json:"revision"`
+	// when the deployment version of the description was created; the event worker of the cloud
+	// ignores messages from before, which Kafka can deliver again (SNRGY-5037). Only filled for
+	// the worker, not part of the API.
+	ActiveSince time.Time `json:"-"`
 }

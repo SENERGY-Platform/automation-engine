@@ -546,6 +546,8 @@ The event-worker stays a role of its own, preferably as a second operating mode 
   - it triggers on true, "true" or a number ≥ 1.
 - **EVT-05 (M)** QoS per event as today (at-most-once or at-least-once), plus a **unique idempotency key** per message. `msg_id` is `partition:offset` without topic today and therefore not unique.
 - **EVT-06 (M)** Messages above a maximum age are discarded (today 1 h).
+  - In the cloud, a description also discards messages from before its deployment version was created (decided 2026-10-28). The event worker replaces its Kafka consumer whenever the set of topics changes, and the new one continues at the committed offset, so that nothing produced during the change is lost (SNRGY-5037). A topic not read for a while, because its only deployment was deleted, is then read from where the group last committed, up to the offset retention of the broker; without this bound, a deployment created again would react to events from before it existed, up to the maximum age. A message produced just before an update of the same deployment therefore no longer counts for the new version.
+  - On a gateway the bound does not apply: MQTT delivers nothing again, and a message is timestamped on its arrival.
 - **EVT-07 (M)** Errors in the evaluation go to the user throttled (today via the notifier with a duplicate window of 1 h) and do not block consumption.
 - **EVT-08 (S)** A correlation that finds no waiting instance is not an error; it is counted as a metric.
 - **EVT-09 (M)** The event-worker reports nothing for debugging (decided). Its load stays unchanged. For events, the engine stores only what reaches it anyway (HIST-05):

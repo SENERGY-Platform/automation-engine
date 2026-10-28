@@ -376,8 +376,10 @@ func TestWorkerEvaluatesCorrelatesAndFollowsChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.sync()
-	e.send(6, "d1", 30.0, now)
-	e.send(7, "d2", 30.0, now)
+	// a description counts only messages from after its version (SNRGY-5037)
+	afterUpdate := time.Now()
+	e.send(6, "d1", 30.0, afterUpdate)
+	e.send(7, "d2", 30.0, afterUpdate)
 	if e.count(inst.Id) != 3.0 {
 		t.Fatalf("after the update only the new device counts (revision sync, DEP-08): %v", e.count(inst.Id))
 	}

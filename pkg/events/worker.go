@@ -215,13 +215,16 @@ func (this *Worker) Run(ctx context.Context) {
 	}
 }
 
-// startConsumer reads the topics until the returned function is called
+// startConsumer reads the topics until the returned function is called. A message is handled
+// with ctx, not with the context of the consumer: a message in hand when the topics change and
+// the consumer is replaced is correlated rather than dropped; read again, its message id keeps
+// it from correlating twice (SNRGY-5037)
 func (this *Worker) startConsumer(ctx context.Context, topics []string) (context.CancelFunc, error) {
 	consumerCtx, cancel := context.WithCancel(ctx)
 	if len(topics) == 0 {
 		return cancel, nil
 	}
-	err := this.consume(consumerCtx, topics, func(m Message) error { return this.Handle(consumerCtx, m) })
+	err := this.consume(consumerCtx, topics, func(m Message) error { return this.Handle(ctx, m) })
 	return cancel, err
 }
 
@@ -272,6 +275,12 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 	ageSeconds := float64(int64(max(age, 0).Seconds()))
 	var errs []error
 	for _, d := range descriptions {
+		// Kafka delivers again what a consumer had not committed, also after its topic was not
+		// read for days; a description only counts messages from after its deployment version was
+		// created. A gateway gets no messages again and timestamps them on arrival (SNRGY-5037)
+		if !this.config.Local && !m.Time.IsZero() && m.Time.Before(d.ActiveSince) {
+			continue
+		}
 		payload := payload
 		if this.config.Local {
 			decoded, err := decodeFor(d, m.Value)

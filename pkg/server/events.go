@@ -117,7 +117,9 @@ func NewEventServer(ctx context.Context, config configuration.Config, logger *sl
 }
 
 // kafkaConsumer reads the device data topics in one consumer group, so that event workers share
-// the partitions; a message is committed after its qos 1 descriptions are handled
+// the partitions; a message is committed after its qos 1 descriptions are handled. The worker
+// replaces the consumer whenever its topics change, and a new one continues at the committed
+// offset; service-commons before that skipped every message older than its start (SNRGY-5037)
 func (this *EventServer) kafkaConsumer(ctx context.Context, topics []string, handle func(events.Message) error) error {
 	config := kafka.Config{
 		KafkaUrl: this.config.KafkaUrl, ConsumerGroup: this.config.EventConsumerGroup, StartOffset: kafka.LastOffset, PartitionWatchInterval: time.Minute,
