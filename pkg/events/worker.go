@@ -321,10 +321,15 @@ func (this *Worker) process(ctx context.Context, d model.EventDescription, paylo
 	if !evaluation.Triggered {
 		return nil
 	}
+	locals := map[string]any{"event": evaluation.Value, "age": ageSeconds, "msg_id": messageId}
+	if d.DeviceId != "" {
+		// the member of a device group that triggered, the device itself otherwise (SNRGY-5054)
+		locals["device_id"], locals["service_id"] = d.DeviceId, d.ServiceId
+	}
 	_, err = this.correlator.Correlate(ctx, engine.CorrelationRequest{
 		MessageInput: model.MessageInput{
 			Name: d.MessageName, All: true, MessageId: messageId + "|" + d.MessageName,
-			LocalVariables: map[string]any{"event": evaluation.Value, "age": ageSeconds, "msg_id": messageId},
+			LocalVariables: locals,
 		},
 		OwnerFilter: d.Owner,
 	})

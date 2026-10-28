@@ -446,6 +446,7 @@ Takes over `external-task-worker` (optimistic, pessimistic), `process-io-worker`
   - `overwrite` replaces device, service and protocol;
   - `incident` raises an incident by the user.
 - **TASK-10 (M)** The result is available as the local variable `result` (a list from payload version 2 on) and then runs through the output mappings.
+  - Next to it, `results` lists `{device_id, service_id, value}` for every sub-task with a result, in the order of `result`, also before payload version 2 (decided 2026-10-28, SNRGY-5054). A sub-task without an answer is missing from both, so only `results` tells which device a value of a device group came from. An optimistic command, which waits for no answer, gives an empty list.
 - **TASK-11 (M)** Every task is completed at most once, even if answers arrive twice or late.
 - **TASK-12 (M)** Cost-relevant metric with the same label semantics: `external_task_worker_task_command_send_count_vec{user_id, process_definition_id}`, where `process_definition_id` carries the deployment ID (DATA-04). The cost-calculator uses it to distribute the process costs to users.
 
@@ -553,6 +554,8 @@ The event-worker stays a role of its own, preferably as a second operating mode 
 - **EVT-09 (M)** The event-worker reports nothing for debugging (decided). Its load stays unchanged. For events, the engine stores only what reaches it anyway (HIST-05):
   - begin and end of waiting for an event;
   - every correlation with time, message ID and the variables `event` and `age`.
+
+  A correlation hands the token the local variables `event`, `age` and `msg_id`, and for an event of a device or device group also `device_id` and `service_id`: the member that triggered, so that one process can watch a whole group (decided 2026-10-28, SNRGY-5054). Events of imports carry no device. Local variables never reach the process by themselves, only through the output mapping, but within it and in the conditions of the outgoing flows they hide process variables of the same name. On 2026-10-28 no deployment, running version or model in prod read `device_id`, `service_id` or `results` there, so the names need no prefix.
 - **EVT-10 (M)** The condition evaluations that did **not** trigger are reconstructed on demand from the Timescale data for debugging:
   - For the waiting period (begin of waiting until the correlation or until now), the debug view queries the values of the event source via timescale-wrapper `/queries`, with the token of the owner.
   - For group events it queries per expanded device × service.

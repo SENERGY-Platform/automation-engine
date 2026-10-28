@@ -151,7 +151,7 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 				return engine.TaskResult{}, err
 			}
 		}
-		return engine.TaskResult{Output: map[string]any{"result": nil}}, nil
+		return engine.TaskResult{Output: map[string]any{"result": nil, "results": []any{}}}, nil
 	}
 	subtasks := make([]store.Subtask, 0, len(children))
 	for i, c := range children {
@@ -167,12 +167,12 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 		return engine.TaskResult{}, err
 	}
 	// every attempt sends what has no result yet; a retry resends lost commands
-	done, result, err := this.advance(ctx, task.JobId, command.Version, token, true, task.Retries, task.Timeout)
+	done, out, err := this.advance(ctx, task.JobId, command.Version, token, true, task.Retries, task.Timeout)
 	if err != nil {
 		return engine.TaskResult{}, err
 	}
 	if done {
-		return engine.TaskResult{Output: map[string]any{"result": result}}, nil
+		return engine.TaskResult{Output: out}, nil
 	}
 	return engine.TaskResult{Async: true}, nil
 }
@@ -182,7 +182,7 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 // sub-task has a result, or one at a time, that the others have used up their tries. Without
 // resend, parallel sub-tasks still in flight are not sent again. retries and timeout are those
 // of the task; one at a time they apply to each try.
-func (this *Type) advance(ctx context.Context, jobId string, version int64, token devices.Token, resend bool, retries int, timeout time.Duration) (done bool, result any, err error) {
+func (this *Type) advance(ctx context.Context, jobId string, version int64, token devices.Token, resend bool, retries int, timeout time.Duration) (done bool, out map[string]any, err error) {
 	for {
 		var subtasks []store.Subtask
 		err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
@@ -199,7 +199,7 @@ func (this *Type) advance(ctx context.Context, jobId string, version int64, toke
 			}
 		}
 		if len(pending) == 0 {
-			return true, results(version, subtasks), nil
+			return true, output(version, subtasks), nil
 		}
 		if this.config.GroupScheduler == Parallel && !resend {
 			return false, nil, nil
@@ -211,7 +211,7 @@ func (this *Type) advance(ctx context.Context, jobId string, version int64, toke
 			}
 			if next == nil {
 				if len(results(2, subtasks).([]any)) > 0 {
-					return true, results(version, subtasks), nil
+					return true, output(version, subtasks), nil
 				}
 				return false, nil, &engine.PermanentError{Message: fmt.Sprintf("no answer from any device within %v, %v tries each", timeout, retries+1)}
 			}
@@ -314,6 +314,28 @@ func (this *Type) send(ctx context.Context, token devices.Token, command Command
 	return nil, nil
 }
 
+// output is what a finished task hands to the process: result as before, and results with the
+// device and service of each value, so that a task on a device group tells which member
+// answered (TASK-10, SNRGY-5054)
+func output(version int64, subtasks []store.Subtask) map[string]any {
+	return map[string]any{"result": results(version, subtasks), "results": deviceResults(subtasks)}
+}
+
+// deviceResults lists {device_id, service_id, value} in sub-task order, for the sub-tasks with a
+// result like results, so that the i-th entry belongs to the i-th value of result
+func deviceResults(subtasks []store.Subtask) []any {
+	list := []any{}
+	for _, s := range subtasks {
+		if !s.HasResult {
+			continue
+		}
+		var command Command
+		_ = json.Unmarshal(s.Command, &command)
+		list = append(list, map[string]any{"device_id": command.DeviceId, "service_id": command.ServiceId, "value": s.Result})
+	}
+	return list
+}
+
 // results lists the results in sub-task order; before payload version 2 the result is the
 // first value instead of a list (TASK-10)
 func results(version int64, subtasks []store.Subtask) any {
@@ -382,13 +404,13 @@ func (this *Type) HandleResponse(ctx context.Context, raw []byte) error {
 	if err != nil {
 		return err
 	}
-	done, result, err := this.advance(ctx, jobId, command.Version, token, false, retries, timeout)
+	done, out, err := this.advance(ctx, jobId, command.Version, token, false, retries, timeout)
 	if err != nil {
 		_, failErr := this.completer.FailTask(ctx, jobId, err.Error())
 		return errors.Join(err, failErr)
 	}
 	if done {
-		_, err = this.completer.CompleteTask(ctx, jobId, map[string]any{"result": result})
+		_, err = this.completer.CompleteTask(ctx, jobId, out)
 	}
 	return err
 }
@@ -445,5 +467,5 @@ func (this *Type) OnTimeout(ctx context.Context, tx *store.Tx, task engine.Task)
 	if len(partial) == 0 {
 		return nil, nil
 	}
-	return &engine.TaskResult{Output: map[string]any{"result": results(command.Version, subtasks)}}, nil
+	return &engine.TaskResult{Output: output(command.Version, subtasks)}, nil
 }
