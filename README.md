@@ -15,6 +15,7 @@ For platform operation, add:
 - `PERMISSIONS_V2_URL` with `AUTH_ENDPOINT`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`: sharing through permissions-v2; the Keycloak client needs the realm role `admin`. Without the URL, only owners and admins have access.
 - `NOTIFIER_URL`, `DEVELOPER_NOTIFICATIONS_URL`: notifications on incidents.
 - `INTERNAL_PORT` (default 8081, replaces `METRICS_PORT`): Prometheus metrics under `/metrics` and answers of devices over HTTP under `/responses` and `/errors`. Do not route it through Kong.
+- `PPROF_PORT` (default 0, off): profiles of `net/http/pprof` under `/debug/pprof/`, in both roles. The server listens on `127.0.0.1` only, so neither other pods nor a Service reach it; `kubectl port-forward pod/<pod> 6060:<PPROF_PORT>` connects inside the pod and does, e.g. `go tool pprof http://localhost:6060/debug/pprof/heap`. In Docker without Kubernetes it is reachable with `docker exec` only.
 - `RETENTION_DEFAULT_DAYS`, `RETENTION_MAX_DAYS`: retention of the history.
 - `KAFKA_URL`: device commands and their answers (`RESPONSE_TOPIC`, `ERROR_TOPIC`), changes to devices and device groups (`DEVICE_TOPIC`, `DEVICE_GROUP_TOPIC`), user deletions (`USER_TOPIC`) and optionally the rights signal of permissions-v2 (`PERMISSIONS_KAFKA_TOPIC`).
 - `DEVICE_REPOSITORY_URL`, `MARSHALLER_URL`, `TIMESCALE_WRAPPER_URL`, `DEVICE_SELECTION_URL`, `IMPORT_DEPLOY_URL`, `IMPORT_REPOSITORY_URL`: services for device commands, device selection and device events. Device commands additionally need `AUTH_ENDPOINT` for the token exchange.

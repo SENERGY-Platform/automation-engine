@@ -50,6 +50,23 @@ func TestValidateRejectsUnknownRole(t *testing.T) {
 	}
 }
 
+func TestValidatePprofPort(t *testing.T) {
+	config := Default()
+	if config.PprofPort != 0 {
+		t.Fatal("pprof must be off by default")
+	}
+	for _, port := range []int{-1, 65536, config.ServerPort, config.InternalPort} {
+		config.PprofPort = port
+		if err := config.validate(); err == nil {
+			t.Fatalf("expected error for pprof_port %v", port)
+		}
+	}
+	config.PprofPort = 6060
+	if err := config.validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateRejectsVerifyTokensWithoutCertUrl(t *testing.T) {
 	config := Default()
 	config.VerifyTokens = true

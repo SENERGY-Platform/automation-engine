@@ -147,6 +147,7 @@ func (this *EventServer) Run(ctx context.Context) error {
 		}
 	}
 	go this.Worker.Run(ctx)
+	go servePprof(ctx, this.config.PprofPort, this.logger)
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", this.Metrics.Handler())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {

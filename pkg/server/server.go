@@ -711,6 +711,7 @@ func (this *Server) takeOverNetworkOwners(ctx context.Context, interval time.Dur
 func (this *Server) Run(ctx context.Context) error {
 	this.Start(ctx)
 	go this.publishAsyncApi(ctx)
+	go servePprof(ctx, this.config.PprofPort, this.logger)
 	if this.config.InternalPort > 0 {
 		internal := &http.Server{Addr: net.JoinHostPort("", strconv.Itoa(this.config.InternalPort)), Handler: this.internalHandler(), ReadHeaderTimeout: 10 * time.Second}
 		go func() {

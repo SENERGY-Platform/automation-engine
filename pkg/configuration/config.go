@@ -86,6 +86,9 @@ type Config struct {
 	// internal port, not routed through Kong: Prometheus metrics (OPS-05) and the HTTP answers
 	// of protocol handlers (POST /responses, POST /errors, TASK-05); 0 disables
 	InternalPort int `json:"internal_port" env_var:"INTERNAL_PORT"`
+	// net/http/pprof under /debug/pprof/ on 127.0.0.1 of this port, reachable only from inside the
+	// pod, e.g. with kubectl port-forward; 0 disables
+	PprofPort int `json:"pprof_port" env_var:"PPROF_PORT"`
 	// running instances without element change for this long count as stalled (LONG-13)
 	StalledAfter string `json:"stalled_after" env_var:"STALLED_AFTER"`
 	// OTLP collector over gRPC for traces; empty selects the platform default of
@@ -359,6 +362,12 @@ func (this Config) validate() error {
 		if _, err := time.ParseDuration(d); err != nil {
 			return fmt.Errorf("invalid duration %q: %w", d, err)
 		}
+	}
+	if this.PprofPort < 0 || this.PprofPort > 65535 {
+		return fmt.Errorf("pprof_port must be between 0 and 65535")
+	}
+	if this.PprofPort != 0 && (this.PprofPort == this.ServerPort || this.PprofPort == this.InternalPort) {
+		return fmt.Errorf("pprof_port must differ from server_port and internal_port")
 	}
 	if this.Database != "postgres" && this.Database != "sqlite" {
 		return fmt.Errorf("database must be postgres or sqlite, got %q", this.Database)
