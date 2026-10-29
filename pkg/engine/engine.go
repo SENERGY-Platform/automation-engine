@@ -114,8 +114,23 @@ type Namespaces interface {
 }
 
 // Notifier sends notifications to users; it is called after commit from the outbox (INC-02).
+// An error without answer from the notifier is a NotifierUnreachableError.
 type Notifier interface {
 	Notify(ctx context.Context, n store.Notification) error
+}
+
+// NotifierUnreachableError is a failure of the notifier without answer, e.g. a timeout or a
+// refused connection; unlike a refused message it holds for every notification alike.
+type NotifierUnreachableError struct {
+	Err error
+}
+
+func (this *NotifierUnreachableError) Error() string {
+	return this.Err.Error()
+}
+
+func (this *NotifierUnreachableError) Unwrap() error {
+	return this.Err
 }
 
 type Engine struct {
@@ -323,8 +338,10 @@ func messageName(deploymentId string, e *bpmn.Element) string {
 	return e.Message.Name
 }
 
-// Run executes due timers and jobs until ctx is done.
+// Run executes due timers and jobs until ctx is done; notifications go out in a loop of their
+// own (SNRGY-5064).
 func (this *Engine) Run(ctx context.Context) {
+	go this.runNotifications(ctx)
 	ticker := time.NewTicker(this.config.PollInterval)
 	defer ticker.Stop()
 	for {
@@ -342,6 +359,23 @@ func (this *Engine) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 		case <-this.wake:
+		}
+	}
+}
+
+// runNotifications sends queued notifications until ctx is done, also while a full storage
+// pauses the execution
+func (this *Engine) runNotifications(ctx context.Context) {
+	ticker := time.NewTicker(this.config.PollInterval)
+	defer ticker.Stop()
+	for {
+		if err := this.ProcessNotifications(ctx); err != nil && ctx.Err() == nil {
+			this.logger.Warn("sending notifications failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
 		}
 	}
 }

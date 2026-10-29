@@ -264,6 +264,12 @@ func (this *Tx) RetryNotification(id string, due time.Time, message string) erro
 	return err
 }
 
+// PostponeNotification moves a notification that was not attempted, without counting an attempt.
+func (this *Tx) PostponeNotification(id string, due time.Time) error {
+	_, err := this.exec("UPDATE notifications SET due_at = ? WHERE id = ?", millis(due), id)
+	return err
+}
+
 // RestartStats count automatic restarts of a deployment within the current window (INC-04).
 type RestartStats struct {
 	WindowStart time.Time

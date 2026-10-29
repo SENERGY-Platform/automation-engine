@@ -35,7 +35,9 @@ import (
 // ProcessDue fires due timers and start timers and executes due jobs. Every timer and job is
 // handled in its own transaction that locks the instance (or the deployment for start timers)
 // and checks that the timer or job still exists; a second replica finds nothing to do, so
-// each fires exactly once (RUN-06, OPS-01).
+// each fires exactly once (RUN-06, OPS-01). Notifications are not sent here but by
+// ProcessNotifications, so that a notifier without answer does not hold up timers and jobs
+// (SNRGY-5064).
 func (this *Engine) ProcessDue(ctx context.Context) error {
 	now := this.now()
 	return errors.Join(
@@ -44,7 +46,6 @@ func (this *Engine) ProcessDue(ctx context.Context) error {
 		this.fireTimers(ctx, now),
 		this.runJobs(ctx, now),
 		this.processRestarts(ctx, now),
-		this.processNotifications(ctx, now),
 		this.housekeeping(ctx, now),
 	)
 }

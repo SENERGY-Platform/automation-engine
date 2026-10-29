@@ -17,6 +17,8 @@
 package engine
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +26,7 @@ import (
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 )
 
 // fails after a message, so that every run first waits and then becomes an incident
@@ -147,13 +150,118 @@ func TestNotificationsAreRetriedWhenTheNotifierFails(t *testing.T) {
 		h.mux.Lock()
 		h.clock = h.clock.Add(time.Second)
 		h.mux.Unlock()
-		if err := h.e.ProcessDue(ctx); err == nil {
+		if err := h.e.ProcessDue(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.e.ProcessNotifications(ctx); err == nil {
 			t.Fatal("expected the failed notification to be reported")
 		}
 		h.notifier.fail = false
 		h.advance(2 * time.Second)
 		if sent := h.notifier.messages(); len(sent) != 1 {
 			t.Fatalf("the notification must be sent after the outage, got %v", len(sent))
+		}
+	})
+}
+
+// queueNotifications queues n notifications due now
+func (this *harness) queueNotifications(n int) {
+	this.t.Helper()
+	for i := range n {
+		if err := this.e.QueueNotification(ctx, "alice", "processes", fmt.Sprintf("title %v", i), "message"); err != nil {
+			this.t.Fatal(err)
+		}
+	}
+}
+
+// A notifier without answer would make each due notification wait for its timeout; after the
+// first, the others wait for the next attempt without counting one (SNRGY-5064).
+func TestNotificationsWaitTogetherWhileTheNotifierDoesNotAnswer(t *testing.T) {
+	run(t, func(t *testing.T, h *harness) {
+		h.notifier.unreachable = true
+		h.queueNotifications(3)
+		if err := h.e.ProcessNotifications(ctx); err == nil {
+			t.Fatal("expected the failed notification to be reported")
+		}
+		if n := h.notifier.attempted(); n != 1 {
+			t.Fatalf("one attempt while the notifier does not answer, got %v", n)
+		}
+		// all three wait for the backoff of the first attempt, one second
+		h.mux.Lock()
+		h.clock = h.clock.Add(500 * time.Millisecond)
+		h.mux.Unlock()
+		if err := h.e.ProcessNotifications(ctx); err != nil || h.notifier.attempted() != 1 {
+			t.Fatalf("nothing is due before the backoff: %v %v", err, h.notifier.attempted())
+		}
+		h.notifier.unreachable = false
+		h.advance(time.Second)
+		if sent := h.notifier.messages(); len(sent) != 3 {
+			t.Fatalf("all notifications are sent once the notifier answers, got %v", len(sent))
+		}
+		if n := h.notifier.attempted(); n != 4 {
+			t.Fatalf("the postponed ones were not attempted before, got %v attempts", n)
+		}
+	})
+}
+
+// A notifier that refuses one message may accept the next; every due notification is tried.
+func TestNotificationsAreAllTriedWhenTheNotifierRefusesThem(t *testing.T) {
+	run(t, func(t *testing.T, h *harness) {
+		h.notifier.fail = true
+		h.queueNotifications(3)
+		if err := h.e.ProcessNotifications(ctx); err == nil {
+			t.Fatal("expected the refused notifications to be reported")
+		}
+		if n := h.notifier.attempted(); n != 3 {
+			t.Fatalf("every notification is tried, got %v attempts", n)
+		}
+	})
+}
+
+// Timers and jobs do not wait for the notifier (SNRGY-5064).
+func TestProcessDueSendsNoNotifications(t *testing.T) {
+	run(t, func(t *testing.T, h *harness) {
+		h.queueNotifications(1)
+		if err := h.e.ProcessDue(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if n := h.notifier.attempted(); n != 0 {
+			t.Fatalf("ProcessDue called the notifier %v times", n)
+		}
+	})
+}
+
+// Run fires a due timer while the notifier hangs in a call (SNRGY-5064).
+func TestRunFiresTimersWhileTheNotifierHangs(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		h := newHarness(t, s, func(c *Config) { c.PollInterval = 10 * time.Millisecond })
+		h.notifier.hang, h.notifier.hanging = true, make(chan struct{}, 1)
+		d := h.deploy(b.Process(b.Start("start"), b.CatchTimer("wait", "timeDuration", "PT1M"), b.End("end"),
+			b.Flow("start", "wait"), b.Flow("wait", "end")))
+		inst := h.start(d, nil)
+		h.queueNotifications(1)
+		runCtx, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() {
+			h.e.Run(runCtx)
+			close(done)
+		}()
+		defer func() {
+			cancel()
+			<-done
+		}()
+		select {
+		case <-h.notifier.hanging:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the notifier was not called")
+		}
+		h.mux.Lock()
+		h.clock = h.clock.Add(time.Minute)
+		h.mux.Unlock()
+		for deadline := time.Now().Add(5 * time.Second); h.instance(inst.Id).State != model.StateCompleted; time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("the timer did not fire while the notifier hangs: %v", h.instance(inst.Id).State)
+			}
 		}
 	})
 }

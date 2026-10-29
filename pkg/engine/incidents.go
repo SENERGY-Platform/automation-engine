@@ -173,9 +173,12 @@ func (this *Engine) ResetRestarts(tx *store.Tx, deploymentId string) error {
 	return tx.SetRestartStats(deploymentId, store.RestartStats{})
 }
 
-// processNotifications sends queued notifications; failures are retried with backoff and
-// dropped after a day, so that a notifier outage does not fill the database
-func (this *Engine) processNotifications(ctx context.Context, now time.Time) error {
+// ProcessNotifications sends queued notifications; failures are retried with backoff and
+// dropped after a day, so that a notifier outage does not fill the database. Without answer from
+// the notifier, the notifications due after the failed one wait as long as it does, instead of
+// each running into the same timeout (SNRGY-5064).
+func (this *Engine) ProcessNotifications(ctx context.Context) error {
+	now := this.now()
 	var due []store.Notification
 	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
 		due, err = tx.DueNotifications(now, this.config.BatchSize)
@@ -185,20 +188,34 @@ func (this *Engine) processNotifications(ctx context.Context, now time.Time) err
 		return err
 	}
 	var errs []error
-	for _, n := range due {
+	for i, n := range due {
 		var sendErr error
 		if this.notifier != nil {
 			sendErr = this.notifier.Notify(ctx, n)
 		}
+		var unreachable *NotifierUnreachableError
+		postpone := errors.As(sendErr, &unreachable)
 		errs = append(errs, this.store.Tx(ctx, func(tx *store.Tx) error {
 			if sendErr == nil || now.Sub(n.CreatedAt) > 24*time.Hour {
 				return tx.DeleteNotification(n.Id)
 			}
-			backoff := time.Duration(min(1<<min(n.Attempts, 10), 3600)) * time.Second
-			return tx.RetryNotification(n.Id, now.Add(backoff), sendErr.Error())
+			retryAt := now.Add(time.Duration(min(1<<min(n.Attempts, 10), 3600)) * time.Second)
+			if err := tx.RetryNotification(n.Id, retryAt, sendErr.Error()); err != nil || !postpone {
+				return err
+			}
+			// not attempted, so without counting an attempt
+			for _, rest := range due[i+1:] {
+				if err := tx.PostponeNotification(rest.Id, retryAt); err != nil {
+					return err
+				}
+			}
+			return nil
 		}))
 		if sendErr != nil {
 			errs = append(errs, fmt.Errorf("notification %v: %w", n.Id, sendErr))
+		}
+		if postpone {
+			break
 		}
 	}
 	return errors.Join(errs...)

@@ -58,16 +58,39 @@ type fakeNotifier struct {
 	mux  sync.Mutex
 	sent []store.Notification
 	fail bool
+	// fails without answer, as a notifier behind a timeout does
+	unreachable bool
+	attempts    int
+	// with hang, Notify reports on hanging and waits for ctx, as a call running into its timeout
+	hang    bool
+	hanging chan struct{}
 }
 
-func (this *fakeNotifier) Notify(_ context.Context, n store.Notification) error {
+func (this *fakeNotifier) Notify(ctx context.Context, n store.Notification) error {
 	this.mux.Lock()
+	if this.hang {
+		this.attempts++
+		this.mux.Unlock()
+		this.hanging <- struct{}{}
+		<-ctx.Done()
+		return &NotifierUnreachableError{Err: ctx.Err()}
+	}
 	defer this.mux.Unlock()
+	this.attempts++
+	if this.unreachable {
+		return &NotifierUnreachableError{Err: errors.New("context deadline exceeded")}
+	}
 	if this.fail {
 		return errors.New("notifier unavailable")
 	}
 	this.sent = append(this.sent, n)
 	return nil
+}
+
+func (this *fakeNotifier) attempted() int {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	return this.attempts
 }
 
 func (this *fakeNotifier) messages() []store.Notification {
@@ -117,6 +140,9 @@ func (this *harness) advance(d time.Duration) {
 func (this *harness) process() {
 	this.t.Helper()
 	if err := this.e.ProcessDue(ctx); err != nil {
+		this.t.Fatal(err)
+	}
+	if err := this.e.ProcessNotifications(ctx); err != nil {
 		this.t.Fatal(err)
 	}
 }

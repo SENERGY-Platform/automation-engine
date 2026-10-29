@@ -19,6 +19,7 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -26,7 +27,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	devnotifications "github.com/SENERGY-Platform/developer-notifications/pkg/client"
@@ -64,6 +67,40 @@ func TestNotifyReportsRejectedMessagesForRetry(t *testing.T) {
 	n := New(server.URL, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err := n.Notify(context.Background(), store.Notification{UserId: "u"}); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// Without answer the engine postpones the other due notifications as well (SNRGY-5064); an
+// answer, even an error status, concerns this message only.
+func TestNotifyTellsAMissingAnswerFromARefusal(t *testing.T) {
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer refusing.Close()
+	closed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	closed.Close()
+	// the server notices the client giving up only once it has read the body
+	hanging := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-r.Context().Done()
+	}))
+	defer hanging.Close()
+	timeout, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	for name, test := range map[string]struct {
+		url         string
+		ctx         context.Context
+		unreachable bool
+	}{
+		"refused":   {refusing.URL, context.Background(), false},
+		"closed":    {closed.URL, context.Background(), true},
+		"no answer": {hanging.URL, timeout, true},
+	} {
+		err := New(test.url, "", slog.New(slog.NewTextHandler(io.Discard, nil))).Notify(test.ctx, store.Notification{UserId: "u"})
+		var unreachable *engine.NotifierUnreachableError
+		if err == nil || errors.As(err, &unreachable) != test.unreachable {
+			t.Errorf("%v: %v", name, err)
+		}
 	}
 }
 

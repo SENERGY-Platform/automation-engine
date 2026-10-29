@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	devnotifications "github.com/SENERGY-Platform/developer-notifications/pkg/client"
@@ -83,7 +84,8 @@ func (this *Notifier) Send(ctx context.Context, n store.Notification) error {
 		}
 		resp, err := this.http.Do(req)
 		if err != nil {
-			return err
+			// no answer at all: the engine postpones the other due notifications as well
+			return &engine.NotifierUnreachableError{Err: err}
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode >= 300 {
