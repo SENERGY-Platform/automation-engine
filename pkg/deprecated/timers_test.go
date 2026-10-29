@@ -103,3 +103,72 @@ func TestDeployTakesARepeatingIntervalOfTheDialogAsDuration(t *testing.T) {
 		t.Errorf("timer parameter %q, want PT1800S", got)
 	}
 }
+
+// timerExpressionModel has a timer of the given kind whose time is the expression of the given
+// definition, either the JUEL of Camunda or the JavaScript of the engine
+func timerExpressionModel(kind string, definition string) string {
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="wait" isExecutable="true">
+    <bpmn:startEvent id="start"/>
+    <bpmn:intermediateCatchEvent id="pause"><bpmn:timerEventDefinition><bpmn:` + kind + definition + `</bpmn:` + kind + `></bpmn:timerEventDefinition></bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="end"/>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="pause"/>
+    <bpmn:sequenceFlow id="f2" sourceRef="pause" targetRef="end"/>
+  </bpmn:process>
+</bpmn:definitions>`
+}
+
+// The deploy dialog sends the prepared time of a timer with expression back unchanged; the
+// deployment keeps the expression instead of taking its text for a fixed time (SNRGY-5063).
+func TestDeployKeepsATimerExpressionThePreparedDeploymentOffered(t *testing.T) {
+	for name, xml := range map[string]string{
+		"date as JUEL":           timerExpressionModel("timeDate", `>${date}`),
+		"date as JavaScript":     timerExpressionModel("timeDate", ` language="javascript">date`),
+		"cycle as JavaScript":    timerExpressionModel("timeCycle", ` language="javascript">cycle`),
+		"duration as JavaScript": timerExpressionModel("timeDuration", ` language="javascript">duration`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			var prepared models.Deployment
+			if status, _ := e.call(alice, http.MethodPost, "/deployment/v3/prepared-deployments", map[string]string{"xml": xml, "svg": "<svg/>"}, &prepared); status != http.StatusOK {
+				t.Fatalf("prepare: %v", status)
+			}
+			if len(prepared.Elements) != 1 || prepared.Elements[0].TimeEvent == nil || prepared.Elements[0].TimeEvent.Time == "" {
+				t.Fatalf("expected the expression as time, got %+v", prepared.Elements)
+			}
+			var deployed models.Deployment
+			if status, _ := e.call(alice, http.MethodPost, "/deployment/v3/deployments", prepared, &deployed); status != http.StatusOK {
+				t.Fatalf("deploy: %v", status)
+			}
+			version, err := e.srv.Controller.GetDeploymentVersion(ctx, alice, "processes", deployed.Id, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := version.Parameters["pause"].Timer; got != "" {
+				t.Errorf("the expression stays, got the fixed time %q", got)
+			}
+		})
+	}
+}
+
+// A fixed time the dialog put in place of the expression still replaces it.
+func TestDeployReplacesATimerExpressionWithAFixedTimeOfTheDialog(t *testing.T) {
+	e := newEnv(t)
+	var prepared models.Deployment
+	if status, _ := e.call(alice, http.MethodPost, "/deployment/v3/prepared-deployments", map[string]string{"xml": timerExpressionModel("timeDate", ` language="javascript">date`), "svg": "<svg/>"}, &prepared); status != http.StatusOK {
+		t.Fatalf("prepare: %v", status)
+	}
+	prepared.Elements[0].TimeEvent.Time = "2030-01-01T00:00:00Z"
+	var deployed models.Deployment
+	if status, _ := e.call(alice, http.MethodPost, "/deployment/v3/deployments", prepared, &deployed); status != http.StatusOK {
+		t.Fatalf("deploy: %v", status)
+	}
+	version, err := e.srv.Controller.GetDeploymentVersion(ctx, alice, "processes", deployed.Id, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := version.Parameters["pause"].Timer; got != "2030-01-01T00:00:00Z" {
+		t.Errorf("timer parameter %q, want the time of the dialog", got)
+	}
+}

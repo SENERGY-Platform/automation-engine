@@ -427,9 +427,10 @@ func (this *Handler) modelStartParameters(w http.ResponseWriter, r *http.Request
 }
 
 // changed reports a value the old deploy dialog changed: set, without expression and other
-// than in the model
-func changed(value string, original string, known bool) bool {
-	return value != "" && !strings.Contains(value, "${") && (!known || value != original)
+// than in the model. A timer with expression counts as unchanged when the dialog sends back the
+// expression the prepared deployment offered (SNRGY-5063).
+func changed(value string, original string) bool {
+	return value != "" && !strings.Contains(value, "${") && value != original
 }
 
 // deploymentInput turns a deployment of the old format into the input of the engine
@@ -489,7 +490,7 @@ func DeploymentInput(ctx context.Context, c Converter, token string, namespace s
 		case element.Task != nil:
 			selection = &element.Task.Selection
 			for name, value := range element.Task.Parameter {
-				if original, ok := inputText(e, name); ok && changed(value, original, true) {
+				if original, ok := inputText(e, name); ok && changed(value, original) {
 					params.Inputs[name] = value
 				}
 			}
@@ -506,12 +507,12 @@ func DeploymentInput(ctx context.Context, c Converter, token string, namespace s
 				// the dialog took a repeating interval as duration, as the model did (MIG-04)
 				value, _ = rewrite.Duration(value)
 			}
-			if changed(value, e.Timer.Value, !e.Timer.Expression) {
+			if changed(value, e.Timer.Value) {
 				params.Timer = value
 			}
 		case element.Notification != nil:
 			for name, value := range map[string]string{"title": element.Notification.Title, "message": element.Notification.Message} {
-				if original, ok := inputText(e, name); ok && changed(value, original, true) {
+				if original, ok := inputText(e, name); ok && changed(value, original) {
 					params.Inputs[name] = value
 				}
 			}
