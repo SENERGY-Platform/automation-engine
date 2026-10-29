@@ -176,11 +176,15 @@ func (this *deployHandler) Do(ctx context.Context, task Task) (modules []model.M
 	if err = this.elementInputs(task, proc, &deployment); err != nil {
 		return nil, nil, err
 	}
+	runtimeDevices, err := devicesInput(task)
+	if err != nil {
+		return nil, nil, err
+	}
 	if prefer, ok := boolInput(task, deployPrefix+"prefer_fog_deployment"); ok && prefer {
 		if target, _ := this.namespaces.Get(p.namespace); target.CloudOnly {
 			// a preference, not a demand: the deployment stays in the cloud (NS-10)
 			this.runtime.logger.InfoContext(ctx, "a process deployment stays in the cloud, its namespace runs only there", "namespace", p.namespace)
-		} else if deployment.NetworkId, err = this.gatewayFor(ctx, p.token, deployment.Selections); err != nil {
+		} else if deployment.NetworkId, err = this.gatewayFor(ctx, p.token, deployment.Selections, runtimeDevices); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -237,11 +241,27 @@ func (this *deployHandler) Do(ctx context.Context, task Task) (modules []model.M
 	return modules, map[string]any{"process_deployment_id": result.Id, "done_event": done, "is_fog_deployment": result.NetworkId != "", "fog_hub": result.NetworkId}, nil
 }
 
+// devicesInput reads the devices a process finds only at runtime, e.g. targets of commands whose
+// payload a script builds, as a JSON list of device ids (SNRGY-5060). Invalid JSON is an error:
+// ignored, it would put the process on a gateway that does not carry these devices.
+func devicesInput(task Task) ([]string, error) {
+	raw, ok := input(task, deployPrefix+"devices")
+	if !ok || strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var ids []string
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return nil, fmt.Errorf("%vdevices must be a JSON list of device ids: %w", deployPrefix, err)
+	}
+	return slices.DeleteFunc(ids, func(id string) bool { return id == "" }), nil
+}
+
 // gatewayFor chooses the first gateway that carries every selected device, with the devices of
-// selected groups, as smart-service-module-worker-process did; without devices, with imports
-// or without such gateway the deployment stays in the cloud (TASK-20, DEP-09)
-func (this *processModules) gatewayFor(ctx context.Context, token string, selections map[string]model.Selection) (string, error) {
-	selected := []string{}
+// selected groups, as smart-service-module-worker-process did, and the devices the process finds
+// at runtime (SNRGY-5060); without devices, with imports or without such gateway the deployment
+// stays in the cloud (TASK-20, DEP-09)
+func (this *processModules) gatewayFor(ctx context.Context, token string, selections map[string]model.Selection, runtimeDevices []string) (string, error) {
+	selected := slices.Clone(runtimeDevices)
 	for _, s := range selections {
 		if s.ImportId != "" {
 			return "", nil

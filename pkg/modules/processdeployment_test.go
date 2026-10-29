@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
@@ -281,6 +282,57 @@ func TestPreferredFogDeploymentGoesToTheGatewayOfTheSelectedDevices(t *testing.T
 				t.Errorf("%v %#v", deployed.NetworkId, result.outputs)
 			}
 		})
+	}
+}
+
+// Devices a process finds at runtime count for the gateway like selected ones (SNRGY-5060): the
+// first gateway carries the selected device only, so without them the process would go there.
+func TestPreferredFogDeploymentConsidersTheDevicesOfTheRuntime(t *testing.T) {
+	const target = "urn:infai:ses:device:1f2a9a4e-0b0c-4f43-9d4a-8c4e5b1f3c11"
+	networks := []model.Network{{Id: "trigger-only", Compatible: true}, {Id: "nid", Compatible: true}}
+	repository := map[string]any{
+		"/hubs/trigger-only": models.Hub{Id: "trigger-only", DeviceIds: []string{"device_1"}},
+		"/hubs/nid":          models.Hub{Id: "nid", DeviceIds: []string{"device_1", "device_unrelated", target}},
+	}
+	selection := `{"device_selection":{"device_id":"device_1","service_id":"s1"}}`
+	for name, test := range map[string]struct {
+		devices any
+		network string
+	}{
+		"without devices":             {nil, "trigger-only"},
+		"empty devices":               {"", "trigger-only"},
+		"device of the same hub":      {`["` + target + `"]`, "nid"},
+		"device with a service group": {`["` + target + `$service_group_selection=sg1"]`, "nid"},
+		"devices as list value":       {[]any{target, "device_1"}, "nid"},
+		"device on no common hub":     {`["` + target + `","device_elsewhere"]`, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			inputs := map[string]any{
+				"process_deployment.prefer_fog_deployment":           "true",
+				"process_deployment." + processTaskId + ".selection": selection,
+			}
+			if test.devices != nil {
+				inputs["process_deployment.devices"] = test.devices
+			}
+			result := deployProcess(t, inputs, networks, repository)
+			deployed := result.deployed(t)
+			if deployed.NetworkId != test.network || result.outputs["fog_hub"] != test.network || result.outputs["is_fog_deployment"] != (test.network != "") {
+				t.Errorf("%v %#v", deployed.NetworkId, result.outputs)
+			}
+		})
+	}
+}
+
+// Ignored, invalid devices would put the process on the gateway of the selected devices.
+func TestProcessDeploymentRejectsInvalidDevices(t *testing.T) {
+	for _, devices := range []any{`device_1`, `{"id":"device_1"}`, `[1]`, map[string]any{"id": "device_1"}} {
+		result := deployProcess(t, map[string]any{
+			"process_deployment.prefer_fog_deployment": "true",
+			"process_deployment.devices":               devices,
+		}, nil, nil)
+		if result.err == nil || !strings.Contains(result.err.Error(), "process_deployment.devices") || len(result.processes.created) != 0 {
+			t.Errorf("%#v: %v %+v", devices, result.err, result.processes.created)
+		}
 	}
 }
 
