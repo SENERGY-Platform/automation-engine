@@ -144,18 +144,24 @@ func (this *Tx) InsertDeploymentVersion(v model.DeploymentVersion) error {
 	return err
 }
 
-func (this *Tx) GetDeploymentVersion(deploymentId string, version int) (v model.DeploymentVersion, err error) {
+const deploymentVersionColumns = "deployment_id, version, model_version, xml, svg, update_strategy, incident_restart, incident_notify, selections, parameters, created_at"
+
+func scanDeploymentVersion(row interface{ Scan(...any) error }) (v model.DeploymentVersion, err error) {
 	var strategy string
 	var created int64
 	var restart, notify int
 	var selections, parameters string
-	err = this.queryRow("SELECT deployment_id, version, model_version, xml, svg, update_strategy, incident_restart, incident_notify, selections, parameters, created_at FROM deployment_versions WHERE deployment_id = ? AND version = ?", deploymentId, version).
-		Scan(&v.DeploymentId, &v.Version, &v.ModelVersion, &v.Xml, &v.Svg, &strategy, &restart, &notify, &selections, &parameters, &created)
+	err = row.Scan(&v.DeploymentId, &v.Version, &v.ModelVersion, &v.Xml, &v.Svg, &strategy, &restart, &notify, &selections, &parameters, &created)
 	v.Selections = fromJson[map[string]model.Selection](selections)
 	v.Parameters = fromJson[map[string]model.ElementParameters](parameters)
 	v.UpdateStrategy = model.UpdateStrategy(strategy)
 	v.IncidentHandling = model.IncidentHandling{Restart: restart == 1, Notify: notify == 1}
 	v.CreatedAt = fromMillis(created)
+	return v, err
+}
+
+func (this *Tx) GetDeploymentVersion(deploymentId string, version int) (v model.DeploymentVersion, err error) {
+	v, err = scanDeploymentVersion(this.queryRow("SELECT "+deploymentVersionColumns+" FROM deployment_versions WHERE deployment_id = ? AND version = ?", deploymentId, version))
 	return v, notFound(err, "version %v of deployment %v not found", version, deploymentId)
 }
 

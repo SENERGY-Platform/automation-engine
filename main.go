@@ -33,6 +33,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/migrate"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
+	"github.com/SENERGY-Platform/automation-engine/pkg/transfer"
 )
 
 func main() {
@@ -40,8 +41,18 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
 		os.Exit(migrate.Main(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	// automation-engine export-gateway [-sqlite <path>]: the deployments of a gateway for the
+	// import into a new cloud (SNRGY-5066)
+	if len(os.Args) > 1 && os.Args[1] == "export-gateway" {
+		os.Exit(transfer.Main(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	configPath := flag.String("config", "config.json", "configuration file")
 	flag.Parse()
+	// an unknown subcommand would otherwise start a complete engine that does not end
+	if flag.NArg() > 0 {
+		slog.Error("unknown subcommand, expected migrate or export-gateway", "args", flag.Args())
+		os.Exit(2)
+	}
 
 	config, err := configuration.Load(*configPath)
 	if err != nil {

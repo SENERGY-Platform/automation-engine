@@ -56,6 +56,9 @@ type Store struct {
 	full atomic.Bool
 	// nothing removes rights from permissions-v2, e.g. on a gateway; the queue would only grow
 	withoutRemovals atomic.Bool
+	// columns of later migrations a database opened read-only lacks, per table, with the
+	// expression they read as instead
+	missing map[string]map[string]string
 }
 
 // DisablePermissionRemovals stops queueing rights for removal from permissions-v2, for an
@@ -211,7 +214,7 @@ func (this *Store) Tx(ctx context.Context, fn func(tx *Tx) error) (err error) {
 	if err != nil {
 		return model.Unavailable("unable to begin transaction: %v", err)
 	}
-	tx := &Tx{tx: sqlTx, dialect: this.dialect, ctx: ctx, withoutRemovals: this.withoutRemovals.Load()}
+	tx := &Tx{tx: sqlTx, dialect: this.dialect, ctx: ctx, withoutRemovals: this.withoutRemovals.Load(), missing: this.missing}
 	defer func() {
 		if p := recover(); p != nil {
 			_ = sqlTx.Rollback()
@@ -280,6 +283,7 @@ type Tx struct {
 	dialect         Dialect
 	ctx             context.Context
 	withoutRemovals bool
+	missing         map[string]map[string]string
 }
 
 // rebind rewrites ? placeholders to $n for Postgres; queries never contain ? in literals

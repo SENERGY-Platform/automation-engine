@@ -17,6 +17,9 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o app
 RUN echo "$VERSION $(git log -1 --oneline)" > version.txt
 
 FROM alpine:latest
+# the image knows the subcommand export-gateway; mgw-migrate starts only images with this label
+# (SNRGY-5066)
+LABEL org.senergy-platform.automation-engine.export-gateway=1
 WORKDIR /root/
 COPY --from=builder /go/src/app/app .
 COPY --from=builder /go/src/app/config.json .
