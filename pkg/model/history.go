@@ -16,7 +16,11 @@
 
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"strings"
+	"time"
+)
 
 // ActivityKind classifies entries of the activity log (HIST-05).
 type ActivityKind string
@@ -66,6 +70,69 @@ type ActivityListOptions struct {
 	Limit     int    `json:"limit,omitempty"`
 	Kind      string `json:"kind,omitempty"`
 	ElementId string `json:"element_id,omitempty"`
+	// search in the history (DBG-16): entries that set or delete this variable
+	Variable string `json:"variable,omitempty"`
+	// search in the history (DBG-16): entries that set a variable to a value containing this
+	// text, ignoring case; text values as they are, others as compact JSON
+	Value string `json:"value,omitempty"`
+}
+
+// Searches reports whether the options look into the data of the entries, which the store
+// cannot filter by (DBG-16).
+func (this ActivityListOptions) Searches() bool {
+	return this.Variable != "" || this.Value != ""
+}
+
+// Matches applies all filters of the options to one entry, including the search (DBG-16).
+func (this ActivityListOptions) Matches(a Activity) bool {
+	if this.Run > 0 && a.Run != this.Run {
+		return false
+	}
+	if this.AfterSeq > 0 && a.Seq <= this.AfterSeq {
+		return false
+	}
+	if this.Kind != "" && string(a.Kind) != this.Kind {
+		return false
+	}
+	if this.ElementId != "" && a.ElementId != this.ElementId {
+		return false
+	}
+	if !this.Searches() {
+		return true
+	}
+	if a.Kind != ActivityVariableSet && a.Kind != ActivityVariableDeleted {
+		return false
+	}
+	if this.Variable != "" {
+		if name, _ := a.Data["name"].(string); name != this.Variable {
+			return false
+		}
+	}
+	if this.Value != "" {
+		if a.Kind != ActivityVariableSet {
+			return false
+		}
+		return strings.Contains(strings.ToLower(searchText(a.Data["value"])), strings.ToLower(this.Value))
+	}
+	return true
+}
+
+// searchText renders a value of the activity log for the search; a value the log keeps cut is
+// searched in its preview
+func searchText(value any) string {
+	if cut, ok := value.(map[string]any); ok && cut["truncated"] == true {
+		if preview, ok := cut["preview"].(string); ok {
+			return preview
+		}
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
 
 type ActivityPage struct {

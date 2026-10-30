@@ -90,6 +90,8 @@ type Controller interface {
 	ListRuns(ctx context.Context, token string, namespace string, id string) ([]model.Run, error)
 	GetVariables(ctx context.Context, token string, namespace string, id string) ([]model.Variable, error)
 	SetVariable(ctx context.Context, token string, namespace string, id string, name string, value any) error
+	// TriggerWait triggers the event or timer an element waits for at once (DBG-17)
+	TriggerWait(ctx context.Context, token string, namespace string, id string, elementId string, input model.TriggerInput) error
 	ListActivities(ctx context.Context, token string, namespace string, id string, options model.ActivityListOptions) (model.ActivityPage, error)
 	ListElementStats(ctx context.Context, token string, namespace string, id string, run int) ([]model.ElementStats, error)
 	GetVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string) (model.Variable, error)

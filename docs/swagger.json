@@ -7713,6 +7713,18 @@
                         "description": "BPMN element id",
                         "name": "element_id",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "search: entries that set or delete this variable (DBG-16)",
+                        "name": "variable",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "search: entries that set a variable to a value containing this text, ignoring case; text values as they are, others as compact JSON (DBG-16)",
+                        "name": "value",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -8781,6 +8793,83 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/namespaces/{ns}/instances/{id}/waits/{element_id}/trigger": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "For the debugger (DBG-17): the message or device event the element waits for is correlated without its condition, a timer fires before it is due. With several tokens waiting at the element the one waiting longest. The history marks the entry with manual. Instances on a gateway are refused.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "debugging"
+                ],
+                "summary": "trigger a waiting event or timer at once",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "namespace",
+                        "name": "ns",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "instance id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "BPMN element id of the waiting event",
+                        "name": "element_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "local variables of the element",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/model.TriggerInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/model.Error"
                         }
@@ -14174,6 +14263,16 @@
                 },
                 "kind": {
                     "type": "string"
+                }
+            }
+        },
+        "model.TriggerInput": {
+            "type": "object",
+            "properties": {
+                "local_variables": {
+                    "description": "local variables of the triggered element, as a correlation brings them; a device event\nbrings e.g. event; ignored for timers",
+                    "type": "object",
+                    "additionalProperties": {}
                 }
             }
         },

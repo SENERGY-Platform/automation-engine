@@ -61,13 +61,25 @@ func (this *Tx) ListActivities(instanceId string, options model.ActivityListOpti
 	if limit <= 0 || limit > model.MaxPageLimit {
 		limit = model.MaxPageLimit
 	}
-	rows, err := this.query("SELECT instance_id, seq, run, ts, kind, element_id, element_type, data FROM activities"+w.String()+" ORDER BY seq LIMIT ?", append(w.args, limit)...)
+	// the search looks into the data, which is JSON text; it reads the variable entries and
+	// filters them here, bounded by the entries an instance keeps (DBG-16, LONG-03)
+	searches := options.Searches()
+	order := " ORDER BY seq LIMIT ?"
+	if searches {
+		w.in("kind", []string{string(model.ActivityVariableSet), string(model.ActivityVariableDeleted)})
+		order = " ORDER BY seq"
+	}
+	args := w.args
+	if !searches {
+		args = append(args, limit)
+	}
+	rows, err := this.query("SELECT instance_id, seq, run, ts, kind, element_id, element_type, data FROM activities"+w.String()+order, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	result = []model.Activity{}
-	for rows.Next() {
+	for len(result) < limit && rows.Next() {
 		var a model.Activity
 		var ts int64
 		var kind, data string
@@ -77,6 +89,9 @@ func (this *Tx) ListActivities(instanceId string, options model.ActivityListOpti
 		a.Time = fromMillis(ts)
 		a.Kind = model.ActivityKind(kind)
 		a.Data = fromJson[map[string]any](data)
+		if searches && !options.Matches(a) {
+			continue
+		}
 		result = append(result, a)
 	}
 	return result, rows.Err()

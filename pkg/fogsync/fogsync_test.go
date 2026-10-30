@@ -323,6 +323,9 @@ func TestStopAndDeleteReachTheGateway(t *testing.T) {
 	if err = c.SetVariable(ctx, alice, "processes", "i-1", "x", 1); err == nil || !strings.Contains(err.Error(), "gateway") {
 		t.Errorf("variables of an instance on a gateway change only there: %v", err)
 	}
+	if err = c.TriggerWait(ctx, alice, "processes", "i-1", "wait", model.TriggerInput{}); err == nil || !strings.Contains(err.Error(), "gateway") {
+		t.Errorf("events of an instance on a gateway are triggered only there (DBG-17): %v", err)
+	}
 	if err = c.StopInstances(ctx, alice, "processes", []string{"i-1"}); err != nil {
 		t.Fatal(err)
 	}
@@ -475,12 +478,16 @@ func TestDebuggingReadsTheGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inst, err := c.StartInstance(ctx, alice, "processes", model.StartInstanceInput{DeploymentId: d.Id})
+	inst, err := c.StartInstance(ctx, alice, "processes", model.StartInstanceInput{DeploymentId: d.Id, Variables: map[string]any{"mode": "heating", "level": 21}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.waitFor("the running instance", func() bool { return e.cloudInstance(inst.Id).State == model.StateRunning })
 
+	found, err := c.ListActivities(ctx, alice, "processes", inst.Id, model.ActivityListOptions{Value: "HEAT"})
+	if err != nil || len(found.Items) != 1 || found.Items[0].Data["name"] != "mode" {
+		t.Fatalf("the search runs on the gateway (DBG-16): %+v %v", found, err)
+	}
 	state, err := c.DebugState(ctx, alice, "processes", inst.Id, model.DebugOptions{})
 	if err != nil || state.Offline || len(state.Active) != 1 || state.Active[0].ElementId != "wait" {
 		t.Fatalf("the state comes from the gateway: %+v %v", state, err)

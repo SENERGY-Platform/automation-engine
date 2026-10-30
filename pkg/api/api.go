@@ -173,6 +173,7 @@ func (h *handlers) routes() []route {
 		{"GET /namespaces/{ns}/instances/{id}/variables", h.getVariables},
 		{"PUT /namespaces/{ns}/instances/{id}/variables/{name}", h.setVariable},
 		{"GET /namespaces/{ns}/instances/{id}/activities", h.listActivities},
+		{"POST /namespaces/{ns}/instances/{id}/waits/{element_id}/trigger", h.triggerWait},
 		{"GET /namespaces/{ns}/instances/{id}/variables/{name}", h.getVariable},
 		{"PUT /namespaces/{ns}/instances/{id}/parameters", h.updateParameters},
 		{"DELETE /namespaces/{ns}/instances/{id}/variables/{name}", h.deleteVariable},

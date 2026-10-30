@@ -2661,6 +2661,15 @@ definitions:
       kind:
         type: string
     type: object
+  model.TriggerInput:
+    properties:
+      local_variables:
+        additionalProperties: {}
+        description: |-
+          local variables of the triggered element, as a correlation brings them; a device event
+          brings e.g. event; ignored for timers
+        type: object
+    type: object
   model.UpdateStrategy:
     enum:
     - stop
@@ -8140,6 +8149,15 @@ paths:
         in: query
         name: element_id
         type: string
+      - description: 'search: entries that set or delete this variable (DBG-16)'
+        in: query
+        name: variable
+        type: string
+      - description: 'search: entries that set a variable to a value containing this
+          text, ignoring case; text values as they are, others as compact JSON (DBG-16)'
+        in: query
+        name: value
+        type: string
       produces:
       - application/json
       responses:
@@ -8856,6 +8874,59 @@ paths:
       summary: set a variable of a running instance
       tags:
       - instances
+  /namespaces/{ns}/instances/{id}/waits/{element_id}/trigger:
+    post:
+      consumes:
+      - application/json
+      description: 'For the debugger (DBG-17): the message or device event the element
+        waits for is correlated without its condition, a timer fires before it is
+        due. With several tokens waiting at the element the one waiting longest. The
+        history marks the entry with manual. Instances on a gateway are refused.'
+      parameters:
+      - description: namespace
+        in: path
+        name: ns
+        required: true
+        type: string
+      - description: instance id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: BPMN element id of the waiting event
+        in: path
+        name: element_id
+        required: true
+        type: string
+      - description: local variables of the element
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/model.TriggerInput'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/model.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: trigger a waiting event or timer at once
+      tags:
+      - debugging
   /namespaces/{ns}/instances/stop:
     post:
       consumes:

@@ -359,6 +359,10 @@ func (this *ClientImpl) SetVariable(ctx context.Context, token string, namespace
 	return this.do(ctx, token, http.MethodPut, path("namespaces", namespace, "instances", id, "variables", name), nil, model.VariableInput{Value: value}, nil)
 }
 
+func (this *ClientImpl) TriggerWait(ctx context.Context, token string, namespace string, id string, elementId string, input model.TriggerInput) error {
+	return this.do(ctx, token, http.MethodPost, path("namespaces", namespace, "instances", id, "waits", elementId, "trigger"), nil, input, nil)
+}
+
 func (this *ClientImpl) ListActivities(ctx context.Context, token string, namespace string, id string, options model.ActivityListOptions) (result model.ActivityPage, err error) {
 	q := url.Values{}
 	setInt(q, "run", int64(options.Run))
@@ -366,6 +370,8 @@ func (this *ClientImpl) ListActivities(ctx context.Context, token string, namesp
 	setInt(q, "limit", int64(options.Limit))
 	set(q, "kind", options.Kind)
 	set(q, "element_id", options.ElementId)
+	set(q, "variable", options.Variable)
+	set(q, "value", options.Value)
 	err = this.do(ctx, token, http.MethodGet, path("namespaces", namespace, "instances", id, "activities"), q, nil, &result)
 	return result, err
 }

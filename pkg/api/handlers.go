@@ -822,6 +822,28 @@ func (h *handlers) setVariable(w http.ResponseWriter, r *http.Request) {
 	respondEmpty(w, h.c.SetVariable(r.Context(), token(r), r.PathValue("ns"), r.PathValue("id"), r.PathValue("name"), input.Value))
 }
 
+// triggerWait godoc
+//
+//	@Summary		trigger a waiting event or timer at once
+//	@Description	For the debugger (DBG-17): the message or device event the element waits for is correlated without its condition, a timer fires before it is due. With several tokens waiting at the element the one waiting longest. The history marks the entry with manual. Instances on a gateway are refused.
+//	@Tags			debugging
+//	@Security		Bearer
+//	@Accept			json
+//	@Param			ns			path	string				true	"namespace"
+//	@Param			id			path	string				true	"instance id"
+//	@Param			element_id	path	string				true	"BPMN element id of the waiting event"
+//	@Param			body		body	model.TriggerInput	false	"local variables of the element"
+//	@Success		204
+//	@Failure		400,403,404,409	{object}	model.Error
+//	@Router			/namespaces/{ns}/instances/{id}/waits/{element_id}/trigger [post]
+func (h *handlers) triggerWait(w http.ResponseWriter, r *http.Request) {
+	input, ok := decode[model.TriggerInput](w, r)
+	if !ok {
+		return
+	}
+	respondEmpty(w, h.c.TriggerWait(r.Context(), token(r), r.PathValue("ns"), r.PathValue("id"), r.PathValue("element_id"), input))
+}
+
 // listActivities godoc
 //
 //	@Summary	activity log of an instance in sequence order
@@ -835,12 +857,17 @@ func (h *handlers) setVariable(w http.ResponseWriter, r *http.Request) {
 //	@Param		limit		query		int		false	"max entries, default and max 1000"
 //	@Param		kind		query		string	false	"activity kind"
 //	@Param		element_id	query		string	false	"BPMN element id"
+//	@Param		variable	query		string	false	"search: entries that set or delete this variable (DBG-16)"
+//	@Param		value		query		string	false	"search: entries that set a variable to a value containing this text, ignoring case; text values as they are, others as compact JSON (DBG-16)"
 //	@Success	200			{object}	model.ActivityPage
 //	@Failure	404			{object}	model.Error
 //	@Router		/namespaces/{ns}/instances/{id}/activities [get]
 func (h *handlers) listActivities(w http.ResponseWriter, r *http.Request) {
 	q := newQuery(r)
-	options := model.ActivityListOptions{Run: q.int("run"), AfterSeq: q.int64("after_seq"), Limit: q.int("limit"), Kind: q.str("kind"), ElementId: q.str("element_id")}
+	options := model.ActivityListOptions{
+		Run: q.int("run"), AfterSeq: q.int64("after_seq"), Limit: q.int("limit"), Kind: q.str("kind"), ElementId: q.str("element_id"),
+		Variable: q.str("variable"), Value: q.str("value"),
+	}
 	if q.err != nil {
 		writeError(w, q.err)
 		return

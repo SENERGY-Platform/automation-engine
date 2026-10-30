@@ -38,6 +38,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
+	permmodel "github.com/SENERGY-Platform/permissions-v2/pkg/model"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
@@ -97,6 +98,53 @@ func TestDebugStateShowsWaitsAndCutsLargeValues(t *testing.T) {
 		}
 		if _, err = c.HistoryState(ctx, alice, ns, inst.Id, model.HistoryOptions{Seq: 0, Time: &inst.CreatedAt}); err != nil && !errors.Is(err, model.ErrNotFound) {
 			t.Fatalf("a time selects the step at or before it: %v", err)
+		}
+	})
+}
+
+func TestDebuggerSearchesTheHistoryAndIntervenesWithTheWriteRight(t *testing.T) {
+	eachEnv(t, func(t *testing.T, e env) {
+		const sms = "smart-services"
+		d, err := e.CreateDeployment(ctx, alice, sms, model.DeploymentInput{Xml: b.Process(
+			b.Message("m", "go"),
+			b.Start("start"), b.CatchMessage("wait", "m", b.OutScript("received", "payload")), b.End("end"),
+			b.Flow("start", "wait"), b.Flow("wait", "end"),
+		)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inst, err := e.StartInstance(ctx, alice, sms, model.StartInstanceInput{DeploymentId: d.Id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, value := range []any{18, 21.5, 19} {
+			if err = e.SetVariable(ctx, alice, sms, inst.Id, "level", value); err != nil {
+				t.Fatal(err)
+			}
+		}
+		found, err := e.ListActivities(ctx, alice, sms, inst.Id, model.ActivityListOptions{Variable: "level", Value: "21"})
+		if err != nil || len(found.Items) != 1 || found.Items[0].Data["value"] != 21.5 {
+			t.Fatalf("when did level get 21 (DBG-16): %+v %v", found, err)
+		}
+
+		e.sync(t)
+		e.share(t, alice, "smart-services_instances", inst.Id, "bob", permmodel.PermissionsMap{Read: true})
+		if _, err = e.DebugState(ctx, bob, sms, inst.Id, model.DebugOptions{}); err != nil {
+			t.Fatalf("bob reads the shared instance: %v", err)
+		}
+		if err = e.TriggerWait(ctx, bob, sms, inst.Id, "wait", model.TriggerInput{}); !errors.Is(err, model.ErrForbidden) {
+			t.Fatalf("interventions need the write right (DBG-17), got %v", err)
+		}
+		if err = e.TriggerWait(ctx, alice, sms, inst.Id, "start", model.TriggerInput{}); !errors.Is(err, model.ErrConflict) {
+			t.Fatalf("an element that does not wait, got %v", err)
+		}
+		if err = e.TriggerWait(ctx, alice, sms, inst.Id, "wait", model.TriggerInput{LocalVariables: map[string]any{"payload": "by hand"}}); err != nil {
+			t.Fatal(err)
+		}
+		finished(t, e.Client, sms, inst.Id)
+		vars, err := e.GetVariables(ctx, alice, sms, inst.Id)
+		if err != nil || variable(vars, "received") != "by hand" {
+			t.Fatalf("the local variables reach the output mapping: %+v %v", vars, err)
 		}
 	})
 }

@@ -526,6 +526,61 @@ func (this *Engine) SetVariable(ctx context.Context, instanceId string, name str
 	})
 }
 
+// TriggerWait triggers what an element of a running instance waits for at once, from the
+// debugger (DBG-17): a message or device event without its condition, a timer before it is due.
+// With several tokens waiting at the element the one waiting longest. The entry in the history
+// is that of a correlation or a fired timer, marked with manual.
+func (this *Engine) TriggerWait(ctx context.Context, instanceId string, elementId string, localVariables map[string]any) error {
+	locals, err := normalizeAll(localVariables, this.config.MaxVariableBytes)
+	if err != nil {
+		return err
+	}
+	return this.store.Tx(ctx, func(tx *store.Tx) error {
+		inst, err := tx.GetInstance(instanceId, true)
+		if err != nil {
+			return err
+		}
+		if inst.State != model.StateRunning {
+			return model.Conflict("instance %v is not running", instanceId)
+		}
+		subscriptions, err := tx.ListSubscriptions(instanceId)
+		if err != nil {
+			return err
+		}
+		var waiting *store.Subscription
+		for i, s := range subscriptions {
+			if s.ElementId == elementId && s.Run == inst.Run {
+				waiting = &subscriptions[i]
+				break
+			}
+		}
+		if waiting == nil {
+			return model.Conflict("element %v waits for no event or timer", elementId)
+		}
+		r, err := this.newRunner(tx, &inst)
+		if err != nil {
+			return err
+		}
+		kind := model.ActivityTimerFired
+		data := map[string]any{"due": waiting.DueAt, "definition": waiting.Definition, "manual": true}
+		if waiting.Kind == store.SubscriptionMessage {
+			kind = model.ActivityMessageReceived
+			data = map[string]any{"message_name": waiting.MessageName, "manual": true}
+			if len(locals) > 0 {
+				data["local_variables"] = r.preview(locals)
+			}
+		} else {
+			locals = nil
+		}
+		if err = r.trigger(*waiting, locals, nil, kind, data); err != nil {
+			if err = r.handle(err); err != nil {
+				return err
+			}
+		}
+		return r.finish()
+	})
+}
+
 // ApplyUpdate handles running instances after a deployment got a new version (DEP-04).
 func (this *Engine) ApplyUpdate(tx *store.Tx, deploymentId string, strategy model.UpdateStrategy) error {
 	if strategy == model.UpdateDrain {

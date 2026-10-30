@@ -325,10 +325,22 @@ func (this *Controller) SetVariable(ctx context.Context, token string, namespace
 	return this.engine.SetVariable(ctx, id, name, value)
 }
 
+// TriggerWait needs the write right like setting a variable: it changes the course of the
+// instance, which the read right of the debugger does not cover (DBG-17, DBG-08).
+func (this *Controller) TriggerWait(ctx context.Context, token string, namespace string, id string, elementId string, input model.TriggerInput) error {
+	if err := this.checkAll(ctx, token, namespace, []string{id}, Write); err != nil {
+		return err
+	}
+	if err := this.localOnly(ctx, id); err != nil {
+		return err
+	}
+	return this.engine.TriggerWait(ctx, id, elementId, input.LocalVariables)
+}
+
 func (this *Controller) ListActivities(ctx context.Context, token string, namespace string, id string, options model.ActivityListOptions) (result model.ActivityPage, err error) {
 	if networkId, _, err := this.onGateway(ctx, token, namespace, id); err != nil || networkId != "" {
 		if err == nil {
-			err = this.networks.Call(ctx, networkId, fogsync.MethodListActivities, namespace, id, requestOptions(options), &result)
+			result, err = this.gatewayActivities(ctx, networkId, namespace, id, options)
 		}
 		return result, err
 	}
@@ -343,6 +355,43 @@ func (this *Controller) ListActivities(ctx context.Context, token string, namesp
 		return err
 	})
 	return result, err
+}
+
+// gatewayActivities reads the activity log from the gateway. A gateway with an older engine
+// ignores the search and returns every entry, so the cloud filters again and pages on while a
+// page comes back full; the entries an instance keeps bound the pages (DBG-16, LONG-03).
+func (this *Controller) gatewayActivities(ctx context.Context, networkId string, namespace string, id string, options model.ActivityListOptions) (result model.ActivityPage, err error) {
+	if !options.Searches() {
+		err = this.networks.Call(ctx, networkId, fogsync.MethodListActivities, namespace, id, requestOptions(options), &result)
+		return result, err
+	}
+	limit := options.Limit
+	if limit <= 0 || limit > model.MaxPageLimit {
+		limit = model.MaxPageLimit
+	}
+	request := options
+	request.Limit = model.MaxPageLimit
+	result.Items = []model.Activity{}
+	for {
+		var page model.ActivityPage
+		if err = this.networks.Call(ctx, networkId, fogsync.MethodListActivities, namespace, id, requestOptions(request), &page); err != nil {
+			return result, err
+		}
+		result.Truncated = result.Truncated || page.Truncated
+		for _, a := range page.Items {
+			if !options.Matches(a) {
+				continue
+			}
+			result.Items = append(result.Items, a)
+			if len(result.Items) == limit {
+				return result, nil
+			}
+		}
+		if len(page.Items) < model.MaxPageLimit {
+			return result, nil
+		}
+		request.AfterSeq = page.Items[len(page.Items)-1].Seq
+	}
 }
 
 func (this *Controller) ListElementStats(ctx context.Context, token string, namespace string, id string, run int) (result []model.ElementStats, err error) {

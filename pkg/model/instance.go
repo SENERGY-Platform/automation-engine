@@ -138,6 +138,13 @@ type VariableInput struct {
 	Value any `json:"value"`
 }
 
+// TriggerInput triggers a waiting event or timer by hand from the debugger (DBG-17).
+type TriggerInput struct {
+	// local variables of the triggered element, as a correlation brings them; a device event
+	// brings e.g. event; ignored for timers
+	LocalVariables map[string]any `json:"local_variables,omitempty"`
+}
+
 // ValueType names the JSON type of a variable value.
 func ValueType(value any) string {
 	switch value.(type) {
