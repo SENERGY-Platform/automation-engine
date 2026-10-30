@@ -38,6 +38,9 @@ type Networks interface {
 	Desire(tx *store.Tx, networkId string, resource fogsync.Resource) error
 	// sends the desired state now instead of with the next pass
 	Wake()
+	// asks the gateway to send its change stream from the position the cloud took, instead
+	// of with its next status (SNRGY-5066)
+	RequestChanges(ctx context.Context, networkId string) error
 	// the networks with the ids, all if ids is nil, with their resources if detailed
 	Overview(ctx context.Context, ids []string, detailed bool) ([]model.Network, error)
 	// reads from a gateway (DBG-15) and watches an instance there (DBG-12)

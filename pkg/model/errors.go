@@ -36,6 +36,8 @@ const (
 	KindInternal    ErrorKind = "internal"
 	// a limit per user is reached, e.g. live connections (DBG-10)
 	KindTooMany ErrorKind = "too_many_requests"
+	// the request is well formed, but something it refers to cannot be used, e.g. an unknown hub
+	KindUnprocessable ErrorKind = "unprocessable"
 )
 
 // sentinel errors for errors.Is; an *Error matches the sentinel of its kind
@@ -48,6 +50,8 @@ var (
 	ErrUnavailable = errors.New(string(KindUnavailable))
 	ErrInternal    = errors.New(string(KindInternal))
 	ErrTooMany     = errors.New(string(KindTooMany))
+	// the request refers to something that cannot be used
+	ErrUnprocessable = errors.New(string(KindUnprocessable))
 )
 
 // Issue is a validation finding, bound to a BPMN element where possible (BPMN-18).
@@ -133,6 +137,8 @@ func (this ErrorKind) sentinel() error {
 		return ErrUnavailable
 	case KindTooMany:
 		return ErrTooMany
+	case KindUnprocessable:
+		return ErrUnprocessable
 	default:
 		return ErrInternal
 	}
@@ -152,6 +158,8 @@ func (this ErrorKind) HttpStatus() int {
 		return http.StatusServiceUnavailable
 	case KindTooMany:
 		return http.StatusTooManyRequests
+	case KindUnprocessable:
+		return http.StatusUnprocessableEntity
 	default:
 		return http.StatusInternalServerError
 	}
@@ -171,6 +179,8 @@ func KindFromHttpStatus(status int) ErrorKind {
 		return KindUnavailable
 	case http.StatusTooManyRequests:
 		return KindTooMany
+	case http.StatusUnprocessableEntity:
+		return KindUnprocessable
 	default:
 		return KindInternal
 	}
@@ -202,6 +212,10 @@ func Unavailable(format string, args ...any) *Error {
 
 func TooMany(format string, args ...any) *Error {
 	return NewError(KindTooMany, format, args...)
+}
+
+func Unprocessable(format string, args ...any) *Error {
+	return NewError(KindUnprocessable, format, args...)
 }
 
 func ValidationFailed(issues []Issue) *Error {

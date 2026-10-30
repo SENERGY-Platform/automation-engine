@@ -10011,6 +10011,88 @@ const docTemplate = `{
                 }
             }
         },
+        "/networks/{id}/import": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Admins only. The body is the output of \"automation-engine export-gateway\" on the gateway, unchanged. Deployments are created with their ids, versions, event descriptions and device groups, for the owner of the hub in device-repository, and desired on the gateway in the version it runs, so that it only replaces their event descriptions; deployments that exist stay as they are. Missing process models are created from the deployment versions, also those deleted in the former cloud, since a gateway never learns of the deletion. Namespaces come from the configuration of the cloud; deployments of unknown or cloud-only namespaces are skipped. The gateway then sends all its instances again. Everything happens in one transaction (SNRGY-5066).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "networks"
+                ],
+                "summary": "take over the deployments of a gateway into a new cloud",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "network id, the hub id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "report without writing",
+                        "name": "dry_run",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "create the network if the cloud has never heard from the gateway, with the import as its last contact; otherwise the first contact creates it",
+                        "name": "create_network",
+                        "in": "query"
+                    },
+                    {
+                        "description": "export of the gateway",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.GatewayExport"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.NetworkImport"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/ready": {
             "get": {
                 "tags": [
@@ -12038,7 +12120,8 @@ const docTemplate = `{
                 "conflict",
                 "unavailable",
                 "internal",
-                "too_many_requests"
+                "too_many_requests",
+                "unprocessable"
             ],
             "x-enum-varnames": [
                 "KindBadRequest",
@@ -12048,7 +12131,8 @@ const docTemplate = `{
                 "KindConflict",
                 "KindUnavailable",
                 "KindInternal",
-                "KindTooMany"
+                "KindTooMany",
+                "KindUnprocessable"
             ]
         },
         "model.EventDescription": {
@@ -12256,6 +12340,93 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ExportedApplied": {
+            "type": "object",
+            "properties": {
+                "applied_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.ExportedDeployment": {
+            "type": "object",
+            "properties": {
+                "deployment": {
+                    "$ref": "#/definitions/model.Deployment"
+                },
+                "device_groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "event_descriptions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.EventDescription"
+                    }
+                },
+                "versions": {
+                    "description": "all versions, ascending",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DeploymentVersion"
+                    }
+                }
+            }
+        },
+        "model.GatewayExport": {
+            "type": "object",
+            "properties": {
+                "applied": {
+                    "description": "what the gateway applied of the desired state of its cloud, for diagnosis only",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ExportedApplied"
+                    }
+                },
+                "deployments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ExportedDeployment"
+                    }
+                },
+                "exported_at": {
+                    "type": "string"
+                },
+                "exporter_version": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "format_version": {
+                    "type": "integer"
+                },
+                "namespaces": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Namespace"
+                    }
+                },
+                "schema_migration": {
+                    "description": "the highest migration applied to the database of the gateway",
+                    "type": "integer"
+                }
+            }
+        },
         "model.HistoryVariable": {
             "type": "object",
             "properties": {
@@ -12338,6 +12509,48 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "model.ImportedDeployment": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "namespace": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "created, exists or skipped",
+                    "type": "string"
+                }
+            }
+        },
+        "model.ImportedModel": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "created, extended, exists or skipped",
+                    "type": "string"
+                },
+                "versions_added": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
                     }
                 }
             }
@@ -13068,6 +13281,36 @@ const docTemplate = `{
                 "up_backlog": {
                     "description": "positions of the change stream of the gateway the cloud has not taken yet",
                     "type": "integer"
+                }
+            }
+        },
+        "model.NetworkImport": {
+            "type": "object",
+            "properties": {
+                "deployments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ImportedDeployment"
+                    }
+                },
+                "dry_run": {
+                    "type": "boolean"
+                },
+                "models": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ImportedModel"
+                    }
+                },
+                "network_id": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "snapshot_requested": {
+                    "description": "the gateway sends all instances again on its next contact",
+                    "type": "boolean"
                 }
             }
         },

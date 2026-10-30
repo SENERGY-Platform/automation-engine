@@ -18,9 +18,12 @@ package devices
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
@@ -34,10 +37,14 @@ func NewHubs(repositoryUrl string) *Hubs {
 	return &Hubs{url: repositoryUrl}
 }
 
-// HubOwner returns owner_id of the hub, read with the token.
+// HubOwner returns owner_id of the hub, read with the token; an unknown hub is not found.
 func (this *Hubs) HubOwner(_ context.Context, token string, id string) (string, error) {
 	var hub models.Hub
 	if err := getJson(defaultClient, Token(token), this.url, "/hubs/"+url.PathEscape(id), &hub); err != nil {
+		var status *statusError
+		if errors.As(err, &status) && status.status == http.StatusNotFound {
+			return "", model.NotFound("%v", err)
+		}
 		return "", err
 	}
 	if hub.OwnerId == "" {

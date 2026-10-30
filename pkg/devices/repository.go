@@ -118,9 +118,19 @@ func getJson(client *http.Client, token Token, base string, path string, result 
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("GET %v: %v %v", req.URL.Path, resp.StatusCode, strings.TrimSpace(string(body)))
+		return &statusError{status: resp.StatusCode, message: fmt.Sprintf("GET %v: %v %v", req.URL.Path, resp.StatusCode, strings.TrimSpace(string(body)))}
 	}
 	return json.NewDecoder(resp.Body).Decode(result)
+}
+
+// statusError is an answer of device-repository other than 2xx
+type statusError struct {
+	status  int
+	message string
+}
+
+func (this *statusError) Error() string {
+	return this.message
 }
 
 func (this *CachedRepository) GetDevice(token Token, id string) (models.Device, error) {

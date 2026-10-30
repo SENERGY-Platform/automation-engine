@@ -132,6 +132,8 @@ type Controller interface {
 	// the gateways the cloud synchronises with (SYNC-12, SYNC-13)
 	ListNetworks(ctx context.Context, token string) ([]model.Network, error)
 	GetNetwork(ctx context.Context, token string, networkId string) (model.Network, error)
+	// ImportNetwork takes over the deployments of a gateway from its export; admins only (SNRGY-5066)
+	ImportNetwork(ctx context.Context, token string, networkId string, doc model.GatewayExport, options model.NetworkImportOptions) (model.NetworkImport, error)
 
 	// GetUserDependents is the dry run of DeleteUser; admins only (SEC-14)
 	GetUserDependents(ctx context.Context, token string, userId string) (model.UserDependents, error)

@@ -22,7 +22,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -63,10 +62,11 @@ type env struct {
 	gateway *server.Server
 	// the connector between both brokers; false drops everything, as the connector does offline
 	online atomic.Bool
-	// the broker of the cloud, for a gateway that replaces the first one
-	cloudBroker *mqtt.Memory
-	owners      *owners
-	permissions permclient.Client
+	// the brokers, for a gateway or a cloud that replaces the first one
+	cloudBroker   *mqtt.Memory
+	gatewayBroker *mqtt.Memory
+	owners        *owners
+	permissions   permclient.Client
 	// the admin token of the cloud fails, as with Keycloak unreachable
 	adminTokenFails atomic.Bool
 }
@@ -84,7 +84,7 @@ func (this *owners) HubOwner(_ context.Context, _ string, id string) (string, er
 	defer this.mux.Unlock()
 	owner, ok := this.hubs[id]
 	if !ok {
-		return "", fmt.Errorf("GET /hubs/%v: 404", id)
+		return "", model.NotFound("GET /hubs/%v: 404", id)
 	}
 	return owner, nil
 }
@@ -130,7 +130,7 @@ func newEnv(t *testing.T, configure ...func(*configuration.Config)) *env {
 	this := &env{t: t, owners: &owners{hubs: map[string]string{network: "alice"}}}
 	this.online.Store(true)
 	cloudBroker, gatewayBroker := mqtt.NewMemory(), mqtt.NewMemory()
-	this.cloudBroker = cloudBroker
+	this.cloudBroker, this.gatewayBroker = cloudBroker, gatewayBroker
 	this.bridge(cloudBroker, gatewayBroker)
 
 	config := configuration.Default()
@@ -141,48 +141,13 @@ func newEnv(t *testing.T, configure ...func(*configuration.Config)) *env {
 	for _, c := range configure {
 		c(&config)
 	}
-	deps, err := client.TestDependencies(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// alice may deploy to the gateway, bob only read and start (SEC-05)
-	admin := auth.UnsignedToken("device-repository", "admin")
-	if _, err, _ = deps.Permissions.SetTopic(admin, permmodel.Topic{Id: permissions.HubsTopic}); err != nil {
-		t.Fatal(err)
-	}
-	_, err, _ = deps.Permissions.SetPermission(admin, permissions.HubsTopic, network, permmodel.ResourcePermissions{UserPermissions: map[string]permmodel.PermissionsMap{
-		"alice": {Read: true, Write: true, Execute: true, Administrate: true},
-		"bob":   {Read: true, Execute: true},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err, _ = deps.Permissions.SetPermission(admin, "devices", "d1", permmodel.ResourcePermissions{UserPermissions: map[string]permmodel.PermissionsMap{
-		"alice": {Read: true, Write: true, Execute: true, Administrate: true},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	deps.SyncBroker = cloudBroker
-	deps.HubOwners = this.owners
-	this.permissions = deps.Permissions
-	adminToken := deps.AdminToken
-	deps.AdminToken = func() (string, error) {
-		if this.adminTokenFails.Load() {
-			return "", errors.New("keycloak unreachable")
-		}
-		return adminToken()
-	}
-	deps.EventSeries, deps.EventUnmarshaller = series{}, unmarshaller{}
-	if this.cloud, err = server.New(ctx, config, logger, deps); err != nil {
-		t.Fatal(err)
-	}
-	this.cloud.Start(ctx)
+	this.cloud = this.startCloud(ctx, config, cloudBroker, logger)
 
 	gatewayConfig := configuration.Default()
 	gatewayConfig.SqlitePath = storetest.MemoryDsn()
 	gatewayConfig.PollInterval = "20ms"
 	gatewayConfig.Mode, gatewayConfig.MqttBroker = "fog", "memory"
+	var err error
 	if this.gateway, err = server.New(ctx, gatewayConfig, logger, server.Dependencies{Broker: gatewayBroker, NetworkOwner: this.owners.Gateway}); err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +158,50 @@ func newEnv(t *testing.T, configure ...func(*configuration.Config)) *env {
 		return found
 	})
 	return this
+}
+
+// startCloud starts a cloud engine on the broker, with alice owning the gateway in
+// device-repository and permissions-v2
+func (this *env) startCloud(ctx context.Context, config configuration.Config, broker *mqtt.Memory, logger *slog.Logger) *server.Server {
+	deps, err := client.TestDependencies(ctx)
+	if err != nil {
+		this.t.Fatal(err)
+	}
+	// alice may deploy to the gateway, bob only read and start (SEC-05)
+	admin := auth.UnsignedToken("device-repository", "admin")
+	if _, err, _ = deps.Permissions.SetTopic(admin, permmodel.Topic{Id: permissions.HubsTopic}); err != nil {
+		this.t.Fatal(err)
+	}
+	_, err, _ = deps.Permissions.SetPermission(admin, permissions.HubsTopic, network, permmodel.ResourcePermissions{UserPermissions: map[string]permmodel.PermissionsMap{
+		"alice": {Read: true, Write: true, Execute: true, Administrate: true},
+		"bob":   {Read: true, Execute: true},
+	}})
+	if err != nil {
+		this.t.Fatal(err)
+	}
+	_, err, _ = deps.Permissions.SetPermission(admin, "devices", "d1", permmodel.ResourcePermissions{UserPermissions: map[string]permmodel.PermissionsMap{
+		"alice": {Read: true, Write: true, Execute: true, Administrate: true},
+	}})
+	if err != nil {
+		this.t.Fatal(err)
+	}
+	deps.SyncBroker = broker
+	deps.HubOwners = this.owners
+	this.permissions = deps.Permissions
+	adminToken := deps.AdminToken
+	deps.AdminToken = func() (string, error) {
+		if this.adminTokenFails.Load() {
+			return "", errors.New("keycloak unreachable")
+		}
+		return adminToken()
+	}
+	deps.EventSeries, deps.EventUnmarshaller = series{}, unmarshaller{}
+	cloud, err := server.New(ctx, config, logger, deps)
+	if err != nil {
+		this.t.Fatal(err)
+	}
+	cloud.Start(ctx)
+	return cloud
 }
 
 func (this *env) waitFor(what string, check func() bool) {

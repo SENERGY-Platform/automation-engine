@@ -18,7 +18,6 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"time"
@@ -27,6 +26,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/controller"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
+	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
 	permmodel "github.com/SENERGY-Platform/permissions-v2/pkg/model"
@@ -114,7 +114,7 @@ type TestHubOwners map[string]string
 func (this TestHubOwners) HubOwner(_ context.Context, _ string, networkId string) (string, error) {
 	owner, ok := this[networkId]
 	if !ok {
-		return "", fmt.Errorf("GET /hubs/%v: 404 not found", networkId)
+		return "", model.NotFound("GET /hubs/%v: 404 not found", networkId)
 	}
 	return owner, nil
 }

@@ -209,6 +209,7 @@ func (h *handlers) routes() []route {
 
 		{"GET /networks", h.listNetworks},
 		{"GET /networks/{id}", h.getNetwork},
+		{"PUT /networks/{id}/import", h.importNetwork},
 
 		{"GET /users/{id}/dependents", h.getUserDependents},
 		{"DELETE /users/{id}", h.deleteUser},
@@ -253,7 +254,12 @@ func respondEmpty(w http.ResponseWriter, err error) {
 }
 
 func decode[T any](w http.ResponseWriter, r *http.Request) (result T, ok bool) {
-	body := http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	return decodeUpTo[T](w, r, maxBodyBytes)
+}
+
+// decodeUpTo is decode with another limit of the body
+func decodeUpTo[T any](w http.ResponseWriter, r *http.Request, limit int64) (result T, ok bool) {
+	body := http.MaxBytesReader(w, r.Body, limit)
 	decoder := json.NewDecoder(body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&result); err != nil && !errors.Is(err, io.EOF) {
@@ -287,6 +293,19 @@ func (this *query) int(name string) int {
 	v, err := strconv.Atoi(s)
 	if err != nil && this.err == nil {
 		this.err = model.BadRequest("query parameter %v must be an integer", name)
+	}
+	return v
+}
+
+// boolean is true or false, false if not given
+func (this *query) boolean(name string) bool {
+	s := this.str(name)
+	if s == "" {
+		return false
+	}
+	v, err := strconv.ParseBool(s)
+	if err != nil && this.err == nil {
+		this.err = model.BadRequest("query parameter %v must be true or false", name)
 	}
 	return v
 }

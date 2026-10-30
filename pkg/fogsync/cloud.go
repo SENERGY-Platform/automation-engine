@@ -161,6 +161,20 @@ func (this *Cloud) Wake() {
 	}
 }
 
+// RequestChanges tells a gateway the position of its change stream the cloud took, as the answer
+// to a status does; a gateway behind it sends from there at once instead of after its next
+// status, e.g. after an import set the position back (SNRGY-5066). A gateway the cloud has not
+// heard from yet learns it with its first message.
+func (this *Cloud) RequestChanges(ctx context.Context, networkId string) error {
+	var n store.Network
+	var found bool
+	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) { n, found, err = tx.GetNetwork(networkId); return err })
+	if err != nil || !found || !n.Compatible || n.Protocol == 0 {
+		return err
+	}
+	return this.publish(ctx, networkId, KindUpAck, UpAck{Envelope: this.envelope(n.Protocol), Acked: n.Acked})
+}
+
 // Desire sets the desired state of a resource of a gateway within the transaction of the change
 // that causes it; the reconciler sends it (SYNC-01).
 func (this *Cloud) Desire(tx *store.Tx, networkId string, resource Resource) error {

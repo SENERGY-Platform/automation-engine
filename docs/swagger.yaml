@@ -1235,6 +1235,7 @@ definitions:
     - unavailable
     - internal
     - too_many_requests
+    - unprocessable
     type: string
     x-enum-varnames:
     - KindBadRequest
@@ -1245,6 +1246,7 @@ definitions:
     - KindUnavailable
     - KindInternal
     - KindTooMany
+    - KindUnprocessable
   model.EventDescription:
     properties:
       aspect_ids:
@@ -1383,6 +1385,65 @@ definitions:
           type: string
         type: object
     type: object
+  model.ExportedApplied:
+    properties:
+      applied_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      kind:
+        type: string
+      version:
+        type: integer
+    type: object
+  model.ExportedDeployment:
+    properties:
+      deployment:
+        $ref: '#/definitions/model.Deployment'
+      device_groups:
+        items:
+          type: string
+        type: array
+      event_descriptions:
+        items:
+          $ref: '#/definitions/model.EventDescription'
+        type: array
+      versions:
+        description: all versions, ascending
+        items:
+          $ref: '#/definitions/model.DeploymentVersion'
+        type: array
+    type: object
+  model.GatewayExport:
+    properties:
+      applied:
+        description: what the gateway applied of the desired state of its cloud, for
+          diagnosis only
+        items:
+          $ref: '#/definitions/model.ExportedApplied'
+        type: array
+      deployments:
+        items:
+          $ref: '#/definitions/model.ExportedDeployment'
+        type: array
+      exported_at:
+        type: string
+      exporter_version:
+        type: string
+      format:
+        type: string
+      format_version:
+        type: integer
+      namespaces:
+        items:
+          $ref: '#/definitions/model.Namespace'
+        type: array
+      schema_migration:
+        description: the highest migration applied to the database of the gateway
+        type: integer
+    type: object
   model.HistoryVariable:
     properties:
       available:
@@ -1438,6 +1499,34 @@ definitions:
       ids:
         items:
           type: string
+        type: array
+    type: object
+  model.ImportedDeployment:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      namespace:
+        type: string
+      reason:
+        type: string
+      status:
+        description: created, exists or skipped
+        type: string
+    type: object
+  model.ImportedModel:
+    properties:
+      id:
+        type: string
+      reason:
+        type: string
+      status:
+        description: created, extended, exists or skipped
+        type: string
+      versions_added:
+        items:
+          type: integer
         type: array
     type: object
   model.Incident:
@@ -1961,6 +2050,26 @@ definitions:
         description: positions of the change stream of the gateway the cloud has not
           taken yet
         type: integer
+    type: object
+  model.NetworkImport:
+    properties:
+      deployments:
+        items:
+          $ref: '#/definitions/model.ImportedDeployment'
+        type: array
+      dry_run:
+        type: boolean
+      models:
+        items:
+          $ref: '#/definitions/model.ImportedModel'
+        type: array
+      network_id:
+        type: string
+      owner:
+        type: string
+      snapshot_requested:
+        description: the gateway sends all instances again on its next contact
+        type: boolean
     type: object
   model.NetworkResource:
     properties:
@@ -9524,6 +9633,70 @@ paths:
       security:
       - Bearer: []
       summary: a gateway with the desired and applied state of its resources
+      tags:
+      - networks
+  /networks/{id}/import:
+    put:
+      consumes:
+      - application/json
+      description: Admins only. The body is the output of "automation-engine export-gateway"
+        on the gateway, unchanged. Deployments are created with their ids, versions,
+        event descriptions and device groups, for the owner of the hub in device-repository,
+        and desired on the gateway in the version it runs, so that it only replaces
+        their event descriptions; deployments that exist stay as they are. Missing
+        process models are created from the deployment versions, also those deleted
+        in the former cloud, since a gateway never learns of the deletion. Namespaces
+        come from the configuration of the cloud; deployments of unknown or cloud-only
+        namespaces are skipped. The gateway then sends all its instances again. Everything
+        happens in one transaction (SNRGY-5066).
+      parameters:
+      - description: network id, the hub id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: report without writing
+        in: query
+        name: dry_run
+        type: boolean
+      - description: create the network if the cloud has never heard from the gateway,
+          with the import as its last contact; otherwise the first contact creates
+          it
+        in: query
+        name: create_network
+        type: boolean
+      - description: export of the gateway
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.GatewayExport'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.NetworkImport'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Error'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/model.Error'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/model.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/model.Error'
+      security:
+      - Bearer: []
+      summary: take over the deployments of a gateway into a new cloud
       tags:
       - networks
   /ready:

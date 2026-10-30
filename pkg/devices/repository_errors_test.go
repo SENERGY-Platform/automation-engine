@@ -17,6 +17,8 @@
 package devices_test
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,6 +26,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 )
 
 // mgw-external-task-worker v1.2.2 TestNotFoundErrorNamesTheMissingEntity: the incident of a
@@ -46,5 +49,20 @@ func TestRepositoryErrorNamesTheMissingResource(t *testing.T) {
 		if err := get(); err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "404") {
 			t.Errorf("expected an error naming %v and the status, got %v", path, err)
 		}
+	}
+}
+
+// an unknown hub is not found, so that an import answers 422 rather than 503 (SNRGY-5066)
+func TestHubOwnerOfAnUnknownHubIsNotFound(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+	_, err := devices.NewHubs(server.URL).HubOwner(context.Background(), "Bearer alice", "hub-1")
+	if !errors.Is(err, model.ErrNotFound) || !strings.Contains(err.Error(), "404") {
+		t.Errorf("not found with the status: %v", err)
+	}
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }))
+	defer failing.Close()
+	if _, err = devices.NewHubs(failing.URL).HubOwner(context.Background(), "Bearer alice", "hub-1"); err == nil || errors.Is(err, model.ErrNotFound) {
+		t.Errorf("another failure is not a missing hub: %v", err)
 	}
 }

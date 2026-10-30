@@ -520,6 +520,17 @@ func (this *ClientImpl) GetNetwork(ctx context.Context, token string, networkId 
 	return result, err
 }
 
+func (this *ClientImpl) ImportNetwork(ctx context.Context, token string, networkId string, doc model.GatewayExport, options model.NetworkImportOptions) (result model.NetworkImport, err error) {
+	q := url.Values{}
+	for name, set := range map[string]bool{"dry_run": options.DryRun, "create_network": options.CreateNetwork} {
+		if set {
+			q.Set(name, "true")
+		}
+	}
+	err = this.do(ctx, token, http.MethodPut, path("networks", networkId, "import"), q, doc, &result)
+	return result, err
+}
+
 func (this *ClientImpl) GetUserDependents(ctx context.Context, token string, userId string) (result model.UserDependents, err error) {
 	err = this.do(ctx, token, http.MethodGet, path("users", userId, "dependents"), nil, nil, &result)
 	return result, err
