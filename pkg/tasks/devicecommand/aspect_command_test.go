@@ -17,6 +17,7 @@
 package devicecommand
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -30,7 +31,7 @@ import (
 // TestAspectTaskCommand, SNRGY-4845).
 func TestCommandAsksTheMarshallerWithTheResolvedAspectsOfTheTask(t *testing.T) {
 	e := newEnv(t, Parallel)
-	aspects := devices.NewAspectNodesWith(func(_ devices.Token, id string) (models.AspectNode, error) {
+	aspects := devices.NewAspectNodesWith(func(_ context.Context, _ devices.Token, id string) (models.AspectNode, error) {
 		return models.AspectNode{Id: id, Name: "name of " + id, RootId: id}, nil
 	})
 	marshaller := &recordingMarshaller{}

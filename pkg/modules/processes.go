@@ -270,7 +270,7 @@ func (this *processModules) gatewayFor(ctx context.Context, token string, select
 			selected = append(selected, s.DeviceId)
 		}
 		if s.DeviceGroupId != "" {
-			group, err, _ := this.runtime.iot.ReadDeviceGroup(s.DeviceGroupId, token, false)
+			group, err, _ := this.runtime.iot.ReadDeviceGroup(ctx, s.DeviceGroupId, token, false)
 			if err != nil {
 				return "", err
 			}
@@ -289,7 +289,7 @@ func (this *processModules) gatewayFor(ctx context.Context, token string, select
 		if !network.Compatible {
 			continue
 		}
-		hub, err, code := this.runtime.iot.ReadHub(network.Id, token, models.Read)
+		hub, err, code := this.runtime.iot.ReadHub(ctx, network.Id, token, models.Read)
 		if code == http.StatusNotFound || code == http.StatusForbidden {
 			continue
 		}

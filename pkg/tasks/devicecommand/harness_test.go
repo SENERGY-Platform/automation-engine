@@ -55,14 +55,14 @@ type fakeRepo struct {
 func (this *fakeRepo) GetToken(user string) (devices.Token, error) {
 	return devices.Token("Bearer " + user), nil
 }
-func (this *fakeRepo) GetDevice(_ devices.Token, id string) (models.Device, error) {
+func (this *fakeRepo) GetDevice(_ context.Context, _ devices.Token, id string) (models.Device, error) {
 	d, ok := this.devices[id]
 	if !ok {
 		return d, errors.New("device not found")
 	}
 	return d, nil
 }
-func (this *fakeRepo) GetService(_ devices.Token, device models.Device, id string) (models.Service, error) {
+func (this *fakeRepo) GetService(_ context.Context, _ devices.Token, device models.Device, id string) (models.Service, error) {
 	for _, s := range this.deviceTypes[device.DeviceTypeId].Services {
 		if s.Id == id {
 			return s, nil
@@ -70,13 +70,13 @@ func (this *fakeRepo) GetService(_ devices.Token, device models.Device, id strin
 	}
 	return models.Service{}, errors.New("service not found")
 }
-func (this *fakeRepo) GetProtocol(_ devices.Token, id string) (models.Protocol, error) {
+func (this *fakeRepo) GetProtocol(_ context.Context, _ devices.Token, id string) (models.Protocol, error) {
 	return models.Protocol{Id: id, Handler: "connector", ProtocolSegments: []models.ProtocolSegment{{Id: "seg", Name: "data"}}}, nil
 }
-func (this *fakeRepo) GetDeviceType(_ devices.Token, id string) (models.DeviceType, error) {
+func (this *fakeRepo) GetDeviceType(_ context.Context, _ devices.Token, id string) (models.DeviceType, error) {
 	return this.deviceTypes[id], nil
 }
-func (this *fakeRepo) GetDeviceGroup(_ devices.Token, id string) (models.DeviceGroup, error) {
+func (this *fakeRepo) GetDeviceGroup(_ context.Context, _ devices.Token, id string) (models.DeviceGroup, error) {
 	return this.groups[id], nil
 }
 
@@ -206,7 +206,7 @@ func newEnv(t *testing.T, scheduler string) *env {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	this.e = engine.New(s, config, namespaces{}, logger)
 	this.e.SetClock(this.now)
-	aspects := devices.NewAspectNodesWith(func(_ devices.Token, id string) (models.AspectNode, error) {
+	aspects := devices.NewAspectNodesWith(func(_ context.Context, _ devices.Token, id string) (models.AspectNode, error) {
 		return models.AspectNode{Id: id, RootId: id}, nil
 	})
 	this.dc = New(Config{GroupScheduler: scheduler, ResponseTo: "response", ErrorTo: "errors"}, s, newRepo(), aspects, fakeMarshaller{}, fakeTimescale{}, this.producer, this.metrics, logger)

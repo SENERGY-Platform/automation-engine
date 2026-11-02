@@ -38,7 +38,7 @@ import (
 
 // Characteristics reads a characteristic for the description of a parameter.
 type Characteristics interface {
-	GetCharacteristic(id string) (result models.Characteristic, err error, errCode int)
+	GetCharacteristic(ctx context.Context, id string) (result models.Characteristic, err error, errCode int)
 }
 
 // Describer describes the start parameters of a start event with their choices, as
@@ -187,7 +187,7 @@ func (this *Describer) Describe(ctx context.Context, token string, start *bpmn.E
 		}
 		if param.CharacteristicId != "" && this.characteristics != nil {
 			characteristic, err := shared(ctx, "characteristic\n"+param.CharacteristicId, func() (models.Characteristic, error) {
-				characteristic, err, _ := this.characteristics.GetCharacteristic(param.CharacteristicId)
+				characteristic, err, _ := this.characteristics.GetCharacteristic(ctx, param.CharacteristicId)
 				return characteristic, err
 			})
 			if err != nil {

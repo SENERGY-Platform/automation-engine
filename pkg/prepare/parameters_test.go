@@ -159,7 +159,7 @@ type countingCharacteristics struct {
 	calls int
 }
 
-func (this *countingCharacteristics) GetCharacteristic(id string) (models.Characteristic, error, int) {
+func (this *countingCharacteristics) GetCharacteristic(_ context.Context, id string) (models.Characteristic, error, int) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
 	this.calls++

@@ -73,10 +73,10 @@ func TestDecodeLocalEventCleansAndCompletesLikePlatformConnector(t *testing.T) {
 // localRepo is the device-repository mirror of a gateway: devices and services with local ids
 type localRepo struct{ fakeRepo }
 
-func (this *localRepo) GetDevice(_ devices.Token, id string) (models.Device, error) {
+func (this *localRepo) GetDevice(_ context.Context, _ devices.Token, id string) (models.Device, error) {
 	return models.Device{Id: id, LocalId: "local-" + id, DeviceTypeId: "dt"}, nil
 }
-func (this *localRepo) GetDeviceType(devices.Token, string) (models.DeviceType, error) {
+func (this *localRepo) GetDeviceType(context.Context, devices.Token, string) (models.DeviceType, error) {
 	return models.DeviceType{Id: "dt", Services: []models.Service{localService()}}, nil
 }
 

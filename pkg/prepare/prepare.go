@@ -20,15 +20,17 @@
 package prepare
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"slices"
 	"sort"
 	"strings"
 
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
+
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
 	dsmodel "github.com/SENERGY-Platform/device-selection/v2/pkg/model"
@@ -140,15 +142,15 @@ func (this *Preparer) Prepare(token string, process *bpmn.Process) ([]model.Prep
 
 // PrepareForHub offers only the devices of the hub, for a deployment to its gateway; the local
 // ids of the hub go to device-selection as process-fog-deployment sent them.
-func (this *Preparer) PrepareForHub(token string, process *bpmn.Process, hubId string) ([]model.PreparedElement, error) {
+func (this *Preparer) PrepareForHub(ctx context.Context, token string, process *bpmn.Process, hubId string) ([]model.PreparedElement, error) {
 	if this.client == nil {
 		return this.prepare(token, process, nil)
 	}
 	if this.config.DeviceRepositoryUrl == "" {
 		return nil, model.Unavailable("device-repository is needed to offer the devices of a gateway")
 	}
-	var hub models.Hub
-	if err := devices.Token(token).GetJSON(this.config.DeviceRepositoryUrl+"/hubs/"+url.PathEscape(hubId), &hub); err != nil {
+	hub, err, _ := devicerepository.NewClient(this.config.DeviceRepositoryUrl, nil).ReadHub(ctx, hubId, token, devicerepomodel.READ)
+	if err != nil {
 		return nil, model.Unavailable("device-repository: hub %v: %v", hubId, err)
 	}
 	if len(hub.DeviceLocalIds) == 0 {
@@ -161,13 +163,13 @@ func (this *Preparer) PrepareForHub(token string, process *bpmn.Process, hubId s
 
 // HubNames reads the names of the hubs with one request to device-repository; hubs the user
 // cannot read are missing.
-func (this *Preparer) HubNames(token string, ids []string) (map[string]string, error) {
+func (this *Preparer) HubNames(ctx context.Context, token string, ids []string) (map[string]string, error) {
 	result := map[string]string{}
 	if len(ids) == 0 || this.config.DeviceRepositoryUrl == "" {
 		return result, nil
 	}
-	var hubs []models.Hub
-	if err := devices.Token(token).GetJSON(this.config.DeviceRepositoryUrl+"/hubs?ids="+url.QueryEscape(strings.Join(ids, ",")), &hubs); err != nil {
+	hubs, err, _ := devicerepository.NewClient(this.config.DeviceRepositoryUrl, nil).ListHubs(ctx, token, devicerepomodel.HubListOptions{Ids: ids})
+	if err != nil {
 		return nil, err
 	}
 	for _, hub := range hubs {

@@ -17,6 +17,7 @@
 package devices_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/models/go/models"
 )
@@ -69,38 +71,39 @@ func TestRepositoryReadsWithTheUserTokenCachesAndFindsServicesInTheDeviceType(t 
 		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
-	repo, err := devices.NewRepository(server.URL, func(user string) (string, error) { return "Bearer " + user, nil }, time.Minute)
+	//the cache keys by the user of the token, so it has to be a jwt, as on a gateway
+	repo, err := devices.NewRepository(server.URL, auth.UnsignedTokens, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
 	token, err := repo.GetToken("alice")
-	if err != nil || token != "Bearer alice" {
+	if err != nil || string(token) != auth.UnsignedToken("alice") {
 		t.Fatalf("%v %v", token, err)
 	}
 	for range 2 {
-		device, err := repo.GetDevice(token, "d1")
+		device, err := repo.GetDevice(context.Background(), token, "d1")
 		if err != nil || device.DeviceTypeId != "dt1" {
 			t.Fatalf("%+v %v", device, err)
 		}
-		service, err := repo.GetService(token, device, "s1")
+		service, err := repo.GetService(context.Background(), token, device, "s1")
 		if err != nil || service.ProtocolId != "p1" {
 			t.Fatalf("%+v %v", service, err)
 		}
-		if protocol, err := repo.GetProtocol(token, "p1"); err != nil || protocol.Id != "p1" {
+		if protocol, err := repo.GetProtocol(context.Background(), token, "p1"); err != nil || protocol.Id != "p1" {
 			t.Fatalf("%+v %v", protocol, err)
 		}
-		if group, err := repo.GetDeviceGroup(token, "g1"); err != nil || len(group.DeviceIds) != 1 {
+		if group, err := repo.GetDeviceGroup(context.Background(), token, "g1"); err != nil || len(group.DeviceIds) != 1 {
 			t.Fatalf("%+v %v", group, err)
 		}
 	}
-	expected := []string{"/devices/d1 Bearer alice", "/device-types/dt1 Bearer alice", "/protocols/p1 Bearer alice", "/device-groups/g1 Bearer alice"}
+	expected := []string{"/devices/d1 " + string(token), "/device-types/dt1 " + string(token), "/protocols/p1 " + string(token), "/device-groups/g1 " + string(token)}
 	if !reflect.DeepEqual(requests, expected) {
 		t.Errorf("each resource is read once: %v", requests)
 	}
-	if _, err = repo.GetService(token, models.Device{Id: "d1", DeviceTypeId: "dt1"}, "s2"); err == nil || !strings.Contains(err.Error(), "s2") {
+	if _, err = repo.GetService(context.Background(), token, models.Device{Id: "d1", DeviceTypeId: "dt1"}, "s2"); err == nil || !strings.Contains(err.Error(), "s2") {
 		t.Errorf("an unknown service is an error: %v", err)
 	}
-	if _, err = repo.GetDevice(token, "unknown"); err == nil || !strings.Contains(err.Error(), "404") {
+	if _, err = repo.GetDevice(context.Background(), token, "unknown"); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Errorf("an answer other than 2xx is an error: %v", err)
 	}
 }

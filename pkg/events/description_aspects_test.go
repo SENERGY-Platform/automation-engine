@@ -17,6 +17,7 @@
 package events_test
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -50,7 +51,7 @@ func TestDescriptionFoldsTheDeprecatedAspectIntoTheAspectList(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, _, err := describer.Describe(model.Deployment{Id: "dep", Namespace: "processes", Owner: "alice"}, 1, process,
+			result, _, err := describer.Describe(context.Background(), model.Deployment{Id: "dep", Namespace: "processes", Owner: "alice"}, 1, process,
 				map[string]model.Selection{"reading": {DeviceId: "d1", ServiceId: "urn:infai:ses:service:event"}})
 			if err != nil || len(result) != 1 {
 				t.Fatalf("%+v %v", result, err)

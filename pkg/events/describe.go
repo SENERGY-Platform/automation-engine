@@ -19,6 +19,7 @@
 package events
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -85,7 +86,7 @@ func NewDescriber(repo devices.Repository, aspects *devices.AspectNodes, imports
 }
 
 // Describe returns the descriptions and the device groups they depend on.
-func (this *Describer) Describe(deployment model.Deployment, version int, process *bpmn.Process, selections map[string]model.Selection) (result []model.EventDescription, groups []string, err error) {
+func (this *Describer) Describe(ctx context.Context, deployment model.Deployment, version int, process *bpmn.Process, selections map[string]model.Selection) (result []model.EventDescription, groups []string, err error) {
 	var token devices.Token
 	for _, element := range process.Ordered() {
 		selection, ok := selections[element.Id]
@@ -105,21 +106,21 @@ func (this *Describer) Describe(deployment model.Deployment, version int, proces
 		switch {
 		case selection.DeviceGroupId != "":
 			groups = append(groups, selection.DeviceGroupId)
-			group, err := this.repo.GetDeviceGroup(token, selection.DeviceGroupId)
+			group, err := this.repo.GetDeviceGroup(ctx, token, selection.DeviceGroupId)
 			if err != nil {
 				return nil, nil, fmt.Errorf("device group %v: %w", selection.DeviceGroupId, err)
 			}
 			for _, deviceId := range group.DeviceIds {
-				d, err := this.deviceDescriptions(token, base, deviceId, "")
+				d, err := this.deviceDescriptions(ctx, token, base, deviceId, "")
 				if err != nil {
 					return nil, nil, err
 				}
 				descriptions = append(descriptions, d...)
 			}
 		case selection.DeviceId != "":
-			descriptions, err = this.deviceDescriptions(token, base, selection.DeviceId, selection.ServiceId)
+			descriptions, err = this.deviceDescriptions(ctx, token, base, selection.DeviceId, selection.ServiceId)
 		case selection.ImportId != "":
-			descriptions, err = this.importDescription(token, base, selection)
+			descriptions, err = this.importDescription(ctx, token, base, selection)
 		}
 		if err != nil {
 			return nil, nil, err
@@ -167,12 +168,12 @@ func baseDescription(deployment model.Deployment, version int, element *bpmn.Ele
 	return d, nil
 }
 
-func (this *Describer) deviceDescriptions(token devices.Token, base model.EventDescription, deviceId string, serviceId string) ([]model.EventDescription, error) {
-	device, err := this.repo.GetDevice(token, deviceId)
+func (this *Describer) deviceDescriptions(ctx context.Context, token devices.Token, base model.EventDescription, deviceId string, serviceId string) ([]model.EventDescription, error) {
+	device, err := this.repo.GetDevice(ctx, token, deviceId)
 	if err != nil {
 		return nil, fmt.Errorf("device %v: %w", deviceId, err)
 	}
-	deviceType, err := this.repo.GetDeviceType(token, device.DeviceTypeId)
+	deviceType, err := this.repo.GetDeviceType(ctx, token, device.DeviceTypeId)
 	if err != nil {
 		return nil, fmt.Errorf("device type %v: %w", device.DeviceTypeId, err)
 	}
@@ -187,7 +188,7 @@ func (this *Describer) deviceDescriptions(token devices.Token, base model.EventD
 			return nil, model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: fmt.Sprintf("device %v has no service %v", deviceId, serviceId)}})
 		}
 	} else {
-		aspects, err := this.aspects.ResolveIds(token, base.AspectIds)
+		aspects, err := this.aspects.ResolveIds(ctx, token, base.AspectIds)
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +223,7 @@ func (this *Describer) deviceDescriptions(token devices.Token, base model.EventD
 	return result, nil
 }
 
-func (this *Describer) importDescription(token devices.Token, base model.EventDescription, selection model.Selection) ([]model.EventDescription, error) {
+func (this *Describer) importDescription(ctx context.Context, token devices.Token, base model.EventDescription, selection model.Selection) ([]model.EventDescription, error) {
 	if this.local {
 		return nil, model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: "import events are not available on gateways"}})
 	}

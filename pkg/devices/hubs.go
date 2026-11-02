@@ -21,26 +21,29 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
 // Hubs reads the owners of hubs from device-repository; deployments and instances of a gateway
-// belong to the owner of its hub (FOG-11).
+// belong to the owner of its hub (FOG-11). Not cached: a hub may change its owner.
 type Hubs struct {
-	url string
+	client devicerepository.Interface
 }
 
 func NewHubs(repositoryUrl string) *Hubs {
-	return &Hubs{url: repositoryUrl}
+	return &Hubs{client: devicerepository.NewClient(repositoryUrl, nil)}
 }
 
 // HubOwner returns owner_id of the hub, read with the token; an unknown hub is not found.
-func (this *Hubs) HubOwner(_ context.Context, token string, id string) (string, error) {
-	var hub models.Hub
-	if err := getJson(defaultClient, Token(token), this.url, "/hubs/"+url.PathEscape(id), &hub); err != nil {
+func (this *Hubs) HubOwner(ctx context.Context, token string, id string) (string, error) {
+	hub, err := read(ctx, "/hubs/"+id, func(models.Hub) bool { return true }, func(ctx context.Context) (models.Hub, error, int) {
+		return this.client.ReadHub(ctx, id, token, devicerepomodel.READ)
+	})
+	if err != nil {
 		var status *statusError
 		if errors.As(err, &status) && status.status == http.StatusNotFound {
 			return "", model.NotFound("%v", err)

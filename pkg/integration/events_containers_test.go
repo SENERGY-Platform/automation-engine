@@ -65,53 +65,53 @@ func realFixture(t *testing.T, platform *realPlatform) fixture {
 	// the meaning of a temperature; the same ids in every scenario, so written again each time
 	characteristics, concept, function := temperatureModels()
 	for _, c := range characteristics {
-		_, err, code := repo.SetCharacteristic(admin, c)
+		_, err, code := repo.SetCharacteristic(context.Background(), admin, c)
 		check("characteristic", err, code)
 	}
-	_, err, code := repo.SetConcept(admin, concept)
+	_, err, code := repo.SetConcept(context.Background(), admin, concept)
 	check("concept", err, code)
-	_, err, code = repo.SetFunction(admin, function)
+	_, err, code = repo.SetFunction(context.Background(), admin, function)
 	check("function", err, code)
-	_, err, code = repo.SetAspect(admin, models.Aspect{Id: airAspect, Name: "air"})
+	_, err, code = repo.SetAspect(context.Background(), admin, models.Aspect{Id: airAspect, Name: "air"})
 	check("aspect", err, code)
 
 	// thermometers of this scenario
 	suffix := uuid.NewString()
 	protocol := models.Protocol{Id: "urn:infai:ses:protocol:" + suffix, Name: "test", Handler: "connector",
 		ProtocolSegments: []models.ProtocolSegment{{Id: "urn:infai:ses:protocol-segment:" + suffix, Name: "data"}}}
-	_, err, code = repo.SetProtocol(admin, protocol)
+	_, err, code = repo.SetProtocol(context.Background(), admin, protocol)
 	check("protocol", err, code)
 	f := fixture{service: "urn:infai:ses:service:" + suffix}
 	deviceType := models.DeviceType{Id: "urn:infai:ses:device-type:" + suffix, Name: "Thermometer " + suffix,
 		Services: []models.Service{{Id: f.service, LocalId: "temperature", Name: "temperature", Interaction: models.EVENT, ProtocolId: protocol.Id,
 			Outputs: []models.Content{{Id: "urn:infai:ses:content:" + suffix, ContentVariable: withIds(reading(), suffix), Serialization: models.JSON, ProtocolSegmentId: protocol.ProtocolSegments[0].Id}}}}}
-	_, err, code = repo.SetDeviceType(admin, deviceType, devicerepomodel.DeviceTypeUpdateOptions{})
+	_, err, code = repo.SetDeviceType(context.Background(), admin, deviceType, devicerepomodel.DeviceTypeUpdateOptions{})
 	check("device type", err, code)
 	// with an id of its own: with DISABLE_STRICT_VALIDATION_FOR_TESTING, device-repository creates
 	// devices without generating one
 	device := func(token string, name string) string {
 		t.Helper()
 		id := "urn:infai:ses:device:" + uuid.NewString()
-		_, err, code := repo.SetDevice(token, models.Device{Id: id, LocalId: id, Name: name, DeviceTypeId: deviceType.Id}, devicerepomodel.DeviceUpdateOptions{})
+		_, err, code := repo.SetDevice(context.Background(), token, models.Device{Id: id, LocalId: id, Name: name, DeviceTypeId: deviceType.Id}, devicerepomodel.DeviceUpdateOptions{})
 		check("device "+name, err, code)
 		return id
 	}
 	f.d1, f.d2, f.foreign = device(alice, "thermometer 1"), device(alice, "thermometer 2"), device(bob, "thermometer of bob")
 	group := models.DeviceGroup{Id: "urn:infai:ses:device-group:" + suffix, Name: "Thermometers " + suffix, DeviceIds: []string{f.d1, f.d2}}
-	_, err, code = repo.SetDeviceGroup(alice, group)
+	_, err, code = repo.SetDeviceGroup(context.Background(), alice, group)
 	check("device group", err, code)
 	f.group = group.Id
 	// the engine reads them with the token of alice, once device-repository has them and their rights
 	waitUntil(t, "the thermometers in device-repository", func() error {
 		for _, id := range []string{f.d1, f.d2} {
-			if _, err, _ := repo.ReadDevice(id, alice, models.UnsetPermissionFlag); err != nil {
+			if _, err, _ := repo.ReadDevice(context.Background(), id, alice, models.UnsetPermissionFlag); err != nil {
 				return fmt.Errorf("device %v: %w", id, err)
 			}
 		}
-		if _, err, _ := repo.ReadDeviceGroup(f.group, alice, false); err != nil {
+		if _, err, _ := repo.ReadDeviceGroup(context.Background(), f.group, alice, false); err != nil {
 			return fmt.Errorf("device group %v: %w", f.group, err)
 		}
-		if _, err, _ := repo.GetAspectNode(airAspect); err != nil {
+		if _, err, _ := repo.GetAspectNode(context.Background(), airAspect); err != nil {
 			return fmt.Errorf("aspect node %v: %w", airAspect, err)
 		}
 		return nil

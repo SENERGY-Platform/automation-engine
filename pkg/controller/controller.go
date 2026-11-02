@@ -174,7 +174,7 @@ func (this *Controller) planSelections(ctx context.Context, user jwt.Token, ns m
 		// the events of a gateway are read on its broker (FOG-06)
 		describer = describer.Local()
 	}
-	plan.descriptions, plan.groups, err = describer.Describe(deployment, version, process, input.Selections)
+	plan.descriptions, plan.groups, err = describer.Describe(ctx, deployment, version, process, input.Selections)
 	return plan, err
 }
 

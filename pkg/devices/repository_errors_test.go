@@ -40,10 +40,10 @@ func TestRepositoryErrorNamesTheMissingResource(t *testing.T) {
 	}
 	token := devices.Token("Bearer alice")
 	cases := map[string]func() error{
-		"/devices/id":       func() error { _, err := repo.GetDevice(token, "id"); return err },
-		"/device-types/id":  func() error { _, err := repo.GetDeviceType(token, "id"); return err },
-		"/protocols/id":     func() error { _, err := repo.GetProtocol(token, "id"); return err },
-		"/device-groups/id": func() error { _, err := repo.GetDeviceGroup(token, "id"); return err },
+		"/devices/id":       func() error { _, err := repo.GetDevice(context.Background(), token, "id"); return err },
+		"/device-types/id":  func() error { _, err := repo.GetDeviceType(context.Background(), token, "id"); return err },
+		"/protocols/id":     func() error { _, err := repo.GetProtocol(context.Background(), token, "id"); return err },
+		"/device-groups/id": func() error { _, err := repo.GetDeviceGroup(context.Background(), token, "id"); return err },
 	}
 	for path, get := range cases {
 		if err := get(); err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "404") {

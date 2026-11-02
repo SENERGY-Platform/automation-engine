@@ -429,13 +429,13 @@ func (this *analyticsHandler) serviceInputs(ctx context.Context, task Task, devi
 		return nil, err
 	}
 	if groupId != "" {
-		group, err, _ := this.runtime.iot.ReadDeviceGroup(groupId, token, false)
+		group, err, _ := this.runtime.iot.ReadDeviceGroup(ctx, groupId, token, false)
 		if err != nil {
 			return nil, err
 		}
 		deviceIds = group.DeviceIds
 	}
-	list, err, _ := this.runtime.iot.ListDevices(token, devicerepository.DeviceListOptions{Ids: deviceIds, Limit: int64(len(deviceIds)), SortBy: "name.asc"})
+	list, err, _ := this.runtime.iot.ListDevices(ctx, token, devicerepository.DeviceListOptions{Ids: deviceIds, Limit: int64(len(deviceIds)), SortBy: "name.asc"})
 	if err != nil {
 		return nil, err
 	}

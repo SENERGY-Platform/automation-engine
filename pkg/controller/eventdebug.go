@@ -159,7 +159,7 @@ func (this *Controller) EventEvaluations(ctx context.Context, token string, name
 			return result, err
 		}
 		bpmn.ApplyParameters(process, version.Parameters)
-		all, _, err := this.describer.Describe(deployment, version.Version, process, version.Selections)
+		all, _, err := this.describer.Describe(ctx, deployment, version.Version, process, version.Selections)
 		if err != nil {
 			return result, model.Unavailable("unable to describe the events of version %v: %v", version.Version, err)
 		}

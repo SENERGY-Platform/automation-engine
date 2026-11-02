@@ -138,7 +138,7 @@ func (this *Type) localMessage(ctx context.Context, subId string) (msg ProtocolM
 	if err != nil {
 		return msg, false, err
 	}
-	built, _, err := this.message(command, info, token)
+	built, _, err := this.message(ctx, command, info, token)
 	if err != nil || built == nil {
 		return msg, false, err
 	}

@@ -17,6 +17,7 @@
 package compat_test
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -42,7 +43,7 @@ func TestGetDevicesWithServiceForwardsAspectsAsWritten(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			iot := &iotStub{devices: map[string]models.Device{"device1": {Id: "device1", DeviceTypeId: "dt1"}}}
-			_, err := compat.GetDevicesWithService(iot, "token", compat.IotOption{DeviceSelection: &compat.DeviceSelection{DeviceId: "device1"}}, criteria)
+			_, err := compat.GetDevicesWithService(context.Background(), iot, "token", compat.IotOption{DeviceSelection: &compat.DeviceSelection{DeviceId: "device1"}}, criteria)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -72,7 +73,7 @@ func TestGetDevicesWithServiceTurnsAMultiAspectPathOptionIntoAnIotOption(t *test
 			},
 		}},
 	}
-	options, err := compat.GetDevicesWithService(iot, "token", compat.IotOption{DeviceSelection: &compat.DeviceSelection{DeviceId: "device1"}},
+	options, err := compat.GetDevicesWithService(context.Background(), iot, "token", compat.IotOption{DeviceSelection: &compat.DeviceSelection{DeviceId: "device1"}},
 		[]devicemodel.FilterCriteria{{AspectIds: []string{airAspect, insideAspect}}})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +92,7 @@ func TestGetDevicesWithServiceExpandsTheDevicesOfAGroup(t *testing.T) {
 		groups:      map[string]models.DeviceGroup{"group1": {Id: "group1", DeviceIds: []string{"device1", "device2"}}},
 		selectables: []devicemodel.DeviceTypeSelectable{{DeviceTypeId: "dt1", Services: []models.Service{{Id: "service1"}}}},
 	}
-	options, err := compat.GetDevicesWithService(iot, "token", compat.IotOption{DeviceGroupSelection: &compat.DeviceGroupSelection{Id: "group1"}}, nil)
+	options, err := compat.GetDevicesWithService(context.Background(), iot, "token", compat.IotOption{DeviceGroupSelection: &compat.DeviceGroupSelection{Id: "group1"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

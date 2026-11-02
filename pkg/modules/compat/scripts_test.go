@@ -43,7 +43,7 @@ type iotStub struct {
 	criteria    [][]devicemodel.FilterCriteria
 }
 
-func (this *iotStub) ReadDevice(id string, token string, action devicemodel.AuthAction) (models.Device, error, int) {
+func (this *iotStub) ReadDevice(_ context.Context, id string, token string, action devicemodel.AuthAction) (models.Device, error, int) {
 	device, ok := this.devices[id]
 	if !ok {
 		return models.Device{}, errors.New("unknown device " + id), http.StatusNotFound
@@ -51,7 +51,7 @@ func (this *iotStub) ReadDevice(id string, token string, action devicemodel.Auth
 	return device, nil, http.StatusOK
 }
 
-func (this *iotStub) ReadDeviceGroup(id string, token string, filterGenericDuplicateCriteria bool) (models.DeviceGroup, error, int) {
+func (this *iotStub) ReadDeviceGroup(_ context.Context, id string, token string, filterGenericDuplicateCriteria bool) (models.DeviceGroup, error, int) {
 	group, ok := this.groups[id]
 	if !ok {
 		return models.DeviceGroup{}, errors.New("unknown device group " + id), http.StatusNotFound
@@ -59,7 +59,7 @@ func (this *iotStub) ReadDeviceGroup(id string, token string, filterGenericDupli
 	return group, nil, http.StatusOK
 }
 
-func (this *iotStub) GetDeviceTypeSelectablesV2(query []devicemodel.FilterCriteria, pathPrefix string, includeModified bool, servicesMustMatchAllCriteria bool) ([]devicemodel.DeviceTypeSelectable, error, int) {
+func (this *iotStub) GetDeviceTypeSelectablesV2(_ context.Context, query []devicemodel.FilterCriteria, pathPrefix string, includeModified bool, servicesMustMatchAllCriteria bool) ([]devicemodel.DeviceTypeSelectable, error, int) {
 	this.criteria = append(this.criteria, query)
 	return this.selectables, nil, http.StatusOK
 }

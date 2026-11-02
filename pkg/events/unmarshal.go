@@ -17,6 +17,7 @@
 package events
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -114,6 +115,7 @@ var ErrUnavailable = errors.New("device-repository unavailable")
 
 // CachedDeviceRepo reads characteristics, concepts, functions and aspect nodes with a client
 // token and caches them; cache invalidation signals of service-commons clear the entries.
+// The marshaller calls it through an interface without a context, so these reads carry no trace.
 type CachedDeviceRepo struct {
 	client   devicerepository.Interface
 	cache    *cache.Cache
@@ -154,19 +156,23 @@ func cached[T any](this *CachedDeviceRepo, key string, get func() (T, error, int
 }
 
 func (this *CachedDeviceRepo) GetCharacteristic(id string) (models.Characteristic, error) {
-	return cached(this, "characteristics."+id, func() (models.Characteristic, error, int) { return this.client.GetCharacteristic(id) },
+	return cached(this, "characteristics."+id, func() (models.Characteristic, error, int) {
+		return this.client.GetCharacteristic(context.Background(), id)
+	},
 		func(c models.Characteristic) bool { return c.Id != "" })
 }
 
 // GetConcept reads the concept with characteristic ids and conversions, which is what the
 // marshaller needs, not with the characteristics themselves
 func (this *CachedDeviceRepo) GetConcept(id string) (models.Concept, error) {
-	return cached(this, "concept."+id, func() (models.Concept, error, int) { return this.client.GetConceptWithoutCharacteristics(id) },
+	return cached(this, "concept."+id, func() (models.Concept, error, int) {
+		return this.client.GetConceptWithoutCharacteristics(context.Background(), id)
+	},
 		func(c models.Concept) bool { return c.Id != "" })
 }
 
 func (this *CachedDeviceRepo) GetFunction(id string) (models.Function, error) {
-	return cached(this, "functions."+id, func() (models.Function, error, int) { return this.client.GetFunction(id) },
+	return cached(this, "functions."+id, func() (models.Function, error, int) { return this.client.GetFunction(context.Background(), id) },
 		func(f models.Function) bool { return f.Id != "" })
 }
 
@@ -181,7 +187,7 @@ func (this *CachedDeviceRepo) GetConceptIdOfFunction(id string) string {
 }
 
 func (this *CachedDeviceRepo) GetAspectNode(id string) (models.AspectNode, error) {
-	return cached(this, "aspect-nodes."+id, func() (models.AspectNode, error, int) { return this.client.GetAspectNode(id) },
+	return cached(this, "aspect-nodes."+id, func() (models.AspectNode, error, int) { return this.client.GetAspectNode(context.Background(), id) },
 		func(n models.AspectNode) bool { return n.Id != "" })
 }
 
@@ -196,7 +202,7 @@ func (this *CachedDeviceRepo) GetAspectNodes(ids []string) ([]models.AspectNode,
 	}
 	// a key of its own, a single node is cached under its id
 	return cached(this, "aspect-node-list."+strings.Join(ids, ","), func() ([]models.AspectNode, error, int) {
-		result, _, err, code := this.client.ListAspectNodes(devicerepomodel.AspectListOptions{Ids: ids})
+		result, _, err, code := this.client.ListAspectNodes(context.Background(), devicerepomodel.AspectListOptions{Ids: ids})
 		if err == nil && len(result) != len(ids) {
 			missing := []string{}
 			for _, id := range ids {

@@ -78,13 +78,13 @@ func (this *Controller) ListNetworks(ctx context.Context, token string) ([]model
 	if err != nil {
 		return nil, err
 	}
-	this.nameNetworks(token, list)
+	this.nameNetworks(ctx, token, list)
 	return list, nil
 }
 
 // nameNetworks adds the names of the hubs. They only label the networks, so an unreachable
 // device-repository leaves them empty rather than failing the list.
-func (this *Controller) nameNetworks(token string, list []model.Network) {
+func (this *Controller) nameNetworks(ctx context.Context, token string, list []model.Network) {
 	if this.preparer == nil || len(list) == 0 {
 		return
 	}
@@ -92,7 +92,7 @@ func (this *Controller) nameNetworks(token string, list []model.Network) {
 	for _, n := range list {
 		ids = append(ids, n.Id)
 	}
-	names, err := this.preparer.HubNames(token, ids)
+	names, err := this.preparer.HubNames(ctx, token, ids)
 	if err != nil {
 		return
 	}
@@ -120,7 +120,7 @@ func (this *Controller) GetNetwork(ctx context.Context, token string, networkId 
 	if len(list) == 0 {
 		return model.Network{}, model.NotFound("network %v not found", networkId)
 	}
-	this.nameNetworks(token, list)
+	this.nameNetworks(ctx, token, list)
 	return list[0], nil
 }
 

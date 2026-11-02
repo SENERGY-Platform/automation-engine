@@ -17,6 +17,7 @@
 package prepare
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -42,7 +43,7 @@ func hubRepository(t *testing.T, hub models.Hub) string {
 func TestPrepareForHubAsksForTheLocalDevicesOfTheHub(t *testing.T) {
 	fake := &fakeSelection{}
 	repo := hubRepository(t, models.Hub{Id: "hub", DeviceLocalIds: []string{"local-1", "local-2"}})
-	if _, err := New(fake, Config{DeviceRepositoryUrl: repo}).PrepareForHub("token", testProcess(t), "hub"); err != nil {
+	if _, err := New(fake, Config{DeviceRepositoryUrl: repo}).PrepareForHub(context.Background(), "token", testProcess(t), "hub"); err != nil {
 		t.Fatal(err)
 	}
 	if len(fake.request) == 0 {
@@ -60,7 +61,7 @@ func TestPrepareForHubAsksForTheLocalDevicesOfTheHub(t *testing.T) {
 func TestPrepareForAHubWithoutDevicesOffersNothing(t *testing.T) {
 	fake := &fakeSelection{}
 	repo := hubRepository(t, models.Hub{Id: "hub"})
-	elements, err := New(fake, Config{DeviceRepositoryUrl: repo}).PrepareForHub("token", testProcess(t), "hub")
+	elements, err := New(fake, Config{DeviceRepositoryUrl: repo}).PrepareForHub(context.Background(), "token", testProcess(t), "hub")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,11 +88,11 @@ func TestHubNamesAskDeviceRepositoryOnce(t *testing.T) {
 		_ = json.NewEncoder(w).Encode([]models.Hub{{Id: "hub-1", Name: "Keller"}})
 	}))
 	t.Cleanup(server.Close)
-	names, err := New(nil, Config{DeviceRepositoryUrl: server.URL}).HubNames("token", []string{"hub-1", "hub-2"})
+	names, err := New(nil, Config{DeviceRepositoryUrl: server.URL}).HubNames(context.Background(), "token", []string{"hub-1", "hub-2"})
 	if err != nil || requests != 1 || names["hub-1"] != "Keller" || names["hub-2"] != "" {
 		t.Fatalf("%v %v %v", names, err, requests)
 	}
-	if names, err = New(nil, Config{}).HubNames("token", []string{"hub-1"}); err != nil || len(names) != 0 {
+	if names, err = New(nil, Config{}).HubNames(context.Background(), "token", []string{"hub-1"}); err != nil || len(names) != 0 {
 		t.Fatalf("without device-repository there are no names: %v %v", names, err)
 	}
 }

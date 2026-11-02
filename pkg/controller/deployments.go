@@ -561,7 +561,7 @@ func (this *Controller) RecomputeEvents(ctx context.Context, deploymentId string
 	if deployment.NetworkId != "" {
 		describer = describer.Local()
 	}
-	descriptions, groups, err := describer.Describe(deployment, version.Version, process, version.Selections)
+	descriptions, groups, err := describer.Describe(ctx, deployment, version.Version, process, version.Selections)
 	if err != nil {
 		return err
 	}

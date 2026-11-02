@@ -17,6 +17,7 @@
 package devicecommand
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -130,7 +131,7 @@ func aspectTree() *devices.AspectNodes {
 		"humidity":    {Id: "humidity", RootId: "humidity"},
 		"light":       {Id: "light", RootId: "light"},
 	}
-	return devices.NewAspectNodesWith(func(_ devices.Token, id string) (models.AspectNode, error) {
+	return devices.NewAspectNodesWith(func(_ context.Context, _ devices.Token, id string) (models.AspectNode, error) {
 		node, ok := nodes[id]
 		if !ok {
 			return node, errors.New("unknown aspect node " + id)

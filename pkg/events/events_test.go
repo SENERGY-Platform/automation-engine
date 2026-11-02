@@ -56,16 +56,16 @@ type fakeRepo struct {
 func (this *fakeRepo) GetToken(user string) (devices.Token, error) {
 	return devices.Token("Bearer " + user), nil
 }
-func (this *fakeRepo) GetDevice(_ devices.Token, id string) (models.Device, error) {
+func (this *fakeRepo) GetDevice(_ context.Context, _ devices.Token, id string) (models.Device, error) {
 	return models.Device{Id: id, DeviceTypeId: "dt"}, nil
 }
-func (this *fakeRepo) GetService(_ devices.Token, _ models.Device, id string) (models.Service, error) {
+func (this *fakeRepo) GetService(_ context.Context, _ devices.Token, _ models.Device, id string) (models.Service, error) {
 	return models.Service{Id: id}, nil
 }
-func (this *fakeRepo) GetProtocol(devices.Token, string) (models.Protocol, error) {
+func (this *fakeRepo) GetProtocol(context.Context, devices.Token, string) (models.Protocol, error) {
 	return models.Protocol{}, nil
 }
-func (this *fakeRepo) GetDeviceType(devices.Token, string) (models.DeviceType, error) {
+func (this *fakeRepo) GetDeviceType(context.Context, devices.Token, string) (models.DeviceType, error) {
 	output := []models.Content{{ContentVariable: models.ContentVariable{Name: "value", FunctionId: measuring, AspectId: "air"}}}
 	return models.DeviceType{Id: "dt", Services: []models.Service{
 		{Id: "urn:infai:ses:service:event", Interaction: models.EVENT, Outputs: output},
@@ -73,14 +73,14 @@ func (this *fakeRepo) GetDeviceType(devices.Token, string) (models.DeviceType, e
 		{Id: "s-other", Interaction: models.EVENT},
 	}}, nil
 }
-func (this *fakeRepo) GetDeviceGroup(_ devices.Token, id string) (models.DeviceGroup, error) {
+func (this *fakeRepo) GetDeviceGroup(_ context.Context, _ devices.Token, id string) (models.DeviceGroup, error) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
 	return this.groups[id], nil
 }
 
 func aspects() *devices.AspectNodes {
-	return devices.NewAspectNodesWith(func(_ devices.Token, id string) (models.AspectNode, error) {
+	return devices.NewAspectNodesWith(func(_ context.Context, _ devices.Token, id string) (models.AspectNode, error) {
 		return models.AspectNode{Id: id, RootId: id}, nil
 	})
 }
@@ -122,7 +122,7 @@ func TestDescribeExpandsGroupsDevicesAndImports(t *testing.T) {
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			result, groups, err := describer.Describe(deployment, 1, process, map[string]model.Selection{"reading": c.selection})
+			result, groups, err := describer.Describe(context.Background(), deployment, 1, process, map[string]model.Selection{"reading": c.selection})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -176,7 +176,7 @@ func TestImportDescriptionKeepsAllAspectsOfAVariable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, _, err := describer.Describe(model.Deployment{Id: "dep", Namespace: "processes", Owner: "alice"}, 1, process,
+	result, _, err := describer.Describe(context.Background(), model.Deployment{Id: "dep", Namespace: "processes", Owner: "alice"}, 1, process,
 		map[string]model.Selection{"reading": {ImportId: "imp"}})
 	if err != nil || len(result) != 1 {
 		t.Fatalf("%+v %v", result, err)

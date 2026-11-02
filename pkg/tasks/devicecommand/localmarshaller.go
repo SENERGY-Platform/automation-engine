@@ -147,10 +147,11 @@ func (this *conceptRepo) ensure() error {
 	return err
 }
 
+// load runs periodically outside any request, so its reads start no trace
 func (this *conceptRepo) load() error {
 	concepts := []models.Concept{}
 	for offset := int64(0); ; offset += 1000 {
-		page, _, err, _ := this.client.ListConcepts(devicerepository.ConceptListOptions{Limit: 1000, Offset: offset, SortBy: "name.asc"})
+		page, _, err, _ := this.client.ListConcepts(context.Background(), devicerepository.ConceptListOptions{Limit: 1000, Offset: offset, SortBy: "name.asc"})
 		if err != nil {
 			return fmt.Errorf("unable to list concepts: %w", err)
 		}
@@ -161,7 +162,7 @@ func (this *conceptRepo) load() error {
 	}
 	functions := []models.Function{}
 	for offset := int64(0); ; offset += 100 {
-		page, _, err, _ := this.client.ListFunctions(devicerepository.FunctionListOptions{Limit: 100, Offset: offset, SortBy: "name.asc"})
+		page, _, err, _ := this.client.ListFunctions(context.Background(), devicerepository.FunctionListOptions{Limit: 100, Offset: offset, SortBy: "name.asc"})
 		if err != nil {
 			return fmt.Errorf("unable to list functions: %w", err)
 		}
@@ -176,7 +177,7 @@ func (this *conceptRepo) load() error {
 	characteristicIdsOfConcept := map[string][]string{}
 	for _, concept := range concepts {
 		for _, id := range concept.CharacteristicIds {
-			characteristic, err, _ := this.client.GetCharacteristic(id)
+			characteristic, err, _ := this.client.GetCharacteristic(context.Background(), id)
 			if err != nil {
 				return fmt.Errorf("unable to read characteristic %v: %w", id, err)
 			}

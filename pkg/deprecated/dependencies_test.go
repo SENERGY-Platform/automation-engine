@@ -44,19 +44,19 @@ type noDevices struct{}
 func (noDevices) GetToken(user string) (devices.Token, error) {
 	return devices.Token("Bearer " + user), nil
 }
-func (noDevices) GetDevice(devices.Token, string) (models.Device, error) {
+func (noDevices) GetDevice(context.Context, devices.Token, string) (models.Device, error) {
 	return models.Device{}, errNotNeeded
 }
-func (noDevices) GetService(devices.Token, models.Device, string) (models.Service, error) {
+func (noDevices) GetService(context.Context, devices.Token, models.Device, string) (models.Service, error) {
 	return models.Service{}, errNotNeeded
 }
-func (noDevices) GetProtocol(devices.Token, string) (models.Protocol, error) {
+func (noDevices) GetProtocol(context.Context, devices.Token, string) (models.Protocol, error) {
 	return models.Protocol{}, errNotNeeded
 }
-func (noDevices) GetDeviceType(devices.Token, string) (models.DeviceType, error) {
+func (noDevices) GetDeviceType(context.Context, devices.Token, string) (models.DeviceType, error) {
 	return models.DeviceType{}, errNotNeeded
 }
-func (noDevices) GetDeviceGroup(devices.Token, string) (models.DeviceGroup, error) {
+func (noDevices) GetDeviceGroup(context.Context, devices.Token, string) (models.DeviceGroup, error) {
 	return models.DeviceGroup{}, errNotNeeded
 }
 func (noDevices) MarshalV2(models.Service, models.Protocol, []devicecommand.MarshallingV2RequestData) (map[string]string, error) {

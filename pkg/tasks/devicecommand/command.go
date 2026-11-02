@@ -20,6 +20,7 @@ package devicecommand
 // (setVarOnPath), Apache-2.0, adapted from camunda variables to task inputs.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,7 +37,7 @@ import (
 
 // command builds the command of a task: the payload of the model, the device selection of the
 // deployment (DEP-05), then the runtime inputs overwrite, inputs and incident (TASK-09)
-func (this *Type) command(task engine.Task, token devices.Token) (command Command, err error) {
+func (this *Type) command(ctx context.Context, task engine.Task, token devices.Token) (command Command, err error) {
 	if incident, ok := task.Input["incident"].(string); ok {
 		return command, &engine.PermanentError{Message: "user triggered incident: " + incident}
 	}
@@ -49,7 +50,7 @@ func (this *Type) command(task engine.Task, token devices.Token) (command Comman
 	}
 	command.SetAspects()
 	if task.Selection != nil {
-		if err = this.applySelection(&command, *task.Selection, token); err != nil {
+		if err = this.applySelection(ctx, &command, *task.Selection, token); err != nil {
 			return command, err
 		}
 	}
@@ -63,7 +64,7 @@ func (this *Type) command(task engine.Task, token devices.Token) (command Comman
 	}
 	setInputs(&command, task.Input, this.logger)
 	if len(command.Aspects) > 0 {
-		command.Aspects, err = this.aspects.Resolve(token, command.Aspects)
+		command.Aspects, err = this.aspects.Resolve(ctx, token, command.Aspects)
 		if err != nil {
 			return command, err
 		}
@@ -84,7 +85,7 @@ func decodeJson(value any, target any) error {
 	return json.Unmarshal([]byte(raw), target)
 }
 
-func (this *Type) applySelection(command *Command, selection model.Selection, token devices.Token) error {
+func (this *Type) applySelection(ctx context.Context, command *Command, selection model.Selection, token devices.Token) error {
 	if selection.DeviceGroupId != "" {
 		command.DeviceGroupId = selection.DeviceGroupId
 		command.DeviceId, command.ServiceId = "", ""
@@ -105,7 +106,7 @@ func (this *Type) applySelection(command *Command, selection model.Selection, to
 		}
 		configurables := []ConfigurableV2{}
 		for _, c := range selection.Path.Configurables {
-			nodes, err := this.aspects.ResolveIds(token, c.AspectNodeIds)
+			nodes, err := this.aspects.ResolveIds(ctx, token, c.AspectNodeIds)
 			if err != nil {
 				return err
 			}

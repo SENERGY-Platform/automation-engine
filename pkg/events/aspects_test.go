@@ -17,6 +17,7 @@
 package events_test
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -42,7 +43,7 @@ func describe(t *testing.T, describer *events.Describer, xml string, selection m
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, _, err := describer.Describe(model.Deployment{Id: "dep", Namespace: "processes", Owner: "alice"}, 1, process,
+	result, _, err := describer.Describe(context.Background(), model.Deployment{Id: "dep", Namespace: "processes", Owner: "alice"}, 1, process,
 		map[string]model.Selection{"reading": selection})
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +82,7 @@ func TestDescriptionCarriesTheAspectsOfTheEvent(t *testing.T) {
 // aspectRepo offers a device type with one event service per combination of aspects
 type aspectRepo struct{ fakeRepo }
 
-func (*aspectRepo) GetDeviceType(devices.Token, string) (models.DeviceType, error) {
+func (*aspectRepo) GetDeviceType(context.Context, devices.Token, string) (models.DeviceType, error) {
 	service := func(id string, aspectIds ...string) models.Service {
 		return models.Service{Id: id, Interaction: models.EVENT, Outputs: []models.Content{{ContentVariable: models.ContentVariable{
 			Name: "value", FunctionId: measuring, AspectIds: aspectIds}}}}

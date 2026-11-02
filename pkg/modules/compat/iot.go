@@ -17,6 +17,7 @@
 package compat
 
 import (
+	"context"
 	"errors"
 
 	"github.com/SENERGY-Platform/device-repository/v3/lib/client"
@@ -25,20 +26,20 @@ import (
 
 var ErrNoDeviceOrGroupSelection = errors.New("expect device or group selection")
 
-func GetDevicesWithService(iotClient client.Interface, token string, entity IotOption, criteria []devicemodel.FilterCriteria) (result []IotOption, err error) {
+func GetDevicesWithService(ctx context.Context, iotClient client.Interface, token string, entity IotOption, criteria []devicemodel.FilterCriteria) (result []IotOption, err error) {
 	if entity.DeviceSelection != nil {
 		if entity.DeviceSelection.ServiceId != nil {
 			return []IotOption{entity}, nil //nothing to do
 		}
-		return getDevicesWithService(iotClient, token, []string{entity.DeviceSelection.DeviceId}, criteria)
+		return getDevicesWithService(ctx, iotClient, token, []string{entity.DeviceSelection.DeviceId}, criteria)
 	}
 	if entity.DeviceGroupSelection != nil {
 		// the worker lib asked for the devices of a hub with the id of the group
-		group, err, _ := iotClient.ReadDeviceGroup(entity.DeviceGroupSelection.Id, token, false)
+		group, err, _ := iotClient.ReadDeviceGroup(ctx, entity.DeviceGroupSelection.Id, token, false)
 		if err != nil {
 			return result, err
 		}
-		return getDevicesWithService(iotClient, token, group.DeviceIds, criteria)
+		return getDevicesWithService(ctx, iotClient, token, group.DeviceIds, criteria)
 	}
 	return result, ErrNoDeviceOrGroupSelection
 }
@@ -72,13 +73,13 @@ func GroupIotOptionsByService(options []IotOption) (result map[string][]IotOptio
 	return result
 }
 
-func getDevicesWithService(iotClient client.Interface, token string, deviceIds []string, criteria []devicemodel.FilterCriteria) (result []IotOption, err error) {
-	dtSelectables, err, _ := iotClient.GetDeviceTypeSelectablesV2(criteria, "", true, true)
+func getDevicesWithService(ctx context.Context, iotClient client.Interface, token string, deviceIds []string, criteria []devicemodel.FilterCriteria) (result []IotOption, err error) {
+	dtSelectables, err, _ := iotClient.GetDeviceTypeSelectablesV2(ctx, criteria, "", true, true)
 	if err != nil {
 		return result, err
 	}
 	for _, deviceId := range deviceIds {
-		device, err, _ := iotClient.ReadDevice(deviceId, token, devicemodel.READ)
+		device, err, _ := iotClient.ReadDevice(ctx, deviceId, token, devicemodel.READ)
 		if err != nil {
 			return result, err
 		}

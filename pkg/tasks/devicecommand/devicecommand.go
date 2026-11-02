@@ -130,11 +130,11 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 	if err != nil {
 		return engine.TaskResult{}, fmt.Errorf("unable to get a token of the owner: %w", err)
 	}
-	command, err := this.command(task, token)
+	command, err := this.command(ctx, task, token)
 	if err != nil {
 		return engine.TaskResult{}, err
 	}
-	children, err := this.subtasks(token, command, task.JobId)
+	children, err := this.subtasks(ctx, token, command, task.JobId)
 	if err != nil {
 		return engine.TaskResult{}, err
 	}
@@ -289,7 +289,7 @@ type readValue struct {
 
 // send sends the command of a sub-task, or reads the last value for an event service
 func (this *Type) send(ctx context.Context, token devices.Token, command Command, info TaskInfo) (*readValue, error) {
-	msg, event, err := this.message(command, info, token)
+	msg, event, err := this.message(ctx, command, info, token)
 	if err != nil {
 		return nil, err
 	}

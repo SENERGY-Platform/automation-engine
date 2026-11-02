@@ -21,6 +21,7 @@ package devicecommand
 // ProtocolMsg and its task_info stay byte-compatible for the protocol handlers (TASK-04, TASK-05).
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -38,18 +39,18 @@ import (
 
 // message creates the protocol message of a command, or an event request when the value is
 // read instead of requested (TASK-08)
-func (this *Type) message(command Command, info TaskInfo, token devices.Token) (*ProtocolMsg, *EventRequest, error) {
+func (this *Type) message(ctx context.Context, command Command, info TaskInfo, token devices.Token) (*ProtocolMsg, *EventRequest, error) {
 	trace := []Trace{{Timestamp: time.Now().UnixNano(), TimeUnit: "unix_nano", Location: "github.com/SENERGY-Platform/automation-engine device command start"}}
 	device, service, protocol := command.Device, command.Service, command.Protocol
 	if device == nil {
-		d, err := this.repo.GetDevice(token, command.DeviceId)
+		d, err := this.repo.GetDevice(ctx, token, command.DeviceId)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to load device %v: %w", command.DeviceId, err)
 		}
 		device = &d
 	}
 	if service == nil {
-		s, err := this.repo.GetService(token, *device, command.ServiceId)
+		s, err := this.repo.GetService(ctx, token, *device, command.ServiceId)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to load service %v: %w", command.ServiceId, err)
 		}
@@ -60,7 +61,7 @@ func (this *Type) message(command Command, info TaskInfo, token devices.Token) (
 		if protocolId == "" {
 			protocolId = service.ProtocolId
 		}
-		p, err := this.repo.GetProtocol(token, protocolId)
+		p, err := this.repo.GetProtocol(ctx, token, protocolId)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to load protocol %v: %w", protocolId, err)
 		}

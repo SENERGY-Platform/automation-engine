@@ -66,6 +66,6 @@ func (this *Controller) PrepareDeployment(ctx context.Context, token string, nam
 	if _, err = this.GetNetwork(ctx, token, input.NetworkId); err != nil {
 		return result, err
 	}
-	result.Elements, err = preparer.PrepareForHub(user.Jwt(), process, input.NetworkId)
+	result.Elements, err = preparer.PrepareForHub(ctx, user.Jwt(), process, input.NetworkId)
 	return result, err
 }

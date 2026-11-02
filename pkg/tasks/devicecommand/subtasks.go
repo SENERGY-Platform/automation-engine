@@ -20,6 +20,7 @@ package devicecommand
 // with sub-task ids and the service filter unchanged.
 
 import (
+	"context"
 	"sort"
 	"strconv"
 
@@ -35,23 +36,23 @@ type child struct {
 
 // subtasks expands a device group to device × matching service and a device without service
 // to its matching services; ids are <job>_<device index>_<service index> (TASK-06)
-func (this *Type) subtasks(token devices.Token, command Command, jobId string) ([]child, error) {
+func (this *Type) subtasks(ctx context.Context, token devices.Token, command Command, jobId string) ([]child, error) {
 	var result []child
 	switch {
 	case command.DeviceGroupId != "":
-		group, err := this.repo.GetDeviceGroup(token, command.DeviceGroupId)
+		group, err := this.repo.GetDeviceGroup(ctx, token, command.DeviceGroupId)
 		if err != nil {
 			return nil, err
 		}
 		for i, deviceId := range group.DeviceIds {
-			children, err := this.serviceChildren(token, command, jobId, i, deviceId)
+			children, err := this.serviceChildren(ctx, token, command, jobId, i, deviceId)
 			if err != nil {
 				return nil, err
 			}
 			result = append(result, children...)
 		}
 	case command.DeviceId != "" && command.ServiceId == "":
-		children, err := this.serviceChildren(token, command, jobId, 0, command.DeviceId)
+		children, err := this.serviceChildren(ctx, token, command, jobId, 0, command.DeviceId)
 		if err != nil {
 			return nil, err
 		}
@@ -72,12 +73,12 @@ func (this *Type) subtasks(token devices.Token, command Command, jobId string) (
 	return result, nil
 }
 
-func (this *Type) serviceChildren(token devices.Token, command Command, jobId string, deviceIndex int, deviceId string) ([]child, error) {
-	device, err := this.repo.GetDevice(token, deviceId)
+func (this *Type) serviceChildren(ctx context.Context, token devices.Token, command Command, jobId string, deviceIndex int, deviceId string) ([]child, error) {
+	device, err := this.repo.GetDevice(ctx, token, deviceId)
 	if err != nil {
 		return nil, err
 	}
-	deviceType, err := this.repo.GetDeviceType(token, device.DeviceTypeId)
+	deviceType, err := this.repo.GetDeviceType(ctx, token, device.DeviceTypeId)
 	if err != nil {
 		return nil, err
 	}

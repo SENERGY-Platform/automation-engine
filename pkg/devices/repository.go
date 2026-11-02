@@ -17,19 +17,18 @@
 package devices
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
-	"github.com/SENERGY-Platform/service-commons/pkg/cache"
-	"github.com/SENERGY-Platform/service-commons/pkg/signal"
 )
 
 // Token is a user token including the "Bearer " prefix.
@@ -44,39 +43,25 @@ func (this Token) GetJSON(resourceUrl string, result any) error {
 // Repository reads devices, device types, protocols and device groups with the token of a user,
 // as the external-task-worker did (TASK-01).
 type Repository interface {
-	GetDevice(token Token, id string) (models.Device, error)
-	GetService(token Token, device models.Device, serviceId string) (models.Service, error)
-	GetProtocol(token Token, id string) (models.Protocol, error)
+	GetDevice(ctx context.Context, token Token, id string) (models.Device, error)
+	GetService(ctx context.Context, token Token, device models.Device, serviceId string) (models.Service, error)
+	GetProtocol(ctx context.Context, token Token, id string) (models.Protocol, error)
 	GetToken(user string) (Token, error)
 
-	GetDeviceType(token Token, id string) (models.DeviceType, error)
-	GetDeviceGroup(token Token, id string) (models.DeviceGroup, error)
+	GetDeviceType(ctx context.Context, token Token, id string) (models.DeviceType, error)
+	GetDeviceGroup(ctx context.Context, token Token, id string) (models.DeviceGroup, error)
 }
 
-// CachedRepository caches the answers of device-repository; the cache invalidation signals of
-// service-commons clear the entries of changed resources.
+// CachedRepository reads through the device-repository client, which passes on the trace of ctx,
+// and caches per user and request; the cache invalidation signals of service-commons clear what a
+// change of a resource may have made stale.
 type CachedRepository struct {
-	url     string
-	tokens  auth.UserTokenSource
-	cache   *cache.Cache
-	timeout time.Duration
-	http    *http.Client
+	client devicerepository.Interface
+	tokens auth.UserTokenSource
 }
 
 func NewRepository(repositoryUrl string, tokens auth.UserTokenSource, cacheTimeout time.Duration) (*CachedRepository, error) {
-	c, err := cache.New(cache.Config{
-		CacheInvalidationSignalHooks: map[cache.Signal]cache.ToKey{
-			signal.Known.CacheInvalidationAll:        nil,
-			signal.Known.DeviceCacheInvalidation:     func(value string) string { return "device." + value },
-			signal.Known.DeviceTypeCacheInvalidation: func(value string) string { return "device-type." + value },
-			signal.Known.DeviceGroupInvalidation:     func(value string) string { return "device-group." + value },
-			signal.Known.ProtocolInvalidation:        func(value string) string { return "protocol." + value },
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &CachedRepository{url: repositoryUrl, tokens: tokens, cache: c, timeout: cacheTimeout, http: defaultClient}, nil
+	return &CachedRepository{client: newCachedClient(repositoryUrl, cacheTimeout), tokens: tokens}, nil
 }
 
 // GetToken is the token of the user, e.g. by token exchange.
@@ -88,18 +73,31 @@ func (this *CachedRepository) GetToken(user string) (Token, error) {
 	return Token(token), err
 }
 
-func cached[T any](this *CachedRepository, key string, get func() (T, error), valid func(T) bool) (T, error) {
-	return cache.Use(this.cache, key, get, func(value T) error {
-		if !valid(value) {
-			return errors.New("invalid " + key + " loaded from cache")
-		}
-		return nil
-	}, this.timeout)
+// newCachedClient is a device-repository client with a cache of ttl, cleared by the cache
+// invalidation signals of service-commons, which the invalidators of the server publish
+func newCachedClient(repositoryUrl string, ttl time.Duration) devicerepository.Interface {
+	c := devicerepository.NewClient(repositoryUrl, nil)
+	devicerepository.InvalidateOnSignals(c, nil)
+	return devicerepository.WithCache(c, ttl)
 }
 
-func (this *CachedRepository) get(token Token, path string, result any) error {
-	return getJson(this.http, token, this.url, path, result)
+// read turns an error of the client into one that names the path and keeps the status, and
+// refuses an empty answer, which the client would otherwise pass on as a zero value
+func read[T any](ctx context.Context, path string, valid func(T) bool, call func(ctx context.Context) (T, error, int)) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	result, err, code := call(ctx)
+	if err != nil {
+		return result, &statusError{status: code, message: fmt.Sprintf("GET %v: %v", path, err)}
+	}
+	if !valid(result) {
+		return result, fmt.Errorf("GET %v: empty answer", path)
+	}
+	return result, nil
 }
+
+// requestTimeout bounds a request to device-repository, as defaultClient does for the others
+const requestTimeout = 10 * time.Second
 
 var defaultClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -133,50 +131,40 @@ func (this *statusError) Error() string {
 	return this.message
 }
 
-func (this *CachedRepository) GetDevice(token Token, id string) (models.Device, error) {
-	return cached(this, "device."+id, func() (result models.Device, err error) {
-		return result, this.get(token, "/devices/"+url.QueryEscape(id), &result)
-	}, func(d models.Device) bool { return d.Id != "" })
-}
-
-func (this *CachedRepository) GetProtocol(token Token, id string) (models.Protocol, error) {
-	return cached(this, "protocol."+id, func() (result models.Protocol, err error) {
-		return result, this.get(token, "/protocols/"+url.QueryEscape(id), &result)
-	}, func(p models.Protocol) bool { return p.Id != "" })
-}
-
-func (this *CachedRepository) GetDeviceType(token Token, id string) (models.DeviceType, error) {
-	return cached(this, "device-type."+id, func() (result models.DeviceType, err error) {
-		return result, this.get(token, "/device-types/"+url.QueryEscape(id), &result)
-	}, func(dt models.DeviceType) bool { return dt.Id != "" })
-}
-
-func (this *CachedRepository) GetDeviceGroup(token Token, id string) (models.DeviceGroup, error) {
-	return cached(this, "device-group."+id, func() (result models.DeviceGroup, err error) {
-		return result, this.get(token, "/device-groups/"+url.QueryEscape(id), &result)
-	}, func(g models.DeviceGroup) bool { return g.Id != "" })
-}
-
-// GetService reads a service from the cache or from the device type of the device.
-func (this *CachedRepository) GetService(token Token, device models.Device, id string) (models.Service, error) {
-	service, err := cache.Get[models.Service](this.cache, "service."+id, func(s models.Service) error {
-		if s.Id == "" {
-			return errors.New("invalid service loaded from cache")
-		}
-		return nil
+func (this *CachedRepository) GetDevice(ctx context.Context, token Token, id string) (models.Device, error) {
+	return read(ctx, "/devices/"+id, func(d models.Device) bool { return d.Id != "" }, func(ctx context.Context) (models.Device, error, int) {
+		return this.client.ReadDevice(ctx, id, string(token), devicerepomodel.READ)
 	})
-	if err == nil {
-		return service, nil
-	}
-	deviceType, err := this.GetDeviceType(token, device.DeviceTypeId)
+}
+
+func (this *CachedRepository) GetProtocol(ctx context.Context, token Token, id string) (models.Protocol, error) {
+	return read(ctx, "/protocols/"+id, func(p models.Protocol) bool { return p.Id != "" }, func(ctx context.Context) (models.Protocol, error, int) {
+		return this.client.ReadProtocol(ctx, id, string(token))
+	})
+}
+
+func (this *CachedRepository) GetDeviceType(ctx context.Context, token Token, id string) (models.DeviceType, error) {
+	return read(ctx, "/device-types/"+id, func(dt models.DeviceType) bool { return dt.Id != "" }, func(ctx context.Context) (models.DeviceType, error, int) {
+		return this.client.ReadDeviceType(ctx, id, string(token))
+	})
+}
+
+func (this *CachedRepository) GetDeviceGroup(ctx context.Context, token Token, id string) (models.DeviceGroup, error) {
+	return read(ctx, "/device-groups/"+id, func(g models.DeviceGroup) bool { return g.Id != "" }, func(ctx context.Context) (models.DeviceGroup, error, int) {
+		return this.client.ReadDeviceGroup(ctx, id, string(token), false)
+	})
+}
+
+// GetService reads the service from the device type of the device, which is cached.
+func (this *CachedRepository) GetService(ctx context.Context, token Token, device models.Device, id string) (models.Service, error) {
+	deviceType, err := this.GetDeviceType(ctx, token, device.DeviceTypeId)
 	if err != nil {
-		return service, err
+		return models.Service{}, err
 	}
 	for _, s := range deviceType.Services {
 		if s.Id == id {
-			_ = this.cache.Set("service."+s.Id, s, this.timeout)
 			return s, nil
 		}
 	}
-	return service, fmt.Errorf("service %v not found in device type %v", id, device.DeviceTypeId)
+	return models.Service{}, fmt.Errorf("service %v not found in device type %v", id, device.DeviceTypeId)
 }

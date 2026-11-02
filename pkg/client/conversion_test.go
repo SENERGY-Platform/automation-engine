@@ -87,14 +87,14 @@ func content(functionId string, aspectId string) []models.Content {
 func (this *lamp) GetToken(user string) (devices.Token, error) {
 	return devices.Token("Bearer " + user), nil
 }
-func (this *lamp) GetDevice(_ devices.Token, id string) (models.Device, error) {
+func (this *lamp) GetDevice(_ context.Context, _ devices.Token, id string) (models.Device, error) {
 	if id != "hue" {
 		return models.Device{}, errors.New("device not found")
 	}
 	return models.Device{Id: "hue", LocalId: "hue", Name: "hue", DeviceTypeId: "lamp"}, nil
 }
-func (this *lamp) GetService(token devices.Token, device models.Device, id string) (models.Service, error) {
-	deviceType, _ := this.GetDeviceType(token, device.DeviceTypeId)
+func (this *lamp) GetService(_ context.Context, token devices.Token, device models.Device, id string) (models.Service, error) {
+	deviceType, _ := this.GetDeviceType(context.Background(), token, device.DeviceTypeId)
 	for _, s := range deviceType.Services {
 		if s.Id == id {
 			return s, nil
@@ -102,20 +102,20 @@ func (this *lamp) GetService(token devices.Token, device models.Device, id strin
 	}
 	return models.Service{}, errors.New("service not found")
 }
-func (this *lamp) GetProtocol(_ devices.Token, id string) (models.Protocol, error) {
+func (this *lamp) GetProtocol(_ context.Context, _ devices.Token, id string) (models.Protocol, error) {
 	return models.Protocol{Id: id, Handler: "connector", ProtocolSegments: []models.ProtocolSegment{{Id: "seg", Name: "data"}}}, nil
 }
-func (this *lamp) GetDeviceType(devices.Token, string) (models.DeviceType, error) {
+func (this *lamp) GetDeviceType(context.Context, devices.Token, string) (models.DeviceType, error) {
 	return models.DeviceType{Id: "lamp", Services: []models.Service{
 		{Id: getStatusService, LocalId: "getStatus", ProtocolId: "p", Interaction: models.REQUEST, Outputs: content(getColorFunction, lightingAspect)},
 		{Id: setColorService, LocalId: "setColor", ProtocolId: "p", Interaction: models.REQUEST, Inputs: content(setColorFunction, lightingAspect)},
 		{Id: batteryService, LocalId: "battery", ProtocolId: "p", Interaction: models.EVENT, Outputs: content(batteryFunction, batteryAspect)},
 	}}, nil
 }
-func (this *lamp) GetDeviceGroup(devices.Token, string) (models.DeviceGroup, error) {
+func (this *lamp) GetDeviceGroup(context.Context, devices.Token, string) (models.DeviceGroup, error) {
 	return models.DeviceGroup{}, errors.New("no device groups")
 }
-func (this *lamp) aspect(_ devices.Token, id string) (models.AspectNode, error) {
+func (this *lamp) aspect(_ context.Context, _ devices.Token, id string) (models.AspectNode, error) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
 	this.aspects = append(this.aspects, id)

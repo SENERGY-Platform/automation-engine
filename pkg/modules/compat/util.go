@@ -70,7 +70,7 @@ func (this *ScriptEnvUtil) GetDevicesWithServiceFromEntityString(entityStr strin
 
 func (this *ScriptEnvUtil) getDevicesWithServiceFromIotOption(entity IotOption, criteria []devicemodel.FilterCriteria) (result []IotOption) {
 	var err error
-	result, err = GetDevicesWithService(this.env.iotClient, this.env.getToken(), entity, criteria)
+	result, err = GetDevicesWithService(this.env.ctx, this.env.iotClient, this.env.getToken(), entity, criteria)
 	if errors.Is(err, ErrNoDeviceOrGroupSelection) {
 		return []IotOption{}
 	}
