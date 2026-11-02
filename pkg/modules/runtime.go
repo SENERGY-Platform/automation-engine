@@ -42,13 +42,14 @@ import (
 // Settings are the configuration values of the former module workers (TASK-29). The parameter
 // prefixes are part of the model format and stay those of the workers: "<task type>.".
 type Settings struct {
-	DeviceRepositoryUrl string
-	DeviceSelectionUrl  string
-	DeviceManagerUrl    string
-	FlowEngineUrl       string
-	FlowParserUrl       string
-	ImportDeployUrl     string
-	ServingServiceUrl   string
+	// nil if not configured
+	DeviceRepository   devicerepository.Interface
+	DeviceSelectionUrl string
+	DeviceManagerUrl   string
+	FlowEngineUrl      string
+	FlowParserUrl      string
+	ImportDeployUrl    string
+	ServingServiceUrl  string
 	// repositories of flows and import types, asked whether used resources changed (SMS-15)
 	FlowRepoUrl         string
 	ImportRepositoryUrl string
@@ -136,7 +137,11 @@ func (this *Runtime) SetAdminToken(token auth.TokenSource) {
 
 // NewRuntime creates the runtime; tokens gives the tokens of owners, e.g. the token exchange.
 func NewRuntime(s *store.Store, settings Settings, tokens auth.UserTokenSource, logger *slog.Logger) *Runtime {
-	iot := devicerepository.NewClient(settings.DeviceRepositoryUrl, nil)
+	iot := settings.DeviceRepository
+	if iot == nil {
+		// a read fails with an error, as with an empty url, instead of a nil dereference
+		iot = devicerepository.NewClient("", devicerepository.Options{})
+	}
 	result := &Runtime{store: s, settings: settings, tokens: tokens, iot: iot, logger: logger, http: &http.Client{Timeout: 30 * time.Second},
 		types: map[string]*moduleType{}, checks: map[string]Check{}, now: time.Now, resources: storeResources{s}}
 	result.scripts = compat.Scripts{Logger: logger, Tokens: result.token, Iot: iot}
@@ -164,7 +169,7 @@ func (this *Runtime) Register(e *engine.Engine, settings Settings) {
 		TypeWatcher:                this.watcher != nil && settings.DeviceSelectionUrl != "",
 		TypeImport:                 settings.ImportDeployUrl != "",
 		TypeExport:                 settings.ServingServiceUrl != "",
-		TypeAnalytics:              settings.FlowEngineUrl != "" && settings.FlowParserUrl != "" && settings.DeviceRepositoryUrl != "",
+		TypeAnalytics:              settings.FlowEngineUrl != "" && settings.FlowParserUrl != "" && settings.DeviceRepository != nil,
 		TypeDeviceRepository:       settings.DeviceManagerUrl != "" && settings.DeviceSelectionUrl != "",
 	}
 	for name, t := range this.types {

@@ -18,6 +18,7 @@ package events_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -27,7 +28,7 @@ import (
 // condition is evaluated in the characteristic of the event (EVT-04), so the value is
 // converted to that one, as event-deployment did.
 func TestDescriptionWithSelectedPathKeepsTheCharacteristicOfTheEvent(t *testing.T) {
-	describer := events.NewDescriber(&fakeRepo{}, aspects(), fakeImports{})
+	describer := events.NewDescriber(&fakeRepo{}, time.Minute, tokens, fakeImports{})
 	selection := model.Selection{DeviceId: "d1", ServiceId: "s-request", Path: &model.SelectedPath{Path: "value.energy.level", CharacteristicId: "service-characteristic"}}
 	result := describe(t, describer, eventWith(`senergy:aspect="air"`), selection)
 	if len(result) != 1 || result[0].Path != "value.energy.level" {

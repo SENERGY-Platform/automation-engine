@@ -38,7 +38,6 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/controller"
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/deprecated"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
@@ -97,8 +96,7 @@ type Dependencies struct {
 	// tokens of other users; the Keycloak token exchange if not given
 	UserToken auth.UserTokenSource
 	// device command dependencies; set together, they enable device commands without URLs
-	DeviceRepository devices.Repository
-	AspectNodes      *devices.AspectNodes
+	DeviceRepository devicerepositoryclient.Interface
 	Marshaller       devicecommand.Marshaller
 	Timescale        devicecommand.Timescale
 	Producer         devicecommand.Producer
@@ -109,8 +107,8 @@ type Dependencies struct {
 	Broker mqtt.Broker
 	// cloud: the broker the gateways reach (SYNC-04), e.g. mqtt.NewMemory() in tests
 	SyncBroker mqtt.Broker
-	// cloud: the owners of networks (FOG-11); device-repository if not given
-	HubOwners controller.HubOwners
+	// cloud: the hubs, which name the owners of networks (FOG-11); device-repository if not given
+	Hubs devicerepositoryclient.Interface
 	// fog: the owner of the network of the gateway (FOG-11); the cert-manager of the cloud proxy if not given
 	NetworkOwner fogsync.NetworkOwner
 }
@@ -149,31 +147,19 @@ func engineConfig(config configuration.Config) (engine.Config, error) {
 	return result, nil
 }
 
-// deviceRepository builds the device-repository access with the user tokens and its aspect node
-// resolver; nil if neither configured nor given
-func deviceRepository(config configuration.Config, deps Dependencies, userToken auth.UserTokenSource) (devices.Repository, *devices.AspectNodes, error) {
-	repo, aspects := deps.DeviceRepository, deps.AspectNodes
-	if repo == nil {
-		if config.DeviceRepositoryUrl == "" {
-			return nil, nil, nil
+// deviceRepositoryTimeout bounds every request to device-repository
+const deviceRepositoryTimeout = 10 * time.Second
+
+// deviceCacheTimeout is how long reads of device-repository are cached per user
+func deviceCacheTimeout(config configuration.Config) (time.Duration, error) {
+	timeout := time.Minute
+	if config.DeviceCacheTimeout != "" && config.DeviceCacheTimeout != "-" {
+		var err error
+		if timeout, err = time.ParseDuration(config.DeviceCacheTimeout); err != nil {
+			return 0, fmt.Errorf("invalid device_cache_timeout: %w", err)
 		}
-		timeout := time.Minute
-		if config.DeviceCacheTimeout != "" && config.DeviceCacheTimeout != "-" {
-			var err error
-			if timeout, err = time.ParseDuration(config.DeviceCacheTimeout); err != nil {
-				return nil, nil, fmt.Errorf("invalid device_cache_timeout: %w", err)
-			}
-		}
-		iot, err := devices.NewRepository(config.DeviceRepositoryUrl, userToken, timeout)
-		if err != nil {
-			return nil, nil, err
-		}
-		repo = iot
 	}
-	if aspects == nil {
-		aspects = devices.NewAspectNodes(config.DeviceRepositoryUrl)
-	}
-	return repo, aspects, nil
+	return timeout, nil
 }
 
 // New opens the store, applies migrations, loads the namespaces and builds engine, controller
@@ -249,15 +235,30 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		httpCalls.SetLocalPolicy(policy)
 	}
 	e.RegisterTaskType(httpcall.TaskType, httpCalls)
-	moduleSettings := moduleSettings(config)
+	// one device-repository client for the engine role; the copies that devicerepository.WithCache
+	// makes of it at the calls share its cache, which the invalidation signals clear
+	iot := devicerepositoryclient.NewClient(config.DeviceRepositoryUrl, devicerepositoryclient.Options{Timeout: deviceRepositoryTimeout})
+	devicerepositoryclient.InvalidateOnSignals(iot, nil)
+	// nil without a url, for the parts that then work without device-repository
+	var configuredIot devicerepositoryclient.Interface
+	if config.DeviceRepositoryUrl != "" {
+		configuredIot = iot
+	}
+	moduleSettings := moduleSettings(config, configuredIot)
 	runtime := modules.NewRuntime(s, moduleSettings, userToken, logger)
 
-	repo, aspects, err := deviceRepository(config, deps, userToken)
+	// device-repository for device commands and event descriptions; nil if neither configured
+	// nor given
+	repo := deps.DeviceRepository
+	if repo == nil {
+		repo = configuredIot
+	}
+	cacheTimeout, err := deviceCacheTimeout(config)
 	if err != nil {
 		s.Close()
 		return nil, err
 	}
-	commands, err := deviceCommands(ctx, config, deps, broker, repo, aspects, s, m, logger)
+	commands, err := deviceCommands(ctx, config, deps, broker, iot, repo, cacheTimeout, userToken, s, m, logger)
 	if err != nil {
 		s.Close()
 		return nil, err
@@ -279,8 +280,8 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	}
 	c := controller.New(s, e, registry, authorizer, verifyAll)
 	var characteristics prepare.Characteristics
-	if config.DeviceRepositoryUrl != "" {
-		characteristics = devicerepositoryclient.NewClient(config.DeviceRepositoryUrl, nil)
+	if configuredIot != nil {
+		characteristics = configuredIot
 	}
 	c.SetParameters(prepare.NewDescriber(config.DeviceSelectionUrl, characteristics), userToken)
 	runtime.AddProcessModules(c, registry)
@@ -295,7 +296,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	}
 	c.SetPreparation(
 		prepare.New(selection, prepare.Config{GroupsForTasks: config.DeviceGroupsForTasks, GroupsForEvents: config.DeviceGroupsForEvents, ImportsForEvents: config.ImportsForEvents, ModifiedDevices: config.ModifiedDevices,
-			DeviceRepositoryUrl: config.DeviceRepositoryUrl}),
+			DeviceRepository: configuredIot}),
 		prepare.NewAccess(permissionsClient, config.ImportDeployUrl),
 	)
 	if repo != nil {
@@ -303,7 +304,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		if config.ImportDeployUrl != "" && config.ImportRepositoryUrl != "" {
 			imports = events.NewImports(config.ImportDeployUrl, config.ImportRepositoryUrl)
 		}
-		describer := events.NewDescriber(repo, aspects, imports)
+		describer := events.NewDescriber(repo, cacheTimeout, userToken, imports)
 		if fog {
 			describer = describer.Local()
 		}
@@ -366,12 +367,12 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		settings.CallTimeout = configuration.Duration(config.SyncCallTimeout)
 		networks = fogsync.NewCloud(settings, s, syncBroker, logger)
 		c.SetNetworks(networks)
-		hubOwners := deps.HubOwners
-		if hubOwners == nil && config.DeviceRepositoryUrl != "" {
-			hubOwners = devices.NewHubs(config.DeviceRepositoryUrl)
+		hubs := deps.Hubs
+		if hubs == nil {
+			hubs = configuredIot
 		}
-		if hubOwners != nil {
-			c.SetHubOwners(hubOwners, adminToken)
+		if hubs != nil {
+			c.SetHubs(hubs, adminToken)
 		}
 	}
 	var agent *fogsync.Gateway
@@ -415,7 +416,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 }
 
 // deviceCommands creates the task type device_command if its services are configured (TASK-01)
-func deviceCommands(ctx context.Context, config configuration.Config, deps Dependencies, broker mqtt.Broker, repo devices.Repository, aspects *devices.AspectNodes, s *store.Store, m *Metrics, logger *slog.Logger) (*devicecommand.Type, error) {
+func deviceCommands(ctx context.Context, config configuration.Config, deps Dependencies, broker mqtt.Broker, iot devicerepositoryclient.Interface, repo devicerepositoryclient.Interface, cacheTimeout time.Duration, userToken auth.UserTokenSource, s *store.Store, m *Metrics, logger *slog.Logger) (*devicecommand.Type, error) {
 	mar, ts, producer := deps.Marshaller, deps.Timescale, deps.Producer
 	prefix := ""
 	if config.Mode == "fog" && repo != nil {
@@ -423,7 +424,7 @@ func deviceCommands(ctx context.Context, config configuration.Config, deps Depen
 		prefix = config.LocalCommandPrefix
 		if mar == nil {
 			var err error
-			mar, err = devicecommand.NewLocalMarshaller(ctx, config.DeviceRepositoryUrl, configuration.Duration(config.DeviceCacheTimeout), configuration.Duration(config.ConceptRefreshInterval), logger)
+			mar, err = devicecommand.NewLocalMarshaller(ctx, iot, configuration.Duration(config.DeviceCacheTimeout), configuration.Duration(config.ConceptRefreshInterval), logger)
 			if err != nil {
 				return nil, err
 			}
@@ -449,7 +450,8 @@ func deviceCommands(ctx context.Context, config configuration.Config, deps Depen
 	}
 	return devicecommand.New(devicecommand.Config{
 		GroupScheduler: config.GroupScheduler, ResponseTo: config.MetadataResponseTo, ErrorTo: config.MetadataErrorTo, LocalCommandPrefix: prefix,
-	}, s, repo, aspects, mar, ts, producer, m, logger), nil
+		DeviceCacheTimeout: cacheTimeout,
+	}, s, repo, userToken, mar, ts, producer, m, logger), nil
 }
 
 func (this *Server) kafkaConfig(group string, start int64) kafka.Config {
@@ -745,9 +747,9 @@ func (this *Server) Close() error {
 }
 
 // moduleSettings are the values of the former module workers (TASK-29)
-func moduleSettings(config configuration.Config) modules.Settings {
+func moduleSettings(config configuration.Config, iot devicerepositoryclient.Interface) modules.Settings {
 	return modules.Settings{
-		DeviceRepositoryUrl: config.DeviceRepositoryUrl, DeviceSelectionUrl: config.DeviceSelectionUrl, DeviceManagerUrl: config.DeviceManagerUrl,
+		DeviceRepository: iot, DeviceSelectionUrl: config.DeviceSelectionUrl, DeviceManagerUrl: config.DeviceManagerUrl,
 		FlowEngineUrl: config.FlowEngineUrl, FlowParserUrl: config.FlowParserUrl, ImportDeployUrl: config.ImportDeployUrl, ServingServiceUrl: config.ServingServiceUrl,
 		FlowRepoUrl: config.FlowRepoUrl, ImportRepositoryUrl: config.ImportRepositoryUrl,
 		AnalyticsEnableMultiplePaths: config.AnalyticsEnableMultiplePaths, AnalyticsDevicePathPrefix: config.AnalyticsDevicePathPrefix,

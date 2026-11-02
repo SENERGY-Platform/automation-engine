@@ -51,7 +51,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/devicecommand"
 	"github.com/SENERGY-Platform/models/go/models"
@@ -254,7 +254,7 @@ func (this eventSource) messages(ctx context.Context, number float64) ([]kafka.M
 			if err != nil {
 				return nil, err
 			}
-			messages = append(messages, kafka.Message{Topic: devices.ServiceIdToTopic(service.Id), Key: []byte(device.Id), Value: raw})
+			messages = append(messages, kafka.Message{Topic: commons.ServiceIdToTopic(service.Id), Key: []byte(device.Id), Value: raw})
 		}
 	}
 	return messages, nil

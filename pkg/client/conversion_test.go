@@ -22,6 +22,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"reflect"
@@ -33,12 +34,14 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/devicecommand"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
 	permmodel "github.com/SENERGY-Platform/permissions-v2/pkg/model"
 )
@@ -71,6 +74,8 @@ type marshalled struct {
 // lamp is the device hue with the services of the models: device-repository, marshaller of
 // the payload versions before 3, and the topic of the protocol handler
 type lamp struct {
+	// the reads of device commands; any other method of the client is not expected
+	devicerepository.Interface
 	mux          sync.Mutex
 	sent         []devicecommand.ProtocolMsg
 	marshalled   []marshalled
@@ -84,42 +89,34 @@ func content(functionId string, aspectId string) []models.Content {
 		ContentVariable: models.ContentVariable{Name: "value", Type: models.Structure, FunctionId: functionId, AspectId: aspectId}}}
 }
 
-func (this *lamp) GetToken(user string) (devices.Token, error) {
-	return devices.Token("Bearer " + user), nil
-}
-func (this *lamp) GetDevice(_ context.Context, _ devices.Token, id string) (models.Device, error) {
+func (this *lamp) ReadDevice(_ context.Context, id string, _ string, _ devicerepomodel.AuthAction) (models.Device, error, int) {
 	if id != "hue" {
-		return models.Device{}, errors.New("device not found")
+		return models.Device{}, errors.New("device not found"), http.StatusNotFound
 	}
-	return models.Device{Id: "hue", LocalId: "hue", Name: "hue", DeviceTypeId: "lamp"}, nil
+	return models.Device{Id: "hue", LocalId: "hue", Name: "hue", DeviceTypeId: "lamp"}, nil, http.StatusOK
 }
-func (this *lamp) GetService(_ context.Context, token devices.Token, device models.Device, id string) (models.Service, error) {
-	deviceType, _ := this.GetDeviceType(context.Background(), token, device.DeviceTypeId)
-	for _, s := range deviceType.Services {
-		if s.Id == id {
-			return s, nil
-		}
-	}
-	return models.Service{}, errors.New("service not found")
+func (this *lamp) ReadProtocol(_ context.Context, id string, _ string) (models.Protocol, error, int) {
+	return models.Protocol{Id: id, Handler: "connector", ProtocolSegments: []models.ProtocolSegment{{Id: "seg", Name: "data"}}}, nil, http.StatusOK
 }
-func (this *lamp) GetProtocol(_ context.Context, _ devices.Token, id string) (models.Protocol, error) {
-	return models.Protocol{Id: id, Handler: "connector", ProtocolSegments: []models.ProtocolSegment{{Id: "seg", Name: "data"}}}, nil
-}
-func (this *lamp) GetDeviceType(context.Context, devices.Token, string) (models.DeviceType, error) {
+func (this *lamp) ReadDeviceType(context.Context, string, string) (models.DeviceType, error, int) {
 	return models.DeviceType{Id: "lamp", Services: []models.Service{
 		{Id: getStatusService, LocalId: "getStatus", ProtocolId: "p", Interaction: models.REQUEST, Outputs: content(getColorFunction, lightingAspect)},
 		{Id: setColorService, LocalId: "setColor", ProtocolId: "p", Interaction: models.REQUEST, Inputs: content(setColorFunction, lightingAspect)},
 		{Id: batteryService, LocalId: "battery", ProtocolId: "p", Interaction: models.EVENT, Outputs: content(batteryFunction, batteryAspect)},
-	}}, nil
+	}}, nil, http.StatusOK
 }
-func (this *lamp) GetDeviceGroup(context.Context, devices.Token, string) (models.DeviceGroup, error) {
-	return models.DeviceGroup{}, errors.New("no device groups")
+func (this *lamp) ReadDeviceGroup(context.Context, string, string, bool) (models.DeviceGroup, error, int) {
+	return models.DeviceGroup{}, errors.New("no device groups"), http.StatusNotFound
 }
-func (this *lamp) aspect(_ context.Context, _ devices.Token, id string) (models.AspectNode, error) {
+func (this *lamp) ListAspectNodes(_ context.Context, options devicerepomodel.AspectListOptions) ([]models.AspectNode, int64, error, int) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
-	this.aspects = append(this.aspects, id)
-	return models.AspectNode{Id: id, RootId: id}, nil
+	result := []models.AspectNode{}
+	for _, id := range options.Ids {
+		this.aspects = append(this.aspects, id)
+		result = append(result, models.AspectNode{Id: id, RootId: id})
+	}
+	return result, int64(len(result)), nil, http.StatusOK
 }
 func (this *lamp) MarshalV2(models.Service, models.Protocol, []devicecommand.MarshallingV2RequestData) (map[string]string, error) {
 	this.mux.Lock()
@@ -173,7 +170,6 @@ func lampServer(t *testing.T) (*server.Server, client.Client, *lamp) {
 	var deps server.Dependencies
 	srv, err := client.NewTestServer(ctx, func(_ *configuration.Config, d *server.Dependencies) {
 		d.DeviceRepository, d.Marshaller, d.Producer = l, l, l
-		d.AspectNodes = devices.NewAspectNodesWith(l.aspect)
 		deps = *d
 	})
 	if err != nil {
@@ -405,7 +401,7 @@ func TestDeviceEventOfAnOldDesignerModelTriggersLikeTheEventWorker(t *testing.T)
 	if desc.ElementId != batteryEvent || desc.FunctionId != batteryFunction || !reflect.DeepEqual(desc.AspectIds, []string{batteryAspect}) ||
 		desc.CharacteristicId != percentage || desc.Script != "x == foo" || desc.ValueVariable != "x" ||
 		!reflect.DeepEqual(desc.Variables, map[string]string{"foo": "42"}) || desc.DeviceId != "hue" || desc.ServiceId != batteryService ||
-		desc.Topic != devices.ServiceIdToTopic(batteryService) || desc.Qos != 0 {
+		desc.Topic != commons.ServiceIdToTopic(batteryService) || desc.Qos != 0 {
 		t.Errorf("the description holds criteria, condition and variables of the model: %+v", desc)
 	}
 	evaluator := events.NewEvaluator(level{})

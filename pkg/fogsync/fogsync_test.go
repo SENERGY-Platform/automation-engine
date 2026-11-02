@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -45,6 +46,8 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
 	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
 	permmodel "github.com/SENERGY-Platform/permissions-v2/pkg/model"
@@ -74,19 +77,21 @@ type env struct {
 // owners stands in for device-repository, which names the owner of a hub to the cloud, and for
 // the cert-manager of the cloud proxy, which names it to the gateway (FOG-11)
 type owners struct {
+	// ReadHub only; any other method of the client is not expected
+	devicerepository.Interface
 	mux     sync.Mutex
 	hubs    map[string]string
 	gateway string
 }
 
-func (this *owners) HubOwner(_ context.Context, _ string, id string) (string, error) {
+func (this *owners) ReadHub(_ context.Context, id string, _ string, _ devicerepomodel.AuthAction) (models.Hub, error, int) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
 	owner, ok := this.hubs[id]
 	if !ok {
-		return "", model.NotFound("GET /hubs/%v: 404", id)
+		return models.Hub{}, errors.New("unexpected statuscode 404"), http.StatusNotFound
 	}
-	return owner, nil
+	return models.Hub{Id: id, OwnerId: owner}, nil, http.StatusOK
 }
 
 func (this *owners) Gateway(_ context.Context) (string, error) {
@@ -186,7 +191,7 @@ func (this *env) startCloud(ctx context.Context, config configuration.Config, br
 		this.t.Fatal(err)
 	}
 	deps.SyncBroker = broker
-	deps.HubOwners = this.owners
+	deps.Hubs = this.owners
 	this.permissions = deps.Permissions
 	adminToken := deps.AdminToken
 	deps.AdminToken = func() (string, error) {
@@ -385,6 +390,9 @@ func deployPreferringTheGateway(t *testing.T, configure ...func(*configuration.C
 		"/aspect-nodes/air": models.AspectNode{Id: "air", RootId: "air"},
 	}
 	repository := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if aspectNodeList(w, r, answers) {
+			return
+		}
 		if answer, ok := answers[r.URL.Path]; ok {
 			_ = json.NewEncoder(w).Encode(answer)
 			return
@@ -558,6 +566,9 @@ func TestEventsOfAGatewayAreReconstructedInTheCloud(t *testing.T) {
 		"/aspect-nodes/air": models.AspectNode{Id: "air", RootId: "air"},
 	}
 	repository := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if aspectNodeList(w, r, answers) {
+			return
+		}
 		if answer, ok := answers[r.URL.Path]; ok {
 			_ = json.NewEncoder(w).Encode(answer)
 			return
@@ -677,4 +688,21 @@ func TestTheCloudLearnsTheEndBeforeTheGatewayTrims(t *testing.T) {
 	if appliedOnGateway || desiredInCloud {
 		t.Errorf("the start of an ended instance is forgotten on both sides: gateway %v, cloud %v", appliedOnGateway, desiredInCloud)
 	}
+}
+
+// aspectNodeList answers the aspect node list of device-repository from the single nodes in
+// answers; false for any other request
+func aspectNodeList(w http.ResponseWriter, r *http.Request, answers map[string]any) bool {
+	if r.URL.Path != "/v2/aspect-nodes" {
+		return false
+	}
+	nodes := []models.AspectNode{}
+	for _, id := range strings.Split(r.URL.Query().Get("ids"), ",") {
+		if node, ok := answers["/aspect-nodes/"+id].(models.AspectNode); ok {
+			nodes = append(nodes, node)
+		}
+	}
+	w.Header().Set("X-Total-Count", strconv.Itoa(len(nodes)))
+	_ = json.NewEncoder(w).Encode(nodes)
+	return true
 }

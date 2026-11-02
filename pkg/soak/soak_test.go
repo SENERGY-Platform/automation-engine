@@ -157,6 +157,9 @@ func repository() *httptest.Server {
 		"/aspect-nodes/air":                     models.AspectNode{Id: "air", RootId: "air"},
 	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if aspectNodeList(w, r, answers) {
+			return
+		}
 		if answer, ok := answers[r.URL.Path]; ok {
 			_ = json.NewEncoder(w).Encode(answer)
 			return
@@ -274,7 +277,7 @@ func newEnv(t *testing.T, ctx context.Context, s settings) *env {
 	}
 	// the cloud validates device commands of gateway deployments but sends none
 	deps.SyncBroker, deps.Marshaller, deps.Producer = cloudBroker, marshaller{}, discard{}
-	deps.HubOwners = client.TestHubOwners{network: "alice"}
+	deps.Hubs = client.TestHubOwners(map[string]string{network: "alice"})
 	if this.cloud, err = server.New(ctx, config, logger, deps); err != nil {
 		t.Fatal(err)
 	}
@@ -583,4 +586,21 @@ func checkSettled(t *testing.T, s settings, samples []sample) {
 			t.Errorf("the database uses more than the budget of %v bytes: median %v", s.budget, median)
 		}
 	}
+}
+
+// aspectNodeList answers the aspect node list of device-repository from the single nodes in
+// answers; false for any other request
+func aspectNodeList(w http.ResponseWriter, r *http.Request, answers map[string]any) bool {
+	if r.URL.Path != "/v2/aspect-nodes" {
+		return false
+	}
+	nodes := []models.AspectNode{}
+	for _, id := range strings.Split(r.URL.Query().Get("ids"), ",") {
+		if node, ok := answers["/aspect-nodes/"+id].(models.AspectNode); ok {
+			nodes = append(nodes, node)
+		}
+	}
+	w.Header().Set("X-Total-Count", strconv.Itoa(len(nodes)))
+	_ = json.NewEncoder(w).Encode(nodes)
+	return true
 }

@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
@@ -83,7 +84,7 @@ func TestLocalMarshallerReadsTheMirror(t *testing.T) {
 	fake := &mirror{requests: map[string]int{}}
 	server := httptest.NewServer(fake)
 	defer server.Close()
-	m, err := NewLocalMarshaller(ctx, server.URL, time.Minute, time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m, err := NewLocalMarshaller(ctx, devicerepository.NewClient(server.URL, devicerepository.Options{}), time.Minute, time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

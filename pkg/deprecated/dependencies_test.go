@@ -29,35 +29,36 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/deprecated"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/devicecommand"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
 	permmodel "github.com/SENERGY-Platform/permissions-v2/pkg/model"
 )
 
 var errNotNeeded = errors.New("not needed by the test")
 
-// noDevices registers the task type device_command; no command is executed in these tests
-type noDevices struct{}
+// noDevices registers the task type device_command; no command is executed in these tests, and
+// any method of the client other than the reads below is not expected
+type noDevices struct {
+	devicerepository.Interface
+}
 
-func (noDevices) GetToken(user string) (devices.Token, error) {
-	return devices.Token("Bearer " + user), nil
+func (noDevices) ReadDevice(context.Context, string, string, devicerepomodel.AuthAction) (models.Device, error, int) {
+	return models.Device{}, errNotNeeded, http.StatusInternalServerError
 }
-func (noDevices) GetDevice(context.Context, devices.Token, string) (models.Device, error) {
-	return models.Device{}, errNotNeeded
+func (noDevices) ReadProtocol(context.Context, string, string) (models.Protocol, error, int) {
+	return models.Protocol{}, errNotNeeded, http.StatusInternalServerError
 }
-func (noDevices) GetService(context.Context, devices.Token, models.Device, string) (models.Service, error) {
-	return models.Service{}, errNotNeeded
+func (noDevices) ReadDeviceType(context.Context, string, string) (models.DeviceType, error, int) {
+	return models.DeviceType{}, errNotNeeded, http.StatusInternalServerError
 }
-func (noDevices) GetProtocol(context.Context, devices.Token, string) (models.Protocol, error) {
-	return models.Protocol{}, errNotNeeded
+func (noDevices) ReadDeviceGroup(context.Context, string, string, bool) (models.DeviceGroup, error, int) {
+	return models.DeviceGroup{}, errNotNeeded, http.StatusInternalServerError
 }
-func (noDevices) GetDeviceType(context.Context, devices.Token, string) (models.DeviceType, error) {
-	return models.DeviceType{}, errNotNeeded
-}
-func (noDevices) GetDeviceGroup(context.Context, devices.Token, string) (models.DeviceGroup, error) {
-	return models.DeviceGroup{}, errNotNeeded
+func (noDevices) ListAspectNodes(context.Context, devicerepomodel.AspectListOptions) ([]models.AspectNode, int64, error, int) {
+	return nil, 0, errNotNeeded, http.StatusInternalServerError
 }
 func (noDevices) MarshalV2(models.Service, models.Protocol, []devicecommand.MarshallingV2RequestData) (map[string]string, error) {
 	return nil, errNotNeeded

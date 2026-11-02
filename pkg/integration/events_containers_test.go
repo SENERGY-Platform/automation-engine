@@ -54,7 +54,7 @@ func newContainerEventEnv(t *testing.T, platform *realPlatform) *eventEnv {
 func realFixture(t *testing.T, platform *realPlatform) fixture {
 	t.Helper()
 	admin := auth.UnsignedToken("test-admin", "admin")
-	repo := devicerepository.NewClient(platform.deviceRepository, nil)
+	repo := devicerepository.NewClient(platform.deviceRepository, devicerepository.Options{})
 	check := func(what string, err error, code int) {
 		t.Helper()
 		if err != nil || code >= 300 {

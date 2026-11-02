@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -34,12 +35,13 @@ import (
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 )
@@ -48,49 +50,50 @@ var ctx = context.Background()
 
 const measuring = "urn:infai:ses:measuring-function:temperature"
 
+// tokens of the owners as the token exchange would give them
+func tokens(user string) (string, error) {
+	return "Bearer " + user, nil
+}
+
+// fakeRepo answers the reads of the describer; any other method of the client is not expected
 type fakeRepo struct {
+	devicerepository.Interface
 	mux    sync.Mutex
 	groups map[string]models.DeviceGroup
 }
 
-func (this *fakeRepo) GetToken(user string) (devices.Token, error) {
-	return devices.Token("Bearer " + user), nil
+func (this *fakeRepo) ReadDevice(_ context.Context, id string, _ string, _ devicerepomodel.AuthAction) (models.Device, error, int) {
+	return models.Device{Id: id, DeviceTypeId: "dt"}, nil, http.StatusOK
 }
-func (this *fakeRepo) GetDevice(_ context.Context, _ devices.Token, id string) (models.Device, error) {
-	return models.Device{Id: id, DeviceTypeId: "dt"}, nil
-}
-func (this *fakeRepo) GetService(_ context.Context, _ devices.Token, _ models.Device, id string) (models.Service, error) {
-	return models.Service{Id: id}, nil
-}
-func (this *fakeRepo) GetProtocol(context.Context, devices.Token, string) (models.Protocol, error) {
-	return models.Protocol{}, nil
-}
-func (this *fakeRepo) GetDeviceType(context.Context, devices.Token, string) (models.DeviceType, error) {
+func (this *fakeRepo) ReadDeviceType(context.Context, string, string) (models.DeviceType, error, int) {
 	output := []models.Content{{ContentVariable: models.ContentVariable{Name: "value", FunctionId: measuring, AspectId: "air"}}}
 	return models.DeviceType{Id: "dt", Services: []models.Service{
 		{Id: "urn:infai:ses:service:event", Interaction: models.EVENT, Outputs: output},
 		{Id: "s-request", Interaction: models.REQUEST, Outputs: output},
 		{Id: "s-other", Interaction: models.EVENT},
-	}}, nil
+	}}, nil, http.StatusOK
 }
-func (this *fakeRepo) GetDeviceGroup(_ context.Context, _ devices.Token, id string) (models.DeviceGroup, error) {
+func (this *fakeRepo) ReadDeviceGroup(_ context.Context, id string, _ string, _ bool) (models.DeviceGroup, error, int) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
-	return this.groups[id], nil
+	return this.groups[id], nil, http.StatusOK
 }
 
-func aspects() *devices.AspectNodes {
-	return devices.NewAspectNodesWith(func(_ context.Context, _ devices.Token, id string) (models.AspectNode, error) {
-		return models.AspectNode{Id: id, RootId: id}, nil
-	})
+// ListAspectNodes knows every aspect node as a root of its own
+func (this *fakeRepo) ListAspectNodes(_ context.Context, options devicerepomodel.AspectListOptions) ([]models.AspectNode, int64, error, int) {
+	result := []models.AspectNode{}
+	for _, id := range options.Ids {
+		result = append(result, models.AspectNode{Id: id, RootId: id})
+	}
+	return result, int64(len(result)), nil, http.StatusOK
 }
 
 type fakeImports struct{}
 
-func (fakeImports) Instance(devices.Token, string) (models.Import, error) {
+func (fakeImports) Instance(string, string) (models.Import, error) {
 	return models.Import{Id: "imp", ImportTypeId: "type", KafkaTopic: "urn_infai_ses_import_imp"}, nil
 }
-func (fakeImports) Type(devices.Token, string) (models.ImportType, error) {
+func (fakeImports) Type(string, string) (models.ImportType, error) {
 	return models.ImportType{Id: "type", Name: "weather", Output: models.ImportContentVariable{SubContentVariables: []models.ImportContentVariable{{Name: "value", Type: "https://schema.org/Float"}}}}, nil
 }
 
@@ -105,7 +108,7 @@ func eventProcess() string {
 
 func TestDescribeExpandsGroupsDevicesAndImports(t *testing.T) {
 	repo := &fakeRepo{groups: map[string]models.DeviceGroup{"g": {Id: "g", DeviceIds: []string{"d1", "d2"}}}}
-	describer := events.NewDescriber(repo, aspects(), fakeImports{})
+	describer := events.NewDescriber(repo, time.Minute, tokens, fakeImports{})
 	process, _, err := bpmn.Parse(eventProcess())
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +164,7 @@ func TestDescribeExpandsGroupsDevicesAndImports(t *testing.T) {
 // answers: the list in aspect_ids, the deprecated aspect_id filled with its first entry
 type aspectImports struct{ fakeImports }
 
-func (aspectImports) Type(devices.Token, string) (models.ImportType, error) {
+func (aspectImports) Type(string, string) (models.ImportType, error) {
 	return models.ImportType{Id: "type", Name: "weather", Output: models.ImportContentVariable{Name: "output", Type: models.Structure,
 		SubContentVariables: []models.ImportContentVariable{{Name: "value", Type: models.Structure, SubContentVariables: []models.ImportContentVariable{
 			{Name: "temperature", Type: models.Float, FunctionId: measuring, AspectId: "air", AspectIds: []string{"air", "outside"}},
@@ -171,7 +174,7 @@ func (aspectImports) Type(devices.Token, string) (models.ImportType, error) {
 // The unmarshalling finds the value of an import by function and aspects; a variable of an
 // import type that serves several aspects keeps all of them in the description (EVT-02).
 func TestImportDescriptionKeepsAllAspectsOfAVariable(t *testing.T) {
-	describer := events.NewDescriber(&fakeRepo{}, aspects(), aspectImports{})
+	describer := events.NewDescriber(&fakeRepo{}, time.Minute, tokens, aspectImports{})
 	process, _, err := bpmn.Parse(eventProcess())
 	if err != nil {
 		t.Fatal(err)
@@ -285,7 +288,7 @@ func newEnv(t *testing.T) *env {
 	repo := &fakeRepo{groups: map[string]models.DeviceGroup{"g": {Id: "g", DeviceIds: []string{"d1"}}}}
 	series := &fakeSeries{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv, err := server.New(ctx, config, logger, server.Dependencies{DeviceRepository: repo, AspectNodes: aspects(),
+	srv, err := server.New(ctx, config, logger, server.Dependencies{DeviceRepository: repo,
 		EventSeries: series, EventUnmarshaller: fakeUnmarshaller{}, UserToken: auth.UnsignedTokens})
 	if err != nil {
 		t.Fatal(err)

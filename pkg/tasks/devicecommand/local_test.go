@@ -35,7 +35,9 @@ import (
 func newLocalEnv(t *testing.T) (*env, *mqtt.Memory) {
 	e := newEnv(t, Parallel)
 	broker := mqtt.NewMemory()
-	e.dc = New(Config{GroupScheduler: Parallel, LocalCommandPrefix: "engine-"}, e.s, newRepo(), e.aspects, fakeMarshaller{}, fakeTimescale{}, NewLocalTransport(broker, "engine-"), e.metrics, e.logger)
+	repo := newRepo()
+	repo.aspects = e.aspects
+	e.dc = New(Config{GroupScheduler: Parallel, LocalCommandPrefix: "engine-"}, e.s, repo, tokens, fakeMarshaller{}, fakeTimescale{}, NewLocalTransport(broker, "engine-"), e.metrics, e.logger)
 	e.dc.SetCompleter(e.e)
 	e.e.RegisterTaskType(TaskType, e.dc)
 	_ = broker.Subscribe(LocalResponseTopic, 2, func(topic string, payload []byte) error { return e.dc.HandleLocalResponse(ctx, topic, payload) })
@@ -100,7 +102,8 @@ func TestLocalCommandWithoutLocalIdFails(t *testing.T) {
 	device := repo.devices["d1"]
 	device.LocalId = ""
 	repo.devices["d1"] = device
-	e.dc.repo = repo
+	repo.aspects = e.aspects
+	e.dc.iot = repo
 	d := e.deploy(process(Pessimistic, payload(measuring, map[string]any{"device_id": "d1", "service_id": "s-get", "retries": 0}), ""), nil)
 	inst := e.start(d)
 	if sent, _ := commands(t, broker); len(sent) != 0 {

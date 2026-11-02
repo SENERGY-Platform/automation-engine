@@ -80,7 +80,7 @@ func newSwitchableFogEnv(t *testing.T) (*env, *atomic.Bool) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	deps.SyncBroker, deps.HubOwners = cloudBroker, client.TestHubOwners{hub: "alice"}
+	deps.SyncBroker, deps.Hubs = cloudBroker, client.TestHubOwners(map[string]string{hub: "alice"})
 	cloud, err := server.New(ctx, config, logger, deps)
 	if err != nil {
 		t.Fatal(err)

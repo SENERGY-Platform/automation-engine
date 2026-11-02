@@ -29,6 +29,7 @@ import (
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
@@ -122,7 +123,7 @@ func deployProcess(t *testing.T, inputs map[string]any, networks []model.Network
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
 	t.Cleanup(deviceRepository.Close)
-	rt := NewRuntime(s, Settings{DeviceRepositoryUrl: deviceRepository.URL}, func(user string) (string, error) { return "Bearer token-of-" + user, nil }, logger)
+	rt := NewRuntime(s, Settings{DeviceRepository: devicerepository.NewClient(deviceRepository.URL, devicerepository.Options{})}, func(user string) (string, error) { return "Bearer token-of-" + user, nil }, logger)
 	processes := &fakeProcesses{networks: networks}
 	rt.AddProcessModules(processes, referencingProcesses{})
 	modules, outputs, err := rt.types[TypeProcessDeployment].handler.Do(context.Background(), Task{Id: "task1", InstanceId: instance, RootInstanceId: instance,

@@ -20,6 +20,7 @@ import (
 	"context"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
@@ -42,7 +43,7 @@ func TestDescriptionFoldsTheDeprecatedAspectIntoTheAspectList(t *testing.T) {
 		{"does not repeat a deprecated aspect the list already contains", `senergy:aspect="aid1" senergy:aspects="aid1,aid2"`, []string{"aid1", "aid2"}},
 		{"returns nothing when no aspect is set", ``, nil},
 	}
-	describer := events.NewDescriber(&fakeRepo{}, aspects(), fakeImports{})
+	describer := events.NewDescriber(&fakeRepo{}, time.Minute, tokens, fakeImports{})
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			process, _, err := bpmn.Parse(b.Process(b.Start("start"),

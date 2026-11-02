@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package devices
+package commons
 
 import (
 	"net/url"

@@ -33,6 +33,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/namespaces"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/invalidator"
 	"github.com/SENERGY-Platform/service-commons/pkg/kafka"
 )
@@ -67,10 +68,10 @@ func newUnmarshaller(config configuration.Config) (events.Unmarshaller, error) {
 	if config.Mode != "fog" {
 		token = auth.ClientCredentials(config.AuthEndpoint, config.AuthClientId, config.AuthClientSecret.Value())
 	}
-	repo, err := events.NewCachedDeviceRepo(config.DeviceRepositoryUrl, token, duration)
-	if err != nil {
-		return nil, err
-	}
+	// its own client: the token is part of the client
+	client := devicerepositoryclient.NewClient(config.DeviceRepositoryUrl, devicerepositoryclient.Options{Timeout: deviceRepositoryTimeout, OptionalAuthTokenForApiGatewayRequest: token})
+	devicerepositoryclient.InvalidateOnSignals(client, nil)
+	repo := events.NewCachedDeviceRepo(client, duration)
 	return events.NewMarshaller(repo)
 }
 

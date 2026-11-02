@@ -77,7 +77,7 @@ Feature branches, each forked from the default branch. Since 2026-10-22 all of t
 
 ### device-selection, device-repository, marshaller
 
-- [ ] **Task:** The Go clients take no context, so no trace context is passed on. For device-selection this concerns its own client, for device-repository the access in `pkg/devices` (formerly from `external-task-worker/lib`, now in this repository and extensible with a context), for marshaller the client from `marshaller/lib` (tracing, after M3).
+- [ ] **Task:** The Go clients take no context, so no trace context is passed on. For device-selection this concerns its own client, for marshaller the client from `marshaller/lib` (tracing, after M3). device-repository is done since 2026-11-02 (client v3.7.0, see PLAN.md), except the ontology reads of the marshaller library.
 
 ### timescale-wrapper, timescale-rule-manager, timescale-tableworker
 
@@ -95,7 +95,7 @@ Feature branches, each forked from the default branch. Since 2026-10-22 all of t
 
 ### external-task-worker, event-worker (packages)
 
-- [x] Since 2026-10-12, the engine imports neither from external-task-worker nor from event-worker. The parts used are in `pkg/devices`, `pkg/tasks/devicecommand` and `pkg/events/unmarshal.go`.
+- [x] Since 2026-10-12, the engine imports neither from external-task-worker nor from event-worker. The parts used are in `pkg/commons`, `pkg/tasks/devicecommand` and `pkg/events/unmarshal.go`.
 - [ ] **Task:** device-command and live-data-worker still import from `external-task-worker/lib`. The repository stays for them until they are switched over; the engine is no longer affected.
 - [ ] **Note:** The formats of the command payload and the protocol message are now defined twice, in `external-task-worker/lib/messages` and in `pkg/tasks/devicecommand/messages.go`. If platform-connector changes them, both sides have to follow.
 

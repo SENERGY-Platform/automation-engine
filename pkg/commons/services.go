@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-// Package devices holds what device commands and device events share about services.
-package devices
+// Package commons holds what several packages share about devices, services and aspects.
+package commons
 
 import (
 	marshallermodel "github.com/SENERGY-Platform/marshaller/lib/marshaller/model"

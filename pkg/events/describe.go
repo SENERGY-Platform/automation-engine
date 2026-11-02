@@ -22,24 +22,30 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
 	"github.com/google/uuid"
 )
 
 // Imports reads import instances and types with the token of the deployment owner.
 type Imports interface {
-	Instance(token devices.Token, id string) (models.Import, error)
-	Type(token devices.Token, id string) (models.ImportType, error)
+	Instance(token string, id string) (models.Import, error)
+	Type(token string, id string) (models.ImportType, error)
 }
 
 type httpImports struct {
@@ -52,22 +58,47 @@ func NewImports(importDeployUrl string, importRepositoryUrl string) Imports {
 	return &httpImports{deployUrl: importDeployUrl, repositoryUrl: importRepositoryUrl}
 }
 
-func (this *httpImports) Instance(token devices.Token, id string) (result models.Import, err error) {
-	err = token.GetJSON(this.deployUrl+"/instances/"+url.PathEscape(id), &result)
+func (this *httpImports) Instance(token string, id string) (result models.Import, err error) {
+	err = getJSON(token, this.deployUrl+"/instances/"+url.PathEscape(id), &result)
 	return result, err
 }
 
-func (this *httpImports) Type(token devices.Token, id string) (result models.ImportType, err error) {
-	err = token.GetJSON(this.repositoryUrl+"/import-types/"+url.PathEscape(id), &result)
+func (this *httpImports) Type(token string, id string) (result models.ImportType, err error) {
+	err = getJSON(token, this.repositoryUrl+"/import-types/"+url.PathEscape(id), &result)
 	return result, err
+}
+
+var importsClient = &http.Client{Timeout: 10 * time.Second}
+
+// getJSON reads a resource with the token; an answer other than 2xx is an error with status and
+// body
+func getJSON(token string, resourceUrl string, result any) error {
+	req, err := http.NewRequest(http.MethodGet, resourceUrl, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", token)
+	resp, err := importsClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("GET %v: %v %v", req.URL.Path, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return json.NewDecoder(resp.Body).Decode(result)
 }
 
 // Describer derives the event descriptions of a deployment version (DEP-07), following
 // event-deployment v0.2.0: a device group becomes device × matching service, a device without
 // service all its matching services, an import one description with an artificial service.
 type Describer struct {
-	repo    devices.Repository
-	aspects *devices.AspectNodes
+	// read through devicerepository.WithCache with cacheTimeout
+	iot          devicerepository.Interface
+	cacheTimeout time.Duration
+	// tokens of the owners, e.g. by token exchange
+	tokens  auth.UserTokenSource
 	imports Imports
 	// descriptions for a gateway read the topics of its broker (FOG-06)
 	local bool
@@ -81,20 +112,25 @@ func (this *Describer) Local() *Describer {
 	return &result
 }
 
-func NewDescriber(repo devices.Repository, aspects *devices.AspectNodes, imports Imports) *Describer {
-	return &Describer{repo: repo, aspects: aspects, imports: imports}
+// NewDescriber reads devices, device types, device groups and aspect nodes through iot, cached
+// per user for cacheTimeout, with the tokens of the owners.
+func NewDescriber(iot devicerepository.Interface, cacheTimeout time.Duration, tokens auth.UserTokenSource, imports Imports) *Describer {
+	return &Describer{iot: iot, cacheTimeout: cacheTimeout, tokens: tokens, imports: imports}
 }
 
 // Describe returns the descriptions and the device groups they depend on.
 func (this *Describer) Describe(ctx context.Context, deployment model.Deployment, version int, process *bpmn.Process, selections map[string]model.Selection) (result []model.EventDescription, groups []string, err error) {
-	var token devices.Token
+	var token string
 	for _, element := range process.Ordered() {
 		selection, ok := selections[element.Id]
 		if !element.IsDeviceEvent() || !ok {
 			continue
 		}
 		if token == "" {
-			if token, err = this.repo.GetToken(deployment.Owner); err != nil {
+			if this.tokens == nil {
+				return nil, nil, fmt.Errorf("no token source for the owner %v", deployment.Owner)
+			}
+			if token, err = this.tokens(deployment.Owner); err != nil {
 				return nil, nil, fmt.Errorf("unable to get a token of the owner: %w", err)
 			}
 		}
@@ -106,7 +142,7 @@ func (this *Describer) Describe(ctx context.Context, deployment model.Deployment
 		switch {
 		case selection.DeviceGroupId != "":
 			groups = append(groups, selection.DeviceGroupId)
-			group, err := this.repo.GetDeviceGroup(ctx, token, selection.DeviceGroupId)
+			group, err, _ := devicerepository.WithCache(this.iot, this.cacheTimeout).ReadDeviceGroup(ctx, selection.DeviceGroupId, token, false)
 			if err != nil {
 				return nil, nil, fmt.Errorf("device group %v: %w", selection.DeviceGroupId, err)
 			}
@@ -168,12 +204,13 @@ func baseDescription(deployment model.Deployment, version int, element *bpmn.Ele
 	return d, nil
 }
 
-func (this *Describer) deviceDescriptions(ctx context.Context, token devices.Token, base model.EventDescription, deviceId string, serviceId string) ([]model.EventDescription, error) {
-	device, err := this.repo.GetDevice(ctx, token, deviceId)
+func (this *Describer) deviceDescriptions(ctx context.Context, token string, base model.EventDescription, deviceId string, serviceId string) ([]model.EventDescription, error) {
+	cached := devicerepository.WithCache(this.iot, this.cacheTimeout)
+	device, err, _ := cached.ReadDevice(ctx, deviceId, token, devicerepomodel.READ)
 	if err != nil {
 		return nil, fmt.Errorf("device %v: %w", deviceId, err)
 	}
-	deviceType, err := this.repo.GetDeviceType(ctx, token, device.DeviceTypeId)
+	deviceType, err, _ := cached.ReadDeviceType(ctx, device.DeviceTypeId, token)
 	if err != nil {
 		return nil, fmt.Errorf("device type %v: %w", device.DeviceTypeId, err)
 	}
@@ -188,13 +225,13 @@ func (this *Describer) deviceDescriptions(ctx context.Context, token devices.Tok
 			return nil, model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: fmt.Sprintf("device %v has no service %v", deviceId, serviceId)}})
 		}
 	} else {
-		aspects, err := this.aspects.ResolveIds(ctx, token, base.AspectIds)
+		aspects, err, _ := commons.AspectNodesByIds(ctx, cached, base.AspectIds)
 		if err != nil {
 			return nil, err
 		}
 		for _, s := range deviceType.Services {
 			isEvent := s.Interaction == models.EVENT || s.Interaction == models.EVENT_AND_REQUEST
-			if isEvent && devices.ContentsMatch(s.Outputs, base.FunctionId, aspects) {
+			if isEvent && commons.ContentsMatch(s.Outputs, base.FunctionId, aspects) {
 				services = append(services, s)
 			}
 		}
@@ -205,7 +242,7 @@ func (this *Describer) deviceDescriptions(ctx context.Context, token devices.Tok
 		d.Id = uuid.NewString()
 		d.DeviceId = deviceId
 		d.ServiceId = s.Id
-		d.Topic = devices.ServiceIdToTopic(s.Id)
+		d.Topic = commons.ServiceIdToTopic(s.Id)
 		if this.local {
 			if device.LocalId == "" || s.LocalId == "" {
 				return nil, model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: fmt.Sprintf("device %v or its service %v has no local id", deviceId, s.Id)}})
@@ -223,7 +260,7 @@ func (this *Describer) deviceDescriptions(ctx context.Context, token devices.Tok
 	return result, nil
 }
 
-func (this *Describer) importDescription(ctx context.Context, token devices.Token, base model.EventDescription, selection model.Selection) ([]model.EventDescription, error) {
+func (this *Describer) importDescription(ctx context.Context, token string, base model.EventDescription, selection model.Selection) ([]model.EventDescription, error) {
 	if this.local {
 		return nil, model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: "import events are not available on gateways"}})
 	}

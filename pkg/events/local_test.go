@@ -29,12 +29,12 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
@@ -73,11 +73,11 @@ func TestDecodeLocalEventCleansAndCompletesLikePlatformConnector(t *testing.T) {
 // localRepo is the device-repository mirror of a gateway: devices and services with local ids
 type localRepo struct{ fakeRepo }
 
-func (this *localRepo) GetDevice(_ context.Context, _ devices.Token, id string) (models.Device, error) {
-	return models.Device{Id: id, LocalId: "local-" + id, DeviceTypeId: "dt"}, nil
+func (this *localRepo) ReadDevice(_ context.Context, id string, _ string, _ devicerepomodel.AuthAction) (models.Device, error, int) {
+	return models.Device{Id: id, LocalId: "local-" + id, DeviceTypeId: "dt"}, nil, http.StatusOK
 }
-func (this *localRepo) GetDeviceType(context.Context, devices.Token, string) (models.DeviceType, error) {
-	return models.DeviceType{Id: "dt", Services: []models.Service{localService()}}, nil
+func (this *localRepo) ReadDeviceType(context.Context, string, string) (models.DeviceType, error, int) {
+	return models.DeviceType{Id: "dt", Services: []models.Service{localService()}}, nil, http.StatusOK
 }
 
 // temperatureUnmarshaller reads the temperature of the decoded message
@@ -97,7 +97,7 @@ func newFogServer(t *testing.T) (*server.Server, *mqtt.Memory) {
 	config.Mode, config.MqttBroker = "fog", "memory"
 	broker := mqtt.NewMemory()
 	srv, err := server.New(ctx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), server.Dependencies{
-		DeviceRepository: &localRepo{}, AspectNodes: aspects(), EventUnmarshaller: temperatureUnmarshaller{}, Broker: broker,
+		DeviceRepository: &localRepo{}, EventUnmarshaller: temperatureUnmarshaller{}, Broker: broker,
 	})
 	if err != nil {
 		t.Fatal(err)

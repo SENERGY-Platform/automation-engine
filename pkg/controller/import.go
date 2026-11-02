@@ -51,10 +51,10 @@ func (this *Controller) ImportNetwork(ctx context.Context, token string, network
 	if doc.Format != model.GatewayExportFormat || doc.FormatVersion != model.GatewayExportVersion {
 		return result, model.BadRequest("unknown format %q version %v, expected %q version %v", doc.Format, doc.FormatVersion, model.GatewayExportFormat, model.GatewayExportVersion)
 	}
-	if this.hubOwners == nil {
+	if this.hubs == nil {
 		return result, model.BadRequest("an import needs device_repository_url, which names the owner of the network")
 	}
-	owner, err := this.hubOwners.HubOwner(ctx, token, networkId)
+	owner, err := this.hubOwner(ctx, token, networkId)
 	if errors.Is(err, model.ErrNotFound) {
 		return result, model.Unprocessable("hub %v is not known to device-repository", networkId)
 	}

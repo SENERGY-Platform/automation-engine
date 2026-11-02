@@ -30,6 +30,7 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
@@ -211,15 +212,16 @@ func TestMarshallerSelectsThePathByAllAspects(t *testing.T) {
 	}
 }
 
+// clientToken is the token of the engine's client; the client caches only reads whose token
+// names a user, as a jwt does
+var clientToken = auth.UnsignedToken("automation-engine", "admin")
+
 // repository runs handler as device-repository, so that the requests of the client are tested
 func repository(t *testing.T, handler http.HandlerFunc) *events.CachedDeviceRepo {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	repo, err := events.NewCachedDeviceRepo(server.URL, auth.Static("Bearer client"), time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo := events.NewCachedDeviceRepo(devicerepository.NewClient(server.URL, devicerepository.Options{OptionalAuthTokenForApiGatewayRequest: auth.Static(clientToken)}), time.Minute)
 	return repo
 }
 
@@ -257,10 +259,10 @@ func TestDeviceRepoAsksTheEndpointOfEachEntityWithTheClientToken(t *testing.T) {
 		t.Fatalf("concept of function: %v", id)
 	}
 	expected := []string{
-		"/aspect-nodes/urn:aspect:1 Bearer client",
-		"/characteristics/urn:characteristic:1 Bearer client",
-		"/concepts/urn:concept:1?sub-class=false Bearer client",
-		"/functions/urn:function:1 Bearer client",
+		"/aspect-nodes/urn:aspect:1 " + clientToken,
+		"/characteristics/urn:characteristic:1 " + clientToken,
+		"/concepts/urn:concept:1?sub-class=false " + clientToken,
+		"/functions/urn:function:1 " + clientToken,
 	}
 	if !reflect.DeepEqual(requests, expected) {
 		t.Errorf("%v", requests)
@@ -308,11 +310,8 @@ func TestDeviceRepoMarksOnlyServerErrorsAsUnavailable(t *testing.T) {
 	t.Run("unreachable", func(t *testing.T) {
 		server := httptest.NewServer(http.NotFoundHandler())
 		server.Close()
-		repo, err := events.NewCachedDeviceRepo(server.URL, auth.Static("Bearer client"), time.Minute)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err = repo.GetAspectNode("urn:aspect:1"); !errors.Is(err, events.ErrUnavailable) {
+		repo := events.NewCachedDeviceRepo(devicerepository.NewClient(server.URL, devicerepository.Options{OptionalAuthTokenForApiGatewayRequest: auth.Static(clientToken)}), time.Minute)
+		if _, err := repo.GetAspectNode("urn:aspect:1"); !errors.Is(err, events.ErrUnavailable) {
 			t.Errorf("%v", err)
 		}
 	})

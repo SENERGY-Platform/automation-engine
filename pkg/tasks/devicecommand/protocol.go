@@ -30,29 +30,45 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
 
 	marshallermodel "github.com/SENERGY-Platform/marshaller/lib/marshaller/model"
 	"github.com/SENERGY-Platform/marshaller/lib/marshaller/serialization"
 )
 
+// serviceOf finds the service in the device type
+func serviceOf(deviceType models.DeviceType, id string) (models.Service, bool) {
+	for _, service := range deviceType.Services {
+		if service.Id == id {
+			return service, true
+		}
+	}
+	return models.Service{}, false
+}
+
 // message creates the protocol message of a command, or an event request when the value is
 // read instead of requested (TASK-08)
-func (this *Type) message(ctx context.Context, command Command, info TaskInfo, token devices.Token) (*ProtocolMsg, *EventRequest, error) {
+func (this *Type) message(ctx context.Context, command Command, info TaskInfo, token string) (*ProtocolMsg, *EventRequest, error) {
 	trace := []Trace{{Timestamp: time.Now().UnixNano(), TimeUnit: "unix_nano", Location: "github.com/SENERGY-Platform/automation-engine device command start"}}
 	device, service, protocol := command.Device, command.Service, command.Protocol
+	cached := devicerepository.WithCache(this.iot, this.config.DeviceCacheTimeout)
 	if device == nil {
-		d, err := this.repo.GetDevice(ctx, token, command.DeviceId)
+		d, err, _ := cached.ReadDevice(ctx, command.DeviceId, token, devicerepomodel.READ)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to load device %v: %w", command.DeviceId, err)
 		}
 		device = &d
 	}
 	if service == nil {
-		s, err := this.repo.GetService(ctx, token, *device, command.ServiceId)
+		deviceType, err, _ := cached.ReadDeviceType(ctx, device.DeviceTypeId, token)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to load service %v: %w", command.ServiceId, err)
+			return nil, nil, fmt.Errorf("unable to load service %v: device type %v: %w", command.ServiceId, device.DeviceTypeId, err)
+		}
+		s, ok := serviceOf(deviceType, command.ServiceId)
+		if !ok {
+			return nil, nil, fmt.Errorf("unable to load service %v: not in device type %v", command.ServiceId, device.DeviceTypeId)
 		}
 		service = &s
 	}
@@ -61,7 +77,7 @@ func (this *Type) message(ctx context.Context, command Command, info TaskInfo, t
 		if protocolId == "" {
 			protocolId = service.ProtocolId
 		}
-		p, err := this.repo.GetProtocol(ctx, token, protocolId)
+		p, err, _ := cached.ReadProtocol(ctx, protocolId, token)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to load protocol %v: %w", protocolId, err)
 		}
@@ -157,7 +173,7 @@ func (this *Type) output(msg ProtocolMsg) (any, error) {
 }
 
 // lastValue reads the last event value of a service through timescale-wrapper (TASK-08)
-func (this *Type) lastValue(token devices.Token, event EventRequest) (any, error) {
+func (this *Type) lastValue(token string, event EventRequest) (any, error) {
 	if this.timescale == nil {
 		return nil, errors.New("reading event values needs a timescale-wrapper url")
 	}

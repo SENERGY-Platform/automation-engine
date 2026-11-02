@@ -18,16 +18,20 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/controller"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
-	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
+	"github.com/SENERGY-Platform/models/go/models"
 	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
 	permmodel "github.com/SENERGY-Platform/permissions-v2/pkg/model"
 	"github.com/google/uuid"
@@ -108,15 +112,22 @@ func TestDependencies(ctx context.Context) (server.Dependencies, error) {
 }
 
 // TestHubOwners stands in for device-repository as the source of the owners of networks, by
-// network id (FOG-11).
-type TestHubOwners map[string]string
+// network id (FOG-11): it answers ReadHub, any other method of the client is not expected.
+func TestHubOwners(owners map[string]string) devicerepository.Interface {
+	return testHubs{owners: owners}
+}
 
-func (this TestHubOwners) HubOwner(_ context.Context, _ string, networkId string) (string, error) {
-	owner, ok := this[networkId]
+type testHubs struct {
+	devicerepository.Interface
+	owners map[string]string
+}
+
+func (this testHubs) ReadHub(_ context.Context, id string, _ string, _ devicerepomodel.AuthAction) (models.Hub, error, int) {
+	owner, ok := this.owners[id]
 	if !ok {
-		return "", model.NotFound("GET /hubs/%v: 404 not found", networkId)
+		return models.Hub{}, fmt.Errorf("unexpected statuscode 404: hub %v", id), http.StatusNotFound
 	}
-	return owner, nil
+	return models.Hub{Id: id, OwnerId: owner}, nil, http.StatusOK
 }
 
 // TestToken creates an unsigned token for user with the given realm roles, e.g. "admin".

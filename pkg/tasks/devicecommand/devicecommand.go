@@ -29,9 +29,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	"github.com/google/uuid"
 )
 
@@ -56,6 +57,8 @@ type Config struct {
 	// on a gateway: the prefix of the command ids on its broker, which tells answers to this
 	// engine apart from those to device-command and the cloud (FOG-01)
 	LocalCommandPrefix string
+	// how long reads of device-repository are cached, per user (device_cache_timeout)
+	DeviceCacheTimeout time.Duration
 }
 
 // Completer delivers asynchronous answers to the engine.
@@ -71,10 +74,12 @@ type Metrics interface {
 }
 
 type Type struct {
-	config     Config
-	store      *store.Store
-	repo       devices.Repository
-	aspects    *devices.AspectNodes
+	config Config
+	store  *store.Store
+	// read through devicerepository.WithCache with DeviceCacheTimeout
+	iot devicerepository.Interface
+	// tokens of the owners, e.g. by token exchange
+	tokens     auth.UserTokenSource
 	marshaller Marshaller
 	// nil: values of event services cannot be read
 	timescale Timescale
@@ -86,14 +91,22 @@ type Type struct {
 	now       func() time.Time
 }
 
-func New(config Config, s *store.Store, repo devices.Repository, aspects *devices.AspectNodes, m Marshaller, ts Timescale, producer Producer, metrics Metrics, logger *slog.Logger) *Type {
+func New(config Config, s *store.Store, iot devicerepository.Interface, tokens auth.UserTokenSource, m Marshaller, ts Timescale, producer Producer, metrics Metrics, logger *slog.Logger) *Type {
 	if config.GroupScheduler == "" {
 		config.GroupScheduler = Sequential
 	}
 	if config.TimescaleTimeout == 0 {
 		config.TimescaleTimeout = 10 * time.Second
 	}
-	return &Type{config: config, store: s, repo: repo, aspects: aspects, marshaller: m, timescale: ts, producer: producer, metrics: metrics, logger: logger, workerId: uuid.NewString(), now: time.Now}
+	return &Type{config: config, store: s, iot: iot, tokens: tokens, marshaller: m, timescale: ts, producer: producer, metrics: metrics, logger: logger, workerId: uuid.NewString(), now: time.Now}
+}
+
+// token is the token of the user, from the token source of the owners
+func (this *Type) token(user string) (string, error) {
+	if this.tokens == nil {
+		return "", fmt.Errorf("no token source for user %v", user)
+	}
+	return this.tokens(user)
 }
 
 // SetCompleter connects the type with the engine, which is created after it. The type takes
@@ -126,7 +139,7 @@ func (this *Type) Defaults(input map[string]any) (*int, *time.Duration) {
 }
 
 func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskResult, error) {
-	token, err := this.repo.GetToken(task.Owner)
+	token, err := this.token(task.Owner)
 	if err != nil {
 		return engine.TaskResult{}, fmt.Errorf("unable to get a token of the owner: %w", err)
 	}
@@ -182,7 +195,7 @@ func (this *Type) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 // sub-task has a result, or one at a time, that the others have used up their tries. Without
 // resend, parallel sub-tasks still in flight are not sent again. retries and timeout are those
 // of the task; one at a time they apply to each try.
-func (this *Type) advance(ctx context.Context, jobId string, version int64, token devices.Token, resend bool, retries int, timeout time.Duration) (done bool, out map[string]any, err error) {
+func (this *Type) advance(ctx context.Context, jobId string, version int64, token string, resend bool, retries int, timeout time.Duration) (done bool, out map[string]any, err error) {
 	for {
 		var subtasks []store.Subtask
 		err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
@@ -288,7 +301,7 @@ type readValue struct {
 }
 
 // send sends the command of a sub-task, or reads the last value for an event service
-func (this *Type) send(ctx context.Context, token devices.Token, command Command, info TaskInfo) (*readValue, error) {
+func (this *Type) send(ctx context.Context, token string, command Command, info TaskInfo) (*readValue, error) {
 	msg, event, err := this.message(ctx, command, info, token)
 	if err != nil {
 		return nil, err
@@ -400,7 +413,7 @@ func (this *Type) HandleResponse(ctx context.Context, raw []byte) error {
 	if err != nil {
 		return err
 	}
-	token, err := this.repo.GetToken(msg.TaskInfo.TenantId)
+	token, err := this.token(msg.TaskInfo.TenantId)
 	if err != nil {
 		return err
 	}

@@ -18,12 +18,13 @@ package events_test
 
 import (
 	"context"
+	"net/http"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/models/go/models"
@@ -65,7 +66,7 @@ func TestDescriptionCarriesTheAspectsOfTheEvent(t *testing.T) {
 		{"carries both spellings when the event names both", `senergy:aspect="aid1" senergy:aspects="aid2"`, []string{"aid2", "aid1"}},
 		{"leaves the aspects unset when the event names none", ``, nil},
 	}
-	describer := events.NewDescriber(&fakeRepo{}, aspects(), fakeImports{})
+	describer := events.NewDescriber(&fakeRepo{}, time.Minute, tokens, fakeImports{})
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			result := describe(t, describer, eventWith(c.attributes), model.Selection{DeviceId: "d1", ServiceId: "s-request"})
@@ -82,7 +83,7 @@ func TestDescriptionCarriesTheAspectsOfTheEvent(t *testing.T) {
 // aspectRepo offers a device type with one event service per combination of aspects
 type aspectRepo struct{ fakeRepo }
 
-func (*aspectRepo) GetDeviceType(context.Context, devices.Token, string) (models.DeviceType, error) {
+func (*aspectRepo) ReadDeviceType(context.Context, string, string) (models.DeviceType, error, int) {
 	service := func(id string, aspectIds ...string) models.Service {
 		return models.Service{Id: id, Interaction: models.EVENT, Outputs: []models.Content{{ContentVariable: models.ContentVariable{
 			Name: "value", FunctionId: measuring, AspectIds: aspectIds}}}}
@@ -91,13 +92,13 @@ func (*aspectRepo) GetDeviceType(context.Context, devices.Token, string) (models
 		service("s-air", "air"),
 		service("s-air-inside", "air", "inside"),
 		service("s-inside", "inside"),
-	}}, nil
+	}}, nil, http.StatusOK
 }
 
 // A device selected without service is expanded to the services that serve the function and
 // every aspect of the event (event-deployment selectableCriteria).
 func TestDeviceWithoutServiceIsExpandedToServicesWithAllAspects(t *testing.T) {
-	describer := events.NewDescriber(&aspectRepo{}, aspects(), fakeImports{})
+	describer := events.NewDescriber(&aspectRepo{}, time.Minute, tokens, fakeImports{})
 	cases := map[string]struct {
 		attributes string
 		expected   []string

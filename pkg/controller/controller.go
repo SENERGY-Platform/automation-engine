@@ -33,6 +33,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/processio"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 )
 
@@ -109,8 +110,9 @@ type Controller struct {
 	userToken auth.UserTokenSource
 	// nil without synchronisation with gateways (DEP-09)
 	networks Networks
-	// owners of networks and the token to read them without a caller (FOG-11)
-	hubOwners  HubOwners
+	// device-repository, which names the owners of networks, and the token to read them without
+	// a caller (FOG-11)
+	hubs       devicerepository.Interface
 	adminToken auth.TokenSource
 	// usable flags of release lists, computed in the background past the request (SMS-08)
 	usable usableFlags

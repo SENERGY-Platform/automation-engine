@@ -24,11 +24,13 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
 
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
@@ -46,38 +48,49 @@ const controlling = "urn:infai:ses:controlling-function:set-on"
 
 // --- fakes ---
 
+// tokens of the owners as the token exchange would give them
+func tokens(user string) (string, error) {
+	return "Bearer " + user, nil
+}
+
+// aspectNodes resolves aspect node ids for the fake device-repository
+type aspectNodes func(id string) (models.AspectNode, error)
+
+// fakeRepo answers the reads of device commands; any other method of the client is not expected
 type fakeRepo struct {
+	devicerepository.Interface
 	devices     map[string]models.Device
 	deviceTypes map[string]models.DeviceType
 	groups      map[string]models.DeviceGroup
+	aspects     aspectNodes
 }
 
-func (this *fakeRepo) GetToken(user string) (devices.Token, error) {
-	return devices.Token("Bearer " + user), nil
-}
-func (this *fakeRepo) GetDevice(_ context.Context, _ devices.Token, id string) (models.Device, error) {
+func (this *fakeRepo) ReadDevice(_ context.Context, id string, _ string, _ devicerepomodel.AuthAction) (models.Device, error, int) {
 	d, ok := this.devices[id]
 	if !ok {
-		return d, errors.New("device not found")
+		return d, errors.New("device not found"), http.StatusNotFound
 	}
-	return d, nil
+	return d, nil, http.StatusOK
 }
-func (this *fakeRepo) GetService(_ context.Context, _ devices.Token, device models.Device, id string) (models.Service, error) {
-	for _, s := range this.deviceTypes[device.DeviceTypeId].Services {
-		if s.Id == id {
-			return s, nil
+func (this *fakeRepo) ReadProtocol(_ context.Context, id string, _ string) (models.Protocol, error, int) {
+	return models.Protocol{Id: id, Handler: "connector", ProtocolSegments: []models.ProtocolSegment{{Id: "seg", Name: "data"}}}, nil, http.StatusOK
+}
+func (this *fakeRepo) ReadDeviceType(_ context.Context, id string, _ string) (models.DeviceType, error, int) {
+	return this.deviceTypes[id], nil, http.StatusOK
+}
+func (this *fakeRepo) ReadDeviceGroup(_ context.Context, id string, _ string, _ bool) (models.DeviceGroup, error, int) {
+	return this.groups[id], nil, http.StatusOK
+}
+
+// ListAspectNodes leaves unknown ids out, as device-repository does
+func (this *fakeRepo) ListAspectNodes(_ context.Context, options devicerepomodel.AspectListOptions) ([]models.AspectNode, int64, error, int) {
+	result := []models.AspectNode{}
+	for _, id := range options.Ids {
+		if node, err := this.aspects(id); err == nil {
+			result = append(result, node)
 		}
 	}
-	return models.Service{}, errors.New("service not found")
-}
-func (this *fakeRepo) GetProtocol(_ context.Context, _ devices.Token, id string) (models.Protocol, error) {
-	return models.Protocol{Id: id, Handler: "connector", ProtocolSegments: []models.ProtocolSegment{{Id: "seg", Name: "data"}}}, nil
-}
-func (this *fakeRepo) GetDeviceType(_ context.Context, _ devices.Token, id string) (models.DeviceType, error) {
-	return this.deviceTypes[id], nil
-}
-func (this *fakeRepo) GetDeviceGroup(_ context.Context, _ devices.Token, id string) (models.DeviceGroup, error) {
-	return this.groups[id], nil
+	return result, int64(len(result)), nil, http.StatusOK
 }
 
 func service(id string, interaction models.Interaction, functionId string) models.Service {
@@ -195,7 +208,7 @@ type env struct {
 	clock    time.Time
 	mux      sync.Mutex
 	logger   *slog.Logger
-	aspects  *devices.AspectNodes
+	aspects  aspectNodes
 }
 
 func newEnv(t *testing.T, scheduler string) *env {
@@ -206,10 +219,12 @@ func newEnv(t *testing.T, scheduler string) *env {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	this.e = engine.New(s, config, namespaces{}, logger)
 	this.e.SetClock(this.now)
-	aspects := devices.NewAspectNodesWith(func(_ context.Context, _ devices.Token, id string) (models.AspectNode, error) {
+	aspects := aspectNodes(func(id string) (models.AspectNode, error) {
 		return models.AspectNode{Id: id, RootId: id}, nil
 	})
-	this.dc = New(Config{GroupScheduler: scheduler, ResponseTo: "response", ErrorTo: "errors"}, s, newRepo(), aspects, fakeMarshaller{}, fakeTimescale{}, this.producer, this.metrics, logger)
+	repo := newRepo()
+	repo.aspects = aspects
+	this.dc = New(Config{GroupScheduler: scheduler, ResponseTo: "response", ErrorTo: "errors"}, s, repo, tokens, fakeMarshaller{}, fakeTimescale{}, this.producer, this.metrics, logger)
 	this.logger, this.aspects = logger, aspects
 	this.dc.SetCompleter(this.e)
 	this.e.RegisterTaskType(TaskType, this.dc)

@@ -134,7 +134,7 @@ func (this *Type) localMessage(ctx context.Context, subId string) (msg ProtocolM
 	if err = json.Unmarshal(subtask.TaskInfo, &info); err != nil {
 		return msg, false, err
 	}
-	token, err := this.repo.GetToken(info.TenantId)
+	token, err := this.token(info.TenantId)
 	if err != nil {
 		return msg, false, err
 	}

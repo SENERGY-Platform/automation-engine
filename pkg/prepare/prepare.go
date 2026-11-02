@@ -44,8 +44,9 @@ type Config struct {
 	GroupsForEvents  bool
 	ImportsForEvents bool
 	ModifiedDevices  bool
-	// device-repository, for the devices of a hub when preparing for a gateway
-	DeviceRepositoryUrl string
+	// device-repository, for the devices of a hub when preparing for a gateway; nil if not
+	// configured
+	DeviceRepository devicerepository.Interface
 }
 
 type Preparer struct {
@@ -146,10 +147,10 @@ func (this *Preparer) PrepareForHub(ctx context.Context, token string, process *
 	if this.client == nil {
 		return this.prepare(token, process, nil)
 	}
-	if this.config.DeviceRepositoryUrl == "" {
+	if this.config.DeviceRepository == nil {
 		return nil, model.Unavailable("device-repository is needed to offer the devices of a gateway")
 	}
-	hub, err, _ := devicerepository.NewClient(this.config.DeviceRepositoryUrl, nil).ReadHub(ctx, hubId, token, devicerepomodel.READ)
+	hub, err, _ := this.config.DeviceRepository.ReadHub(ctx, hubId, token, devicerepomodel.READ)
 	if err != nil {
 		return nil, model.Unavailable("device-repository: hub %v: %v", hubId, err)
 	}
@@ -165,10 +166,10 @@ func (this *Preparer) PrepareForHub(ctx context.Context, token string, process *
 // cannot read are missing.
 func (this *Preparer) HubNames(ctx context.Context, token string, ids []string) (map[string]string, error) {
 	result := map[string]string{}
-	if len(ids) == 0 || this.config.DeviceRepositoryUrl == "" {
+	if len(ids) == 0 || this.config.DeviceRepository == nil {
 		return result, nil
 	}
-	hubs, err, _ := devicerepository.NewClient(this.config.DeviceRepositoryUrl, nil).ListHubs(ctx, token, devicerepomodel.HubListOptions{Ids: ids})
+	hubs, err, _ := this.config.DeviceRepository.ListHubs(ctx, token, devicerepomodel.HubListOptions{Ids: ids})
 	if err != nil {
 		return nil, err
 	}

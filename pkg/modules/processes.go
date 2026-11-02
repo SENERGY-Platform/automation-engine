@@ -26,7 +26,7 @@ import (
 	"strings"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/models/go/models"
@@ -298,7 +298,7 @@ func (this *processModules) gatewayFor(ctx context.Context, token string, select
 		}
 		carries := true
 		for _, id := range selected {
-			pure, _ := devices.SplitModifier(id)
+			pure, _ := commons.SplitModifier(id)
 			if !slices.Contains(hub.DeviceIds, pure) && !slices.Contains(hub.DeviceIds, id) {
 				carries = false
 				break

@@ -34,8 +34,8 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/client"
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
@@ -104,7 +104,7 @@ type fixture struct {
 }
 
 func (this fixture) serviceTopic() string {
-	return devices.ServiceIdToTopic(this.service)
+	return commons.ServiceIdToTopic(this.service)
 }
 
 // bus is how messages reach the event role

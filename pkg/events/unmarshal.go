@@ -21,19 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
 	"github.com/SENERGY-Platform/converter/lib/converter"
 	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
-	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	marshallerconfig "github.com/SENERGY-Platform/marshaller/lib/config"
-	marshallermodel "github.com/SENERGY-Platform/marshaller/lib/marshaller/model"
 	v2 "github.com/SENERGY-Platform/marshaller/lib/marshaller/v2"
 	"github.com/SENERGY-Platform/models/go/models"
-	"github.com/SENERGY-Platform/service-commons/pkg/cache"
-	"github.com/SENERGY-Platform/service-commons/pkg/signal"
 )
 
 // MessageDesc is what the unmarshalling needs of an event description and the message it reads.
@@ -113,67 +108,44 @@ func (this *Marshaller) path(desc MessageDesc) (string, error) {
 // the message is read again instead of notifying the owner, as the event-worker did.
 var ErrUnavailable = errors.New("device-repository unavailable")
 
-// CachedDeviceRepo reads characteristics, concepts, functions and aspect nodes with a client
-// token and caches them; cache invalidation signals of service-commons clear the entries.
-// The marshaller calls it through an interface without a context, so these reads carry no trace.
+// CachedDeviceRepo gives the marshaller library characteristics, concepts, functions and aspect
+// nodes, read through devicerepository.WithCache with ttl. The library calls it without a
+// context, so these reads carry no trace.
 type CachedDeviceRepo struct {
-	client   devicerepository.Interface
-	cache    *cache.Cache
-	duration time.Duration
+	// subscribed to the cache invalidation signals by whoever created it
+	client devicerepository.Interface
+	ttl    time.Duration
 }
 
-func NewCachedDeviceRepo(url string, token auth.TokenSource, duration time.Duration) (*CachedDeviceRepo, error) {
-	c, err := cache.New(cache.Config{
-		CacheInvalidationSignalHooks: map[cache.Signal]cache.ToKey{
-			signal.Known.CacheInvalidationAll:            nil,
-			signal.Known.ConceptCacheInvalidation:        func(value string) string { return "concept." + value },
-			signal.Known.CharacteristicCacheInvalidation: func(value string) string { return "characteristics." + value },
-			signal.Known.FunctionCacheInvalidation:       func(value string) string { return "functions." + value },
-			// an aspect corresponds to several aspect nodes
-			signal.Known.AspectCacheInvalidation: nil,
-		},
-	})
-	if err != nil {
-		return nil, err
+// NewCachedDeviceRepo reads through client, which brings the token if one is needed.
+func NewCachedDeviceRepo(client devicerepository.Interface, ttl time.Duration) *CachedDeviceRepo {
+	return &CachedDeviceRepo{client: client, ttl: ttl}
+}
+
+// unavailable marks a failure of device-repository itself; the client reports transport and
+// decoding failures as internal error as well
+func unavailable(err error, code int) error {
+	if err != nil && code >= 500 {
+		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
-	return &CachedDeviceRepo{client: devicerepository.NewClient(url, token), cache: c, duration: duration}, nil
-}
-
-func cached[T any](this *CachedDeviceRepo, key string, get func() (T, error, int), valid func(T) bool) (T, error) {
-	return cache.Use(this.cache, key, func() (T, error) {
-		result, err, code := get()
-		// the client reports transport and decoding failures as internal error as well
-		if err != nil && code >= 500 {
-			err = fmt.Errorf("%w: %v", ErrUnavailable, err)
-		}
-		return result, err
-	}, func(value T) error {
-		if !valid(value) {
-			return errors.New("invalid " + key + " returned from cache")
-		}
-		return nil
-	}, this.duration)
+	return err
 }
 
 func (this *CachedDeviceRepo) GetCharacteristic(id string) (models.Characteristic, error) {
-	return cached(this, "characteristics."+id, func() (models.Characteristic, error, int) {
-		return this.client.GetCharacteristic(context.Background(), id)
-	},
-		func(c models.Characteristic) bool { return c.Id != "" })
+	result, err, code := devicerepository.WithCache(this.client, this.ttl).GetCharacteristic(context.Background(), id)
+	return result, unavailable(err, code)
 }
 
 // GetConcept reads the concept with characteristic ids and conversions, which is what the
 // marshaller needs, not with the characteristics themselves
 func (this *CachedDeviceRepo) GetConcept(id string) (models.Concept, error) {
-	return cached(this, "concept."+id, func() (models.Concept, error, int) {
-		return this.client.GetConceptWithoutCharacteristics(context.Background(), id)
-	},
-		func(c models.Concept) bool { return c.Id != "" })
+	result, err, code := devicerepository.WithCache(this.client, this.ttl).GetConceptWithoutCharacteristics(context.Background(), id)
+	return result, unavailable(err, code)
 }
 
 func (this *CachedDeviceRepo) GetFunction(id string) (models.Function, error) {
-	return cached(this, "functions."+id, func() (models.Function, error, int) { return this.client.GetFunction(context.Background(), id) },
-		func(f models.Function) bool { return f.Id != "" })
+	result, err, code := devicerepository.WithCache(this.client, this.ttl).GetFunction(context.Background(), id)
+	return result, unavailable(err, code)
 }
 
 // GetConceptIdOfFunction is empty if the function cannot be read; the marshaller then reports
@@ -187,31 +159,16 @@ func (this *CachedDeviceRepo) GetConceptIdOfFunction(id string) string {
 }
 
 func (this *CachedDeviceRepo) GetAspectNode(id string) (models.AspectNode, error) {
-	return cached(this, "aspect-nodes."+id, func() (models.AspectNode, error, int) { return this.client.GetAspectNode(context.Background(), id) },
-		func(n models.AspectNode) bool { return n.Id != "" })
+	result, err, code := devicerepository.WithCache(this.client, this.ttl).GetAspectNode(context.Background(), id)
+	return result, unavailable(err, code)
 }
 
-// GetAspectNodes reads the aspect nodes of several ids in one request; every id has to resolve,
-// because criteria with an unknown aspect cannot be answered
+// GetAspectNodes reads the aspect nodes of several ids in one request, each id once; every id
+// has to resolve, because criteria with an unknown aspect cannot be answered
 func (this *CachedDeviceRepo) GetAspectNodes(ids []string) ([]models.AspectNode, error) {
 	ids = slices.Clone(ids)
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
-	if len(ids) == 0 {
-		return []models.AspectNode{}, nil
-	}
-	// a key of its own, a single node is cached under its id
-	return cached(this, "aspect-node-list."+strings.Join(ids, ","), func() ([]models.AspectNode, error, int) {
-		result, _, err, code := this.client.ListAspectNodes(context.Background(), devicerepomodel.AspectListOptions{Ids: ids})
-		if err == nil && len(result) != len(ids) {
-			missing := []string{}
-			for _, id := range ids {
-				if !marshallermodel.ContainsAspectNode(result, id) {
-					missing = append(missing, id)
-				}
-			}
-			err = fmt.Errorf("unknown aspect nodes: %v", strings.Join(missing, ", "))
-		}
-		return result, err, code
-	}, func(nodes []models.AspectNode) bool { return len(nodes) == len(ids) })
+	result, err, code := commons.AspectNodesByIds(context.Background(), devicerepository.WithCache(this.client, this.ttl), ids)
+	return result, unavailable(err, code)
 }

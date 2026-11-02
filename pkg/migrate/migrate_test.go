@@ -104,7 +104,7 @@ func newEnv(t *testing.T) *env {
 	srv, err := client.NewTestServer(ctx, func(_ *configuration.Config, d *server.Dependencies) {
 		// deployments to gateways need the synchronisation; no gateway answers here
 		d.SyncBroker = mqtt.NewMemory()
-		d.HubOwners = client.TestHubOwners{"hub-1": "alice"}
+		d.Hubs = client.TestHubOwners(map[string]string{"hub-1": "alice"})
 		deps = *d
 	})
 	if err != nil {

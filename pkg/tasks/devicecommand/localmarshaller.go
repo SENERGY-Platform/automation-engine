@@ -45,19 +45,16 @@ type localMarshaller struct {
 	aspects *events.CachedDeviceRepo
 }
 
-// NewLocalMarshaller marshals with the device-repository mirror at repositoryUrl; the concepts
+// NewLocalMarshaller marshals with the device-repository mirror behind repository; the concepts
 // of marshaller v1 are loaded on first use and refreshed at the interval.
-func NewLocalMarshaller(ctx context.Context, repositoryUrl string, cacheDuration time.Duration, refresh time.Duration, logger *slog.Logger) (Marshaller, error) {
+func NewLocalMarshaller(ctx context.Context, repository devicerepository.Interface, cacheDuration time.Duration, refresh time.Duration, logger *slog.Logger) (Marshaller, error) {
 	c, err := converter.New()
 	if err != nil {
 		return nil, err
 	}
 	// the mirror needs no token
-	repo, err := events.NewCachedDeviceRepo(repositoryUrl, nil, cacheDuration)
-	if err != nil {
-		return nil, err
-	}
-	concepts := &conceptRepo{client: devicerepository.NewClient(repositoryUrl, nil), refresh: refresh, logger: logger}
+	repo := events.NewCachedDeviceRepo(repository, cacheDuration)
+	concepts := &conceptRepo{client: repository, refresh: refresh, logger: logger}
 	return &localMarshaller{v1: v1.New(c, concepts, aspectsOnly{repo}), v2: v2.New(marshallerconfig.Config{}, c, repo), aspects: repo}, nil
 }
 

@@ -28,10 +28,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules/compat"
 	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
+	"github.com/SENERGY-Platform/models/go/models"
 	"github.com/google/uuid"
 )
 
@@ -387,7 +389,7 @@ func (this *analyticsHandler) selectionInputs(ctx context.Context, task Task, se
 		if selection.DeviceSelection.Path == nil {
 			return nil, errors.New("expect device selection to contain path info")
 		}
-		return []NodeInput{{FilterIds: selection.DeviceSelection.DeviceId, FilterType: deviceFilterType, TopicName: devices.ServiceIdToTopic(*selection.DeviceSelection.ServiceId),
+		return []NodeInput{{FilterIds: selection.DeviceSelection.DeviceId, FilterType: deviceFilterType, TopicName: commons.ServiceIdToTopic(*selection.DeviceSelection.ServiceId),
 			Values: []NodeValue{{Name: port, Path: settings.AnalyticsDevicePathPrefix + *selection.DeviceSelection.Path}}}}, nil
 	case selection.DeviceSelection != nil:
 		return this.serviceInputs(ctx, task, []string{selection.DeviceSelection.DeviceId}, "", nodeId, port)
@@ -449,7 +451,7 @@ func (this *analyticsHandler) serviceInputs(ctx context.Context, task Task, devi
 		}
 	}
 	servicesAndPaths := func(criteria []FilterCriteria) (serviceIds []string, toDevices map[string][]string, toPaths map[string][]string, err error) {
-		options, err := this.pathOptions(ctx, task.Owner, criteria, deviceTypeIds)
+		options, err := this.pathOptions(ctx, criteria, deviceTypeIds)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -498,7 +500,7 @@ func (this *analyticsHandler) serviceInputs(ctx context.Context, task Task, devi
 		for _, path := range paths {
 			values = append(values, NodeValue{Name: port, Path: this.runtime.settings.AnalyticsGroupPathPrefix + path})
 		}
-		result = append(result, NodeInput{FilterIds: ids, FilterType: deviceFilterType, TopicName: devices.ServiceIdToTopic(serviceId), Values: values})
+		result = append(result, NodeInput{FilterIds: ids, FilterType: deviceFilterType, TopicName: commons.ServiceIdToTopic(serviceId), Values: values})
 	}
 	return result, nil
 }
@@ -510,26 +512,24 @@ type pathOption struct {
 
 // pathOptions asks device-repository which services and paths of the device types fulfill the
 // criteria; an empty interaction means event, and the deprecated aspect id joins the list
-func (this *analyticsHandler) pathOptions(ctx context.Context, owner string, criteria []FilterCriteria, deviceTypeIds []string) (map[string][]pathOption, error) {
-	for i, c := range criteria {
+func (this *analyticsHandler) pathOptions(ctx context.Context, criteria []FilterCriteria, deviceTypeIds []string) (map[string][]pathOption, error) {
+	query := make([]devicerepomodel.FilterCriteria, 0, len(criteria))
+	for _, c := range criteria {
 		if c.Interaction == "" {
 			c.Interaction = "event"
 		}
 		if c.AspectId != "" && !slices.Contains(c.AspectIds, c.AspectId) {
 			c.AspectIds = append(append([]string{}, c.AspectIds...), c.AspectId)
 		}
-		criteria[i] = c
+		query = append(query, devicerepomodel.FilterCriteria{Interaction: models.Interaction(c.Interaction), FunctionId: c.FunctionId,
+			DeviceClassId: c.DeviceClassId, AspectId: c.AspectId, AspectIds: c.AspectIds})
 	}
-	var selectables []struct {
-		DeviceTypeId       string `json:"device_type_id"`
-		ServicePathOptions map[string][]struct {
-			ServiceId string `json:"service_id"`
-			Path      string `json:"path"`
-		} `json:"service_path_options"`
-	}
-	target := this.runtime.settings.DeviceRepositoryUrl + "/v2/query/device-type-selectables?" + url.Values{"services_must_match_all_criteria": {"true"}, "include_id_modified": {"true"}}.Encode()
-	if err := this.runtime.request(ctx, this.runtime.http, http.MethodPost, target, owner, false, criteria, &selectables); err != nil {
-		return nil, err
+	// the client sends with http.DefaultClient, which has no timeout
+	ctx, cancel := context.WithTimeout(ctx, this.runtime.http.Timeout)
+	defer cancel()
+	selectables, err, code := this.runtime.iot.GetDeviceTypeSelectablesV2(ctx, query, "", true, true)
+	if err != nil {
+		return nil, fmt.Errorf("POST /v2/query/device-type-selectables: %v %w", code, err)
 	}
 	result := map[string][]pathOption{}
 	for _, deviceTypeId := range deviceTypeIds {

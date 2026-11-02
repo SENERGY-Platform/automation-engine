@@ -21,12 +21,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 	"github.com/google/uuid"
 )
@@ -129,24 +132,35 @@ func (this *Controller) SetNetworks(networks Networks) {
 	this.networks = networks
 }
 
-// HubOwners reads the owner of a network from device-repository (FOG-11).
-type HubOwners interface {
-	HubOwner(ctx context.Context, token string, networkId string) (string, error)
+// SetHubs reads the owners of networks from the hubs of device-repository, to whom deployments
+// and instances of gateways belong (FOG-11); adminToken reads them for TakeOverNetworkOwners.
+func (this *Controller) SetHubs(hubs devicerepository.Interface, adminToken auth.TokenSource) {
+	this.hubs, this.adminToken = hubs, adminToken
 }
 
-// SetHubOwners names the owners of networks, to whom deployments and instances of gateways
-// belong (FOG-11); adminToken reads them for TakeOverNetworkOwners.
-func (this *Controller) SetHubOwners(owners HubOwners, adminToken auth.TokenSource) {
-	this.hubOwners, this.adminToken = owners, adminToken
+// hubOwner is owner_id of the hub, read uncached because a hub may change its owner; an unknown
+// hub is not found
+func (this *Controller) hubOwner(ctx context.Context, token string, id string) (string, error) {
+	hub, err, code := this.hubs.ReadHub(ctx, id, token, devicerepomodel.READ)
+	if code == http.StatusNotFound {
+		return "", model.NotFound("hub %v: %v", id, err)
+	}
+	if err != nil {
+		return "", fmt.Errorf("hub %v: %w", id, err)
+	}
+	if hub.OwnerId == "" {
+		return "", fmt.Errorf("hub %v has no owner", id)
+	}
+	return hub.OwnerId, nil
 }
 
 // networkOwner is the owner of deployments and instances of the network; a requested owner
 // other than that is rejected (FOG-11)
 func (this *Controller) networkOwner(ctx context.Context, token string, networkId string, requested string) (string, error) {
-	if this.hubOwners == nil {
+	if this.hubs == nil {
 		return "", model.BadRequest("deployments to gateways need device_repository_url, which names the owner of the network")
 	}
-	owner, err := this.hubOwners.HubOwner(ctx, token, networkId)
+	owner, err := this.hubOwner(ctx, token, networkId)
 	if err != nil {
 		return "", model.Unavailable("device-repository: owner of network %v: %v", networkId, err)
 	}
@@ -160,7 +174,7 @@ func (this *Controller) networkOwner(ctx context.Context, token string, networkI
 // of their network; the rights of the owner are registered by the permission sync. A network
 // whose owner cannot be read is left as it is and named in the error.
 func (this *Controller) TakeOverNetworkOwners(ctx context.Context) error {
-	if this.hubOwners == nil || this.adminToken == nil {
+	if this.hubs == nil || this.adminToken == nil {
 		return nil
 	}
 	var networks []string
@@ -177,7 +191,7 @@ func (this *Controller) TakeOverNetworkOwners(ctx context.Context) error {
 	}
 	var errs []error
 	for _, id := range networks {
-		owner, err := this.hubOwners.HubOwner(ctx, token, id)
+		owner, err := this.hubOwner(ctx, token, id)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("owner of network %v: %w", id, err))
 			continue

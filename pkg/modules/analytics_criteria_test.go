@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -39,12 +40,13 @@ import (
 
 const groupCaseInput = "373808f2-848a-4446-8062-abd973dc96d3"
 
-// selectablesLog records the criteria sent to device-repository as JSON and passes every
-// request on to the fake services of the worker tests
+// selectablesLog records the criteria sent to device-repository as JSON, with the query of each
+// request, and passes every request on to the fake services of the worker tests
 type selectablesLog struct {
 	next     http.Handler
 	mux      sync.Mutex
 	criteria [][]map[string]any
+	queries  []url.Values
 }
 
 func (this *selectablesLog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +56,7 @@ func (this *selectablesLog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal(body, &criteria)
 		this.mux.Lock()
 		this.criteria = append(this.criteria, criteria)
+		this.queries = append(this.queries, r.URL.Query())
 		this.mux.Unlock()
 		r.Body = io.NopCloser(bytes.NewReader(body))
 	}
@@ -152,6 +155,12 @@ func TestGroupSelectionSendsAspectListsToDeviceRepository(t *testing.T) {
 		actual, _ := json.Marshal(log.criteria)
 		wanted, _ := json.Marshal(expected)
 		t.Errorf("device-repository was asked\n%s\nnot\n%s", actual, wanted)
+	}
+	// services must match all criteria, and modified device types are offered as the worker did
+	for _, query := range log.queries {
+		if query.Get("services_must_match_all_criteria") != "true" || query.Get("include_id_modified") != "true" || query.Get("path-prefix") != "" {
+			t.Errorf("query %v", query)
+		}
 	}
 }
 

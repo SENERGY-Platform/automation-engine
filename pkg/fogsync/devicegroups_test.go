@@ -45,8 +45,11 @@ func TestADeviceThatJoinsAGroupGetsItsEventDescriptionOnTheGateway(t *testing.T)
 	}
 	repository := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mux.Lock()
+		defer mux.Unlock()
+		if aspectNodeList(w, r, answers) {
+			return
+		}
 		answer, ok := answers[r.URL.Path]
-		mux.Unlock()
 		if ok {
 			_ = json.NewEncoder(w).Encode(answer)
 			return

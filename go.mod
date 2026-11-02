@@ -5,7 +5,7 @@ go 1.27
 require (
 	github.com/SENERGY-Platform/converter v0.0.12
 	github.com/SENERGY-Platform/developer-notifications v0.0.6
-	github.com/SENERGY-Platform/device-repository/v3 v3.7.0
+	github.com/SENERGY-Platform/device-repository/v3 v3.8.0
 	github.com/SENERGY-Platform/device-selection/v2 v2.1.0
 	github.com/SENERGY-Platform/gin-middleware v0.14.3
 	github.com/SENERGY-Platform/go-env-loader v0.5.3
@@ -119,7 +119,6 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
-	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect

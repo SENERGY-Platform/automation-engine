@@ -24,9 +24,13 @@ import (
 	"sort"
 	"strconv"
 
+	"fmt"
+
 	"github.com/SENERGY-Platform/models/go/models"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 )
 
 type child struct {
@@ -36,13 +40,13 @@ type child struct {
 
 // subtasks expands a device group to device × matching service and a device without service
 // to its matching services; ids are <job>_<device index>_<service index> (TASK-06)
-func (this *Type) subtasks(ctx context.Context, token devices.Token, command Command, jobId string) ([]child, error) {
+func (this *Type) subtasks(ctx context.Context, token string, command Command, jobId string) ([]child, error) {
 	var result []child
 	switch {
 	case command.DeviceGroupId != "":
-		group, err := this.repo.GetDeviceGroup(ctx, token, command.DeviceGroupId)
+		group, err, _ := devicerepository.WithCache(this.iot, this.config.DeviceCacheTimeout).ReadDeviceGroup(ctx, command.DeviceGroupId, token, false)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unable to load device group %v: %w", command.DeviceGroupId, err)
 		}
 		for i, deviceId := range group.DeviceIds {
 			children, err := this.serviceChildren(ctx, token, command, jobId, i, deviceId)
@@ -62,25 +66,26 @@ func (this *Type) subtasks(ctx context.Context, token devices.Token, command Com
 	}
 	for i, c := range result {
 		if c.command.Device != nil {
-			c.command.Device.Id, _ = devices.SplitModifier(c.command.Device.Id)
-			c.command.Device.DeviceTypeId, _ = devices.SplitModifier(c.command.Device.DeviceTypeId)
+			c.command.Device.Id, _ = commons.SplitModifier(c.command.Device.Id)
+			c.command.Device.DeviceTypeId, _ = commons.SplitModifier(c.command.Device.DeviceTypeId)
 		}
 		if c.command.DeviceId != "" {
-			c.command.DeviceId, _ = devices.SplitModifier(c.command.DeviceId)
+			c.command.DeviceId, _ = commons.SplitModifier(c.command.DeviceId)
 		}
 		result[i] = c
 	}
 	return result, nil
 }
 
-func (this *Type) serviceChildren(ctx context.Context, token devices.Token, command Command, jobId string, deviceIndex int, deviceId string) ([]child, error) {
-	device, err := this.repo.GetDevice(ctx, token, deviceId)
+func (this *Type) serviceChildren(ctx context.Context, token string, command Command, jobId string, deviceIndex int, deviceId string) ([]child, error) {
+	cached := devicerepository.WithCache(this.iot, this.config.DeviceCacheTimeout)
+	device, err, _ := cached.ReadDevice(ctx, deviceId, token, devicerepomodel.READ)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to load device %v: %w", deviceId, err)
 	}
-	deviceType, err := this.repo.GetDeviceType(ctx, token, device.DeviceTypeId)
+	deviceType, err, _ := cached.ReadDeviceType(ctx, device.DeviceTypeId, token)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to load device type %v: %w", device.DeviceTypeId, err)
 	}
 	var result []child
 	for j, service := range this.filterServices(command, deviceType.Services) {
@@ -108,7 +113,7 @@ func (this *Type) filterServices(command Command, services []models.Service) []m
 			contents = service.Outputs
 		}
 		isEvent := isMeasuringFunctionId(command.Function.Id) && service.Interaction == models.EVENT
-		if devices.ContentsMatch(contents, command.Function.Id, aspects) && (this.timescale != nil || !isEvent) {
+		if commons.ContentsMatch(contents, command.Function.Id, aspects) && (this.timescale != nil || !isEvent) {
 			index[service.Id] = service
 		}
 	}

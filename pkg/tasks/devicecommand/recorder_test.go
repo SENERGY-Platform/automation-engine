@@ -17,11 +17,9 @@
 package devicecommand
 
 import (
-	"context"
 	"errors"
 	"sync"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
@@ -114,15 +112,16 @@ func (this *recordingMarshaller) v2Answers() []UnmarshallingV2Request {
 
 // use replaces the device command type of the environment, e.g. by one with other devices,
 // another marshaller or another group scheduler
-func (this *env) use(repo *fakeRepo, aspects *devices.AspectNodes, m Marshaller, scheduler string) {
-	this.dc = New(Config{GroupScheduler: scheduler, ResponseTo: "response", ErrorTo: "errors"}, this.s, repo, aspects, m, fakeTimescale{}, this.producer, this.metrics, this.logger)
+func (this *env) use(repo *fakeRepo, aspects aspectNodes, m Marshaller, scheduler string) {
+	repo.aspects = aspects
+	this.dc = New(Config{GroupScheduler: scheduler, ResponseTo: "response", ErrorTo: "errors"}, this.s, repo, tokens, m, fakeTimescale{}, this.producer, this.metrics, this.logger)
 	this.dc.SetCompleter(this.e)
 	this.e.RegisterTaskType(TaskType, this.dc)
 }
 
 // aspectTree serves an air hierarchy (air > inside_air > kitchen_air, air > outside_air) and
 // the unrelated roots humidity and light
-func aspectTree() *devices.AspectNodes {
+func aspectTree() aspectNodes {
 	nodes := map[string]models.AspectNode{
 		"air":         {Id: "air", RootId: "air", ChildIds: []string{"inside_air", "outside_air"}, DescendentIds: []string{"inside_air", "outside_air", "kitchen_air"}},
 		"inside_air":  {Id: "inside_air", RootId: "air", ParentId: "air", AncestorIds: []string{"air"}, ChildIds: []string{"kitchen_air"}, DescendentIds: []string{"kitchen_air"}},
@@ -131,13 +130,13 @@ func aspectTree() *devices.AspectNodes {
 		"humidity":    {Id: "humidity", RootId: "humidity"},
 		"light":       {Id: "light", RootId: "light"},
 	}
-	return devices.NewAspectNodesWith(func(_ context.Context, _ devices.Token, id string) (models.AspectNode, error) {
+	return func(id string) (models.AspectNode, error) {
 		node, ok := nodes[id]
 		if !ok {
 			return node, errors.New("unknown aspect node " + id)
 		}
 		return node, nil
-	})
+	}
 }
 
 // variable is a content variable of the function with the given aspects

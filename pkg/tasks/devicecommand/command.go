@@ -28,16 +28,17 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
+	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	"github.com/SENERGY-Platform/models/go/models"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 )
 
 // command builds the command of a task: the payload of the model, the device selection of the
 // deployment (DEP-05), then the runtime inputs overwrite, inputs and incident (TASK-09)
-func (this *Type) command(ctx context.Context, task engine.Task, token devices.Token) (command Command, err error) {
+func (this *Type) command(ctx context.Context, task engine.Task, token string) (command Command, err error) {
 	if incident, ok := task.Input["incident"].(string); ok {
 		return command, &engine.PermanentError{Message: "user triggered incident: " + incident}
 	}
@@ -64,7 +65,7 @@ func (this *Type) command(ctx context.Context, task engine.Task, token devices.T
 	}
 	setInputs(&command, task.Input, this.logger)
 	if len(command.Aspects) > 0 {
-		command.Aspects, err = this.aspects.Resolve(ctx, token, command.Aspects)
+		command.Aspects, err, _ = commons.CompleteAspectNodes(ctx, devicerepository.WithCache(this.iot, this.config.DeviceCacheTimeout), command.Aspects)
 		if err != nil {
 			return command, err
 		}
@@ -85,7 +86,7 @@ func decodeJson(value any, target any) error {
 	return json.Unmarshal([]byte(raw), target)
 }
 
-func (this *Type) applySelection(ctx context.Context, command *Command, selection model.Selection, token devices.Token) error {
+func (this *Type) applySelection(ctx context.Context, command *Command, selection model.Selection, token string) error {
 	if selection.DeviceGroupId != "" {
 		command.DeviceGroupId = selection.DeviceGroupId
 		command.DeviceId, command.ServiceId = "", ""
@@ -106,7 +107,7 @@ func (this *Type) applySelection(ctx context.Context, command *Command, selectio
 		}
 		configurables := []ConfigurableV2{}
 		for _, c := range selection.Path.Configurables {
-			nodes, err := this.aspects.ResolveIds(ctx, token, c.AspectNodeIds)
+			nodes, err, _ := commons.AspectNodesByIds(ctx, devicerepository.WithCache(this.iot, this.config.DeviceCacheTimeout), c.AspectNodeIds)
 			if err != nil {
 				return err
 			}

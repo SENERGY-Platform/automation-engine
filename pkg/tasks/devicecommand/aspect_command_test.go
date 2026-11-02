@@ -17,11 +17,9 @@
 package devicecommand
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
-	"github.com/SENERGY-Platform/automation-engine/pkg/devices"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/models/go/models"
 )
@@ -31,11 +29,12 @@ import (
 // TestAspectTaskCommand, SNRGY-4845).
 func TestCommandAsksTheMarshallerWithTheResolvedAspectsOfTheTask(t *testing.T) {
 	e := newEnv(t, Parallel)
-	aspects := devices.NewAspectNodesWith(func(_ context.Context, _ devices.Token, id string) (models.AspectNode, error) {
+	repo := newRepo()
+	repo.aspects = func(id string) (models.AspectNode, error) {
 		return models.AspectNode{Id: id, Name: "name of " + id, RootId: id}, nil
-	})
+	}
 	marshaller := &recordingMarshaller{}
-	e.dc = New(Config{GroupScheduler: Parallel, ResponseTo: "response", ErrorTo: "errors"}, e.s, newRepo(), aspects, marshaller, fakeTimescale{}, e.producer, e.metrics, e.logger)
+	e.dc = New(Config{GroupScheduler: Parallel, ResponseTo: "response", ErrorTo: "errors"}, e.s, repo, tokens, marshaller, fakeTimescale{}, e.producer, e.metrics, e.logger)
 	e.dc.SetCompleter(e.e)
 	e.e.RegisterTaskType(TaskType, e.dc)
 
