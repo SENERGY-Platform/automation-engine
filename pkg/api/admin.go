@@ -102,7 +102,7 @@ func (h *handlers) resetRestarts(w http.ResponseWriter, r *http.Request) {
 // getUserDependents godoc
 //
 //	@Summary		dry run of a user deletion
-//	@Description	Admins only. Lists own resources and resources of others that depend on them; blocked is true if the deletion would be rejected.
+//	@Description	Admins only. Lists own resources and resources of others that depend on them: instances of others on the user's deployments, deployments of others that an instance deleted with the user manages through a module (e.g. a process a smart service deployed to someone else's gateway), and instances of others on those. blocked is true if the namespace of a dependent rejects them (user_deletion).
 //	@Tags			users
 //	@Security		Bearer
 //	@Produce		json
@@ -118,7 +118,7 @@ func (h *handlers) getUserDependents(w http.ResponseWriter, r *http.Request) {
 // deleteUser godoc
 //
 //	@Summary		delete everything a user owns
-//	@Description	Admins only. Removes models, deployments and instances of the user in all namespaces and the user's rights on resources of others. Answers 409 with the dependents if a namespace rejects them.
+//	@Description	Admins only. Removes models, deployments and instances of the user in all namespaces and the user's rights on resources of others. Answers 409 with the dependents if a namespace rejects them; with user_deletion cascade they are deleted too, on gateways as well, and their owners notified.
 //	@Tags			users
 //	@Security		Bearer
 //	@Param			id	path	string	true	"user id"

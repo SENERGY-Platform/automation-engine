@@ -149,3 +149,45 @@ func TestDeletingAUserDeletesTheirResourcesOnTheGateway(t *testing.T) {
 		return errors.Is(err, model.ErrNotFound)
 	})
 }
+
+// A process that a smart service of a user deployed to someone else's gateway belongs to the
+// owner of the network (FOG-11) and is managed by the smart service; deleting the user with
+// cascade deletes it on the gateway as well (SEC-13, NS-08).
+func TestDeletingAUserDeletesTheProcessesTheirSmartServiceManagesOnAGateway(t *testing.T) {
+	e := newEnv(t)
+	operator := client.TestToken("operator", "admin")
+	carol := client.TestToken("carol", "admin")
+	c := e.cloud.Controller
+	release, err := c.CreateDeployment(ctx, carol, "smart-services", model.DeploymentInput{Xml: waitProcess()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	smartService, err := c.StartInstance(ctx, carol, "smart-services", model.StartInstanceInput{DeploymentId: release.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	managed, err := c.CreateDeployment(ctx, carol, "processes", model.DeploymentInput{Xml: waitProcess(), NetworkId: network, ManagedBy: smartService.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if managed.Owner != "alice" {
+		t.Fatalf("the process belongs to the owner of the network: %v", managed.Owner)
+	}
+	e.waitFor("the managed process on the gateway", func() bool { _, err := e.gatewayDeployment(managed.Id); return err == nil })
+
+	processes, err := c.GetNamespace(ctx, operator, "processes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	processes.UserDeletion = model.UserDeletionCascade
+	if _, err = c.PutNamespace(ctx, operator, "processes", processes); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.DeleteUser(ctx, operator, "carol"); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the managed process gone from the gateway", func() bool {
+		_, err := e.gatewayDeployment(managed.Id)
+		return errors.Is(err, model.ErrNotFound)
+	})
+}

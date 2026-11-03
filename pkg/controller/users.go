@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
@@ -107,8 +108,35 @@ func (this *Controller) DeleteUserData(ctx context.Context, userId string) error
 		}
 		now := this.engine.Now()
 		for _, d := range deps.Dependents {
-			message := fmt.Sprintf("Your %v %v in %v was deleted because the account that owned its deployment was deleted.", singular(d.Kind), d.Id, d.Namespace)
-			if err = tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: d.Owner, Title: "Instance deleted", Message: message, Topic: "deletion", Namespace: d.Namespace, CreatedAt: now}); err != nil {
+			title, message := "Instance deleted", fmt.Sprintf("Your %v %v in %v was deleted because the account that owned its deployment was deleted.", singular(d.Kind), d.Id, d.Namespace)
+			if d.Kind == model.KindDeployment {
+				title, message = "Deployment deleted", fmt.Sprintf("Your deployment %v in %v was deleted because the account that owned the instance managing it was deleted (%v).", d.Id, d.Namespace, d.Reason)
+			} else if strings.Contains(d.Reason, "manages it") {
+				message = fmt.Sprintf("Your instance %v in %v was deleted because the account that owned the instance managing its deployment was deleted (%v).", d.Id, d.Namespace, d.Reason)
+			}
+			if err = tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: d.Owner, Title: title, Message: message, Topic: "deletion", Namespace: d.Namespace, CreatedAt: now}); err != nil {
+				return err
+			}
+		}
+		// deployments of others that an instance of the user manages go with it (SEC-13, NS-08);
+		// on a gateway it deletes them with their instances once it gets the desired state
+		for _, d := range deps.Dependents {
+			if d.Kind != model.KindDeployment {
+				continue
+			}
+			deployment, err := tx.GetDeployment(d.Id, true)
+			if isNotFound(err) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if deployment.NetworkId != "" && this.networks != nil {
+				if err = this.desireDeletedDeployment(tx, deployment); err != nil {
+					return err
+				}
+			}
+			if err = tx.DeleteDeployment(d.Id); err != nil {
 				return err
 			}
 		}

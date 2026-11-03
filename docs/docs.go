@@ -10216,7 +10216,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Admins only. Removes models, deployments and instances of the user in all namespaces and the user's rights on resources of others. Answers 409 with the dependents if a namespace rejects them.",
+                "description": "Admins only. Removes models, deployments and instances of the user in all namespaces and the user's rights on resources of others. Answers 409 with the dependents if a namespace rejects them; with user_deletion cascade they are deleted too, on gateways as well, and their owners notified.",
                 "tags": [
                     "users"
                 ],
@@ -10262,7 +10262,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Admins only. Lists own resources and resources of others that depend on them; blocked is true if the deletion would be rejected.",
+                "description": "Admins only. Lists own resources and resources of others that depend on them: instances of others on the user's deployments, deployments of others that an instance deleted with the user manages through a module (e.g. a process a smart service deployed to someone else's gateway), and instances of others on those. blocked is true if the namespace of a dependent rejects them (user_deletion).",
                 "produces": [
                     "application/json"
                 ],

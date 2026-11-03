@@ -25,25 +25,50 @@ import (
 )
 
 // UserDependents lists resources of other owners that would be deleted with the user's
-// resources (SEC-13): instances of others on deployments the user owns. Deployments of others
-// based on the user's models are not dependents, they keep their copy of the BPMN (MOD-08).
+// resources (SEC-13): instances of others on deployments the user owns; deployments of others
+// that an instance deleted with the user manages through a module (NS-08), e.g. a process a
+// smart service deployed to a gateway, which belongs to the owner of its network (FOG-11); and
+// instances of others on those deployments. Deployments of others based on the user's models
+// are not dependents, they keep their copy of the BPMN (MOD-08).
 func (this *Tx) UserDependents(userId string) (result []model.Dependent, err error) {
-	rows, err := this.query("SELECT i.namespace, i.id, i.owner, d.id FROM instances i JOIN deployments d ON d.id = i.deployment_id WHERE d.owner = ? AND i.owner <> ? ORDER BY i.namespace, i.id", userId, userId)
+	result = []model.Dependent{}
+	scan := func(kind model.Kind, query string, args []any, reason func(ref string) string) error {
+		rows, err := this.query(query, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			d := model.Dependent{Kind: kind}
+			var ref string
+			if err = rows.Scan(&d.Namespace, &d.Id, &d.Owner, &ref); err != nil {
+				return err
+			}
+			d.Reason = reason(ref)
+			result = append(result, d)
+		}
+		return rows.Err()
+	}
+	err = scan(model.KindInstance, "SELECT i.namespace, i.id, i.owner, d.id FROM instances i JOIN deployments d ON d.id = i.deployment_id WHERE d.owner = ? AND i.owner <> ? ORDER BY i.namespace, i.id",
+		[]any{userId, userId}, func(ref string) string { return "instance of deployment " + ref })
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	result = []model.Dependent{}
-	for rows.Next() {
-		d := model.Dependent{Kind: model.KindInstance}
-		var deploymentId string
-		if err = rows.Scan(&d.Namespace, &d.Id, &d.Owner, &deploymentId); err != nil {
-			return nil, err
-		}
-		d.Reason = "instance of deployment " + deploymentId
-		result = append(result, d)
+	// the instances deleted with the user: their own and those on their deployments
+	const deleted = "SELECT i.id FROM instances i WHERE i.owner = ? OR i.deployment_id IN (SELECT id FROM deployments WHERE owner = ?)"
+	err = scan(model.KindDeployment, "SELECT d.namespace, d.id, d.owner, d.managed_by FROM deployments d WHERE d.owner <> ? AND d.managed_by <> '' AND d.managed_by IN ("+deleted+") ORDER BY d.namespace, d.id",
+		[]any{userId, userId, userId}, func(ref string) string { return "managed by instance " + ref })
+	if err != nil {
+		return nil, err
 	}
-	return result, rows.Err()
+	err = scan(model.KindInstance, "SELECT i.namespace, i.id, i.owner, i.deployment_id FROM instances i JOIN deployments d ON d.id = i.deployment_id WHERE i.owner <> ? AND d.owner <> ? AND d.managed_by <> '' AND d.managed_by IN ("+deleted+") ORDER BY i.namespace, i.id",
+		[]any{userId, userId, userId, userId}, func(ref string) string {
+			return "instance of deployment " + ref + ", which is deleted with the instance that manages it"
+		})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // OwnedCounts counts the resources of a user per permissions-v2 topic name.
