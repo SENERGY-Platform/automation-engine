@@ -10,7 +10,11 @@ The engine runs on ses-prod-rke2 (`processes/automation-engine` in rancher-2-def
 
 - Kong: `/automation-engine` for the new API; the old routes, `/process-sync` and `/process-fog-deployment` included, are served by `deprecated/` through the service path. Ladon allows `/automation-engine` for every client and role that had the process routes and denies `/users` and `PUT`/`DELETE /namespaces/{ns}` to `full_user`.
 - Migrated (three runs of the job in `processes/automation-engine/migration`): 216 models, 73 deployments, 47 running instances restarted, 30 gateway deployments with 24 starts, 84 designs, 219 releases, 47 smart service instances with their modules and variables.
-- The old services stand at zero with their databases (`automation-engine-off.yaml` per overlay); removing the patches and the Kong redirect restores them. fog-processes keeps running for gateways with the old process module. Every place to remove later carries a TODO.
+- The old services stood at zero with their databases (`automation-engine-off.yaml` per overlay) until 2026-11-02, so that removing the patches and the Kong redirect would have restored them; see the next paragraph. fog-processes keeps running for gateways with the old process module where it is still deployed.
+
+Since 2026-11-02 this cluster is unavailable, and the platform moves to a replacement cluster (rancher-2-defs branch `senergy`). The old process stack with its databases, ArgoCD applications and the migration job is removed from rancher-2-defs (`f2824017` on `master`, merged into `senergy`); a rollback to Camunda is no longer possible. fog-processes is removed on `senergy` only (`b9da12b2`). The engine is entered there with v0.23.1 (2026-11-02) and v0.24.0 (2026-11-03); whether ArgoCD synced it is not checked yet.
+
+- [ ] **Question (operations):** Does the replacement cluster get the engine's Postgres from the old one? Without it, the migrated models, deployments, instances and designs are gone, and the leftovers of the migration below no longer apply; with it, they do. The old Camunda and Mongo data does not come over either way.
 
 Left over from the migration, to decide or to tell the owners:
 
@@ -22,7 +26,7 @@ Left over from the migration, to decide or to tell the owners:
 - [ ] An instance of `pv_auto` ended in an incident in the script `event_location` (`JSON.parse` of an object); not yet clear whether the model or a difference to Camunda is the cause.
 - [ ] Events that arrive while the event role restarts can be missed (once each in canary and snowflake-canary during rollouts).
 - [ ] moses has no image with `deployment_id`: its CI stops at the vulnerability gate (Go 1.26.9, GO-2026-6809 fixed in 1.26.10). The engine still sends `process_definition_id`.
-- [ ] `process-engine-prod` in ArgoCD has failed for a while on a forbidden change of the StatefulSet `engine-db`; wrapper and engine were scaled to zero by hand, as the manifests say.
+- [x] `process-engine-prod` in ArgoCD had failed for a while on a forbidden change of the StatefulSet `engine-db`; wrapper and engine were scaled to zero by hand. The application is removed with the old stack (`f2824017`).
 
 ## Prepared in other repositories
 
@@ -65,7 +69,7 @@ Feature branches, each forked from the default branch. Since 2026-10-22 all of t
 ### permissions-v2
 
 - [ ] **Question:** Can the withdrawal of the owner right be prevented in permissions-v2 itself, e.g. through a topic option? Today the engine reacts to the rights signal over Kafka and restores the right (SEC-10, M3). A solution in permissions-v2 would also benefit devices and hubs.
-- [ ] **Question (operations):** Is `PERMISSIONS_KAFKA_TOPIC` set in the engine? Without a value, an owner right withdrawn in permissions-v2 stays withdrawn there; in the engine, the owner keeps access (M3).
+- [ ] **Task (operations):** Set `PERMISSIONS_KAFKA_TOPIC` in the engine (the topic of the rights signal of permissions-v2). Checked on 2026-11-03: neither `processes/automation-engine/app/config.yaml` nor an overlay in rancher-2-defs sets it, so an owner right withdrawn in permissions-v2 stays withdrawn there; in the engine, the owner keeps access (SEC-10, M3).
 
 ### user-management
 
@@ -103,7 +107,7 @@ Feature branches, each forked from the default branch. Since 2026-10-22 all of t
 ### smart-service-module-worker-lib and the worker repositories
 
 - [x] Script API, templates and the handlers of `info`, `import`, `export`, `analytics` and `device_repository` have been in the engine repository since 2026-10-12 (`pkg/modules`, `pkg/modules/compat`); `go.mod` no longer names the repositories. The test cases of the workers keep running there as golden tests (`pkg/modules/testdata`).
-- [ ] **Task:** Archive the repositories once the worker deployments are shut down (see shutdowns). Changes to them no longer reach the engine.
+- [ ] **Task:** Archive the repositories. Their deployments are removed from rancher-2-defs since 2026-11-02 (`f2824017`); changes to them no longer reach the engine.
 - [x] The bugs found are fixed in the engine, not in the repositories: `info` keeps reading after an additional field that is not a string; `analytics` stops on an error of the module lookup instead of creating a second pipeline; a pipeline that was only updated is not deleted on undo. `persistData` as a boolean stays `false` as before.
 
 ### device-repository
@@ -166,16 +170,17 @@ Feature branches, each forked from the default branch. Since 2026-10-22 all of t
 - [x] **Task (operations):** Run the migration as a one-time job in the cluster: first as a dry run, check the report, make the decisions (`-owner`, `-camunda-only`), inform those affected by running instances (MIG-02), then with `-apply`. Needs read access to the MongoDB of the old services (`MIGRATE_MONGO_URL`), the REST API of all Camunda shards with basic auth (`MIGRATE_CAMUNDA_PASSWORD`) and the client of the engine with the admin role.
 - [x] **Question:** Where does camunda-engine-wrapper v1.1.0 store the state "disabled" per deployment (`PUT /v2/deployments/{id}/disabled`)? Answered on 2026-10-13: it suspends the process definition in Camunda; the migration reads the `suspended` flag of the definition and takes the deployment over switched off (DEP-12).
 - [ ] **Note:** Modules of the old watcher keep their URL; the migration does not take over the watches themselves, they are in the database of the watcher. Smart service instances whose setup was still running during the migration restart; modules already created may then exist twice (the report names them).
-- [ ] **Question:** What is the collection of process-scheduler called in prod (`process_scheduler` as database is known, locally the collection is called `process_schedule`)? Changeable with `-collection-scheduler`.
+- [x] **Question:** What is the collection of process-scheduler called in prod (`process_scheduler` as database is known, locally the collection is called `process_schedule`)? Changeable with `-collection-scheduler`. No longer needed: the migration job and the old databases are removed (`f2824017`).
 
 ## Shutdowns
 
-- [ ] **Task:** Shut down smart-service-engine (Camunda), smart-service-repository with its Mongo, the eight module workers and the `watcher-db` once M7 has migrated the data (SMS-01).
-- [ ] **Task:** Shut down event-worker and event-deployment; the event worker is a role of the engine (`ROLE=event`, M3). The engine no longer imports event-worker; the repository can be archived afterwards.
+- [x] **Task:** Shut down smart-service-engine (Camunda), smart-service-repository with its Mongo, the eight module workers and the `watcher-db` once M7 has migrated the data (SMS-01). Removed from rancher-2-defs on 2026-11-02 (`f2824017`), the watcher included.
+- [x] **Task:** Shut down event-worker and event-deployment; the event worker is a role of the engine (`ROLE=event`, M3). Removed on 2026-11-02 (`f2824017`).
+- [ ] **Task:** Archive the repositories event-worker and event-deployment; the engine no longer imports event-worker.
 - [ ] **Task:** Remove the Kafka topic `process-deployment-done` once event-deployment is off; check the leftovers `deployments_v3`, `camunda_incident` and probably `processmodel` along with it.
-- [ ] **Task:** Archive process-sync, mgw-process-sync-client and process-fog-deployment once no gateway runs Camunda any more. Until then, process-sync serves the old gateways and the engine only gateways with itself; both use separate topics under `processes/{nid}/` (M6, migration M7).
-- [ ] **Task:** Switch off api-aggregator.
-- [ ] **Task:** Replace the ArgoCD apps `process-engine-prod` and `smart-service-engine-prod`.
+- [ ] **Task:** Archive process-sync, mgw-process-sync-client and process-fog-deployment once no gateway runs Camunda any more. Until then, process-sync serves the old gateways and the engine only gateways with itself; both use separate topics under `processes/{nid}/` (M6, migration M7). Since 2026-11-02 fog-processes is removed on the rancher-2-defs branch `senergy` (`b9da12b2`), so gateways with the old process module are served there by nothing until they run `main/process`; on `master` it stays until `senergy` is merged back.
+- [ ] **Task:** Switch off api-aggregator. Still deployed (`ui/api-aggregator` in rancher-2-defs, checked 2026-11-03).
+- [x] **Task:** Replace the ArgoCD apps `process-engine-prod` and `smart-service-engine-prod`. Removed with the old stack (`f2824017`).
 
 ## Gateway (M6)
 

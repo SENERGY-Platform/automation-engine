@@ -12,7 +12,7 @@ The requirements describe a programme, not a single change. They are implemented
 | M4 | Debugging: outbox, WebSocket live stream, historical debugging, reconstruction of event evaluations | SYNC-03, DBG-*, EVT-09–13, CLI-05 | implemented, see below |
 | M5 | Smart service modules, watcher, maintenance procedures | TASK-20–29, SMS-* | implemented, see below |
 | M6 | Fog mode and synchronisation | FOG-*, SYNC-*, LONG-06/07/09–11/14/15 | implemented, acceptance on an arm64 gateway open |
-| M7 | `deprecated/` layer, migration from Camunda, model rewrite | API-02/03/08, MIG-* | implemented, Kong redirect and migration run open |
+| M7 | `deprecated/` layer, migration from Camunda, model rewrite | API-02/03/08, MIG-* | implemented, rolled out with Kong redirect and migration on 2026-10-22; whether the migrated data reaches the replacement cluster is open (`OPEN-ITEMS.md`, "Rollout") |
 
 What concerns other repos, operations or the platform configuration is collected in `OPEN-ITEMS.md` and is gone through together after the milestones.
 
@@ -416,17 +416,17 @@ Open tasks of the engine, not yet decided whether and when. The id says where th
 
 - **Validation:** the condition of a device or import event (`senergy:script`) is neither syntax- nor JUEL-checked on save or deploy, only at evaluation (BPMN-18, EXPR-01). The sandbox has no memory limit (EXPR-03, known since M1). The join semantics of the inclusive gateway are not compared with Camunda, in particular with loops (BPMN-15, known since M1).
 - **Namespaces:** a changed namespace does not mark deployments that no longer fit (NS-03); there is no default update strategy per namespace (NS-07); the setting `device_selection` is stored but enforced nowhere (NS-11).
-- **Models and deployments:** no rights filter `p` on model lists as in `/v2/processes` (MOD-01); no version distance (MOD-06, known since M1); old deployment versions are never removed when their last instance ends, and `drain` uses the event descriptions of the new version for the old instances (DEP-04, the latter known since M3); `task_info` has no `deployment_id` field yet, `{{DefinitionId}}` is not rewritten but accepted as alias at runtime, untested (DATA-04).
+- **Models and deployments:** no rights filter `p` on model lists as in `/v2/processes` (MOD-01); no version distance (MOD-06, known since M1); old deployment versions are never removed when their last instance ends, and `drain` uses the event descriptions of the new version for the old instances (DEP-04, the latter known since M3); `task_info` carries `deployment_id` next to the deprecated `process_definition_id` since `9747e43`, which goes once moses has an image with the field; `{{DefinitionId}}` is not rewritten but accepted as alias at runtime, untested (DATA-04).
 - **Tasks and incidents:** module workers' flags `allow_msg_events_in_fog_processes` and `allow_imports_in_fog_processes` were not taken over; processes with device events now always go to the gateway (TASK-29); incident variables above 4 KiB are cut like the history (INC-06).
 - **Events:** offline periods of a gateway are not marked in the reconstruction, and on a gateway `evaluate_events` evaluates nothing, because event debugging is wired only with Timescale (EVT-13).
 - **History and long-lived operation:** incidents, runs and element statistics are limited by age only, not by count per instance (LONG-03); the storage report counts rows instead of sizes, misses IO values, runs, element statistics and subtasks, and the top instances do not reach the cloud (LONG-14).
 - **Debugging:** the wait of a device command lacks the completion strategy, module tasks show no progress (DBG-02); wait reasons at historical steps are thinner than live ones, without event sources and subtasks (DBG-13); no interventions on gateway instances (DBG-17).
-- **Rights and users:** module-managed deployments of others are not counted as dependants on user deletion (SEC-13, known since M2); the owner right is restored only with `PERMISSIONS_KAFKA_TOPIC` (SEC-10); signatures are verified only with `KEYCLOAK_CERT_URL`, for requests other than the live stream only with `VERIFY_TOKENS` as well, and the check against Keycloak itself has no test (SEC-04).
+- **Rights and users:** module-managed deployments of others are not counted as dependants on user deletion (SEC-13, known since M2); the owner right is restored only with `PERMISSIONS_KAFKA_TOPIC`, which the deployment does not set (SEC-10, `OPEN-ITEMS.md`); signatures are verified only with `KEYCLOAK_CERT_URL`, for requests other than the live stream only with `VERIFY_TOKENS` as well, and the check against Keycloak itself has no test (SEC-04).
 - **API:** paging is not uniform, activities use `after_seq` without total, several lists return plain arrays (API-06; the comment in `pkg/model/common.go` claims otherwise).
 - **Synchronisation:** a deployment the gateway marks faulty is not reported upwards (SYNC-02); no "offline since" and no alert for gateways without contact (SYNC-12).
 - **Smart services:** stop and restart in an update apply only to running instances, so instances whose setup has finished are drained (SMS-03).
-- **Operations:** no metric of the response time of device commands (OPS-05); spans carry no run id (OPS-07); no release pipeline (`prod.yml`, CLI-06, FOG-02); acceptance on an arm64 gateway open (LONG-15, FOG-04).
-- **Migration:** watches of smart-service instances are not migrated, maintenance procedures of migrated instances stop with the old watcher (MIG-01); owners can be assigned only per old owner value, not per resource (MIG-09).
+- **Operations:** no metric of the response time of device commands (OPS-05); spans carry no run id (OPS-07); acceptance on an arm64 gateway open (LONG-15, FOG-04). The release pipeline exists since `f4bddc7` (`prod.yml`, tags on `main`, CLI-06, FOG-02).
+- **Migration:** watches of smart-service instances are not migrated, maintenance procedures of migrated instances stop with the old watcher (MIG-01); owners can be assigned only per old owner value, not per resource (MIG-09). Both matter only if the migrated data reaches the replacement cluster; the old data and the migration job are gone (`OPEN-ITEMS.md`, "Rollout").
 
 ### Behaviour that differs from the requirements without a recorded decision
 
@@ -446,6 +446,8 @@ Recorded here so that it is a decision; changing it would be a new task.
 - M4 decisions name `pkg/live.Hub`; it is `pkg/debug.Hub` (see "Cleanup").
 - README: instances with modules are exempt from deletion by retention, not from trimming their history; on a full disk `/ready` reports the error, `/health` does not. Both corrected on 2026-10-20.
 - M6 c: deployments with `network_id` and `prefer_fog_deployment` apply only to namespaces without `cloud_only`; `smart-services` never runs on a gateway ("Namespaces kept from gateways").
+- M1 gaps and "Partly implemented": the release pipeline exists since `f4bddc7`, and `task_info` carries `deployment_id` since `9747e43` (both corrected in place on 2026-11-03).
+- M7 status: the Kong redirect and the migration ran on 2026-10-22; since 2026-11-02 the old stack and the migration job are removed from the deployment, a rollback to Camunda is no longer possible.
 - M5 decisions and status: `smart-services` no longer sets `forbid_cycles` (decided by the user on 2026-10-22, during the migration). Three designs on the platform loop in their sequence flow and could not be migrated otherwise; every new run still removes the modules of the previous one. The setting stays for a namespace that wants to be stricter. A namespace stored by an earlier version keeps its value; the admin API changes it.
 
 ### Before this file is removed
