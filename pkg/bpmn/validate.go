@@ -119,6 +119,17 @@ func Validate(p *Process, rules Rules) (issues []model.Issue) {
 				checkScript(e.Id, "message name", e.Message.Expression)
 			}
 		}
+		if e.IsDeviceEvent() {
+			// the condition of a device or import event runs when a value arrives, as the
+			// event-worker ran it (EVT-04); an empty one triggers on every value
+			if src := e.Attributes["script"]; strings.TrimSpace(src) != "" {
+				if err := script.Check(src); err != nil && strings.Contains(src, "${") {
+					add(e.Id, "condition (senergy:script) uses a JUEL expression; use JavaScript, e.g. %v > 20", valueVariable(e))
+				} else if err != nil {
+					add(e.Id, "condition (senergy:script): %v", err)
+				}
+			}
+		}
 		if e.Timer != nil {
 			if e.Timer.Expression {
 				checkScript(e.Id, "timer expression", e.Timer.Value)
@@ -199,6 +210,14 @@ func Validate(p *Process, rules Rules) (issues []model.Issue) {
 		}
 	}
 	return issues
+}
+
+// valueVariable is the name under which the condition of a device event sees the value
+func valueVariable(e *Element) string {
+	if name := e.Attributes["value_variable_name"]; name != "" {
+		return name
+	}
+	return "value"
 }
 
 // Cycles returns one flow per loop of the sequence flow: the flow that leads back to an element

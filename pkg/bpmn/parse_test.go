@@ -17,6 +17,8 @@
 package bpmn
 
 import (
+	"fmt"
+	"html"
 	"strings"
 	"testing"
 
@@ -164,6 +166,37 @@ func TestValidateReportsJavaScriptSyntaxErrors(t *testing.T) {
 	issues := issuesOf(t, xml, Rules{})
 	if !hasIssue(issues, "s", "script") || !hasIssue(issues, b.FlowId("s", "end"), "condition") {
 		t.Fatalf("unexpected %v", issues)
+	}
+}
+
+// The condition of a device or import event is JavaScript like every other script and is
+// checked on save and deploy, not first when a value arrives (BPMN-18, EXPR-01).
+func TestValidateChecksTheConditionOfDeviceEvents(t *testing.T) {
+	event := func(id string, condition string) string {
+		return fmt.Sprintf(`<bpmn:intermediateCatchEvent id="%v" senergy:function="f" senergy:script="%v"><bpmn:messageEventDefinition/></bpmn:intermediateCatchEvent>`, id, html.EscapeString(condition))
+	}
+	xml := b.Process(
+		`<bpmn:startEvent id="start" senergy:function="f" senergy:script="value &gt;"><bpmn:messageEventDefinition/></bpmn:startEvent>`,
+		b.CatchDeviceEvent("valid"),
+		event("empty", " "),
+		event("broken", "value =="),
+		event("juel", "${value > 20}"),
+		event("template", "`${value}` === '21'"),
+		b.End("end"),
+		b.Flow("start", "valid"), b.Flow("valid", "empty"), b.Flow("empty", "broken"), b.Flow("broken", "juel"), b.Flow("juel", "template"), b.Flow("template", "end"),
+	)
+	issues := issuesOf(t, xml, Rules{})
+	for id, fragment := range map[string]string{
+		"start":  "condition (senergy:script)",
+		"broken": "condition (senergy:script)",
+		"juel":   "JUEL expression; use JavaScript, e.g. value > 20",
+	} {
+		if !hasIssue(issues, id, fragment) {
+			t.Errorf("missing issue %q for %v in %v", fragment, id, issues)
+		}
+	}
+	if len(issues) != 3 {
+		t.Errorf("a valid condition, an empty one and a template literal are fine: %v", issues)
 	}
 }
 
