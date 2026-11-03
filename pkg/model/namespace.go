@@ -108,6 +108,9 @@ type Limits struct {
 	MaxVariableBytes          int `json:"max_variable_bytes,omitempty"`
 	MaxInstanceVariablesBytes int `json:"max_instance_variables_bytes,omitempty"`
 	MaxActivities             int `json:"max_activities,omitempty"`
+	// runs kept per instance with their incidents and element statistics, older ones are
+	// evicted (LONG-03)
+	MaxRuns int `json:"max_runs,omitempty"`
 }
 
 // HttpPolicy decides which targets the task type http may call (BPMN-10, NS-04). Deny lists

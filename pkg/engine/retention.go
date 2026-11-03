@@ -87,7 +87,7 @@ func (this *Engine) enforceRetention(ctx context.Context, now time.Time) error {
 	var errs []error
 	for _, target := range targets {
 		cutoff := now.Add(-days(this.Retention(target.Namespace, target.RetentionDays)))
-		errs = append(errs, this.trim(ctx, "deployment_id", target.Id, cutoff))
+		errs = append(errs, this.trim(ctx, "deployment_id", target.Id, cutoff, this.limits(target.Namespace).MaxRuns))
 	}
 	var caps []model.UserSettings
 	err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
@@ -98,13 +98,14 @@ func (this *Engine) enforceRetention(ctx context.Context, now time.Time) error {
 		return errors.Join(append(errs, err)...)
 	}
 	for _, c := range caps {
-		errs = append(errs, this.trim(ctx, "owner", c.UserId, now.Add(-days(c.MaxRetentionDays))))
+		// the runs of these instances are limited by the pass over their deployments
+		errs = append(errs, this.trim(ctx, "owner", c.UserId, now.Add(-days(c.MaxRetentionDays)), 0))
 	}
 	return errors.Join(errs...)
 }
 
 // trim deletes finished instances before the cutoff in small transactions, then old history
-func (this *Engine) trim(ctx context.Context, column string, value string, cutoff time.Time) error {
+func (this *Engine) trim(ctx context.Context, column string, value string, cutoff time.Time, keepRuns int) error {
 	for {
 		var deleted int64
 		err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
@@ -119,7 +120,7 @@ func (this *Engine) trim(ctx context.Context, column string, value string, cutof
 		}
 	}
 	return this.store.Tx(ctx, func(tx *store.Tx) error {
-		return tx.TrimHistory(column, value, cutoff)
+		return tx.TrimHistory(column, value, cutoff, keepRuns)
 	})
 }
 

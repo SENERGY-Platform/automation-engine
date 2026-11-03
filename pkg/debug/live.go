@@ -88,6 +88,7 @@ func Live(tx *store.Tx, inst store.Instance, proc *bpmn.Process) (result model.D
 	if result.Runs, err = tx.ListRuns(inst.Id); err != nil {
 		return result, err
 	}
+	result.RunsTruncated = len(result.Runs) > 0 && result.Runs[0].Run > 1
 	if result.Elements, err = tx.ListElementStats(inst.Id, inst.Run); err != nil {
 		return result, err
 	}

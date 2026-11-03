@@ -78,9 +78,11 @@ func (this *Tx) DeleteFinishedInstances(column string, value string, before time
 }
 
 // TrimHistory removes history older than the cutoff from instances that are kept, in
-// particular from running instances, whose history must not grow with their runtime (HIST-06).
-// column selects the instances by deployment_id or owner.
-func (this *Tx) TrimHistory(column string, value string, before time.Time) error {
+// particular from running instances, whose history must not grow with their runtime (HIST-06),
+// and with keepRuns > 0 the runs before the newest keepRuns of each instance with their incidents
+// and element statistics, as a ring buffer (LONG-03). column selects the instances by
+// deployment_id or owner.
+func (this *Tx) TrimHistory(column string, value string, before time.Time, keepRuns int) error {
 	instances := "SELECT id FROM instances WHERE " + column + " = ?"
 	statements := []string{
 		"DELETE FROM activities WHERE instance_id IN (" + instances + ") AND ts < ?",
@@ -91,6 +93,14 @@ func (this *Tx) TrimHistory(column string, value string, before time.Time) error
 	for _, statement := range statements {
 		if _, err := this.exec(statement, value, millis(before)); err != nil {
 			return err
+		}
+	}
+	if keepRuns > 0 {
+		for _, table := range []string{"runs", "incidents", "element_stats"} {
+			statement := "DELETE FROM " + table + " WHERE instance_id IN (" + instances + ") AND run <= (SELECT i.run FROM instances i WHERE i.id = " + table + ".instance_id) - ?"
+			if _, err := this.exec(statement, value, keepRuns); err != nil {
+				return err
+			}
 		}
 	}
 	// keeps the truncation marker of the activity log right (LONG-03)

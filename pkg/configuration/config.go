@@ -60,6 +60,7 @@ type Config struct {
 	MaxVariableBytes          int    `json:"max_variable_bytes" env_var:"MAX_VARIABLE_BYTES"`
 	MaxInstanceVariablesBytes int    `json:"max_instance_variables_bytes" env_var:"MAX_INSTANCE_VARIABLES_BYTES"`
 	MaxActivities             int    `json:"max_activities" env_var:"MAX_ACTIVITIES"`
+	MaxRuns                   int    `json:"max_runs" env_var:"MAX_RUNS"` // runs kept per instance with their incidents and element statistics (LONG-03)
 	ScriptTimeout             string `json:"script_timeout" env_var:"SCRIPT_TIMEOUT"`
 	// shortest timer duration of a model, as process-deployment had it; "0s" allows every one
 	MinTimerDuration string `json:"min_timer_duration" env_var:"MIN_TIMER_DURATION"`
@@ -245,6 +246,7 @@ func Default() Config {
 		MaxVariableBytes:           1 << 20,
 		MaxInstanceVariablesBytes:  4 << 20,
 		MaxActivities:              10000,
+		MaxRuns:                    100,
 		ScriptTimeout:              "2s",
 		MinTimerDuration:           "5s",
 		TaskTimeout:                "2m",

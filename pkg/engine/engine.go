@@ -44,6 +44,9 @@ type Config struct {
 	MaxInstanceVariablesBytes int
 	// activity log entries per instance, as ring buffer (LONG-03)
 	MaxActivities int
+	// runs per instance with their incidents and element statistics, trimmed by the retention
+	// (LONG-03)
+	MaxRuns int
 	// values in the activity log are truncated to this JSON size
 	MaxActivityValueBytes int
 	ScriptTimeout         time.Duration
@@ -89,6 +92,7 @@ func DefaultConfig() Config {
 		MaxVariableBytes:          1 << 20,
 		MaxInstanceVariablesBytes: 4 << 20,
 		MaxActivities:             10000,
+		MaxRuns:                   100,
 		MaxActivityValueBytes:     4096,
 		ScriptTimeout:             2 * time.Second,
 		TaskTimeout:               2 * time.Minute,
@@ -203,6 +207,7 @@ func (this *Engine) limits(namespace string) model.Limits {
 		MaxVariableBytes:          this.config.MaxVariableBytes,
 		MaxInstanceVariablesBytes: this.config.MaxInstanceVariablesBytes,
 		MaxActivities:             this.config.MaxActivities,
+		MaxRuns:                   this.config.MaxRuns,
 	}
 	ns, ok := this.namespaces.Get(namespace)
 	if !ok {
@@ -219,6 +224,9 @@ func (this *Engine) limits(namespace string) model.Limits {
 	}
 	if ns.Limits.MaxActivities > 0 {
 		result.MaxActivities = ns.Limits.MaxActivities
+	}
+	if ns.Limits.MaxRuns > 0 {
+		result.MaxRuns = ns.Limits.MaxRuns
 	}
 	return result
 }

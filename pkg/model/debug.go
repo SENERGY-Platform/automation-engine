@@ -44,6 +44,9 @@ type DebugState struct {
 	FirstSeq      int64 `json:"first_seq,omitempty"`
 	// older activity entries were evicted (LONG-03)
 	Truncated bool `json:"truncated,omitempty"`
+	// older runs were evicted with their incidents and element statistics by the per-instance
+	// limit max_runs (LONG-03)
+	RunsTruncated bool `json:"runs_truncated,omitempty"`
 }
 
 type ActiveElement struct {

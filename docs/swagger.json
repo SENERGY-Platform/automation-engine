@@ -11855,6 +11855,10 @@
                         "$ref": "#/definitions/model.Run"
                     }
                 },
+                "runs_truncated": {
+                    "description": "older runs were evicted with their incidents and element statistics by the per-instance\nlimit max_runs (LONG-03)",
+                    "type": "boolean"
+                },
                 "seq": {
                     "description": "last activity entry the state includes",
                     "type": "integer"
@@ -12947,6 +12951,10 @@
                     "type": "integer"
                 },
                 "max_instance_variables_bytes": {
+                    "type": "integer"
+                },
+                "max_runs": {
+                    "description": "runs kept per instance with their incidents and element statistics, older ones are\nevicted (LONG-03)",
                     "type": "integer"
                 },
                 "max_tokens": {

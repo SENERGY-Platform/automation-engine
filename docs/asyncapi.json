@@ -2090,6 +2090,9 @@
                     "max_instance_variables_bytes": {
                         "type": "integer"
                     },
+                    "max_runs": {
+                        "type": "integer"
+                    },
                     "max_tokens": {
                         "type": "integer"
                     },
