@@ -17,6 +17,7 @@
 package prepare
 
 import (
+	"context"
 	"reflect"
 	"sort"
 	"strings"
@@ -37,7 +38,7 @@ type laneSelection struct {
 	services map[string][]dsmodel.PathOption
 }
 
-func (this *laneSelection) GetBulkSelectablesV2(_ string, bulk dsmodel.BulkRequestV2, _ *dsclient.GetBulkSelectablesOptions) (dsmodel.BulkResult, int, error) {
+func (this *laneSelection) GetBulkSelectablesV2(_ context.Context, _ string, bulk dsmodel.BulkRequestV2, _ *dsclient.GetBulkSelectablesOptions) (dsmodel.BulkResult, int, error) {
 	result := dsmodel.BulkResult{}
 	for _, e := range bulk {
 		device := &dsmodel.PermSearchDevice{DisplayName: "Device"}
@@ -123,7 +124,7 @@ func TestTasksOfALaneAreOfferedOnlyTheServicesOfTheirOwnCriteria(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			elements, err := New(&laneSelection{services: c.services}, Config{}).Prepare("token", p)
+			elements, err := New(&laneSelection{services: c.services}, Config{}).Prepare(context.Background(), "token", p)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -157,7 +158,7 @@ func TestATaskOutsideALaneKeepsTheServicesOfTheAnswer(t *testing.T) {
 		"s-on":  {{Path: "on", FunctionId: "f-on"}},
 		"s-off": {{Path: "off", FunctionId: "f-off"}},
 	}
-	elements, err := New(&laneSelection{services: services}, Config{}).Prepare("token", p)
+	elements, err := New(&laneSelection{services: services}, Config{}).Prepare(context.Background(), "token", p)
 	if err != nil {
 		t.Fatal(err)
 	}

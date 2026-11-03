@@ -137,15 +137,15 @@ func filter(c model.Criteria, interaction string) devicemodel.FilterCriteria {
 
 // Prepare lists the elements that need a device selection with their options. Device tasks
 // of one lane share the criteria of all of them, so that one device serves the whole lane.
-func (this *Preparer) Prepare(token string, process *bpmn.Process) ([]model.PreparedElement, error) {
-	return this.prepare(token, process, nil)
+func (this *Preparer) Prepare(ctx context.Context, token string, process *bpmn.Process) ([]model.PreparedElement, error) {
+	return this.prepare(ctx, token, process, nil)
 }
 
 // PrepareForHub offers only the devices of the hub, for a deployment to its gateway; the local
 // ids of the hub go to device-selection as process-fog-deployment sent them.
 func (this *Preparer) PrepareForHub(ctx context.Context, token string, process *bpmn.Process, hubId string) ([]model.PreparedElement, error) {
 	if this.client == nil {
-		return this.prepare(token, process, nil)
+		return this.prepare(ctx, token, process, nil)
 	}
 	if this.config.DeviceRepository == nil {
 		return nil, model.Unavailable("device-repository is needed to offer the devices of a gateway")
@@ -157,9 +157,9 @@ func (this *Preparer) PrepareForHub(ctx context.Context, token string, process *
 	if len(hub.DeviceLocalIds) == 0 {
 		// device-selection would read an empty list as no restriction; a hub without devices
 		// offers none
-		return (&Preparer{config: this.config}).prepare(token, process, nil)
+		return (&Preparer{config: this.config}).prepare(ctx, token, process, nil)
 	}
-	return this.prepare(token, process, hub.DeviceLocalIds)
+	return this.prepare(ctx, token, process, hub.DeviceLocalIds)
 }
 
 // HubNames reads the names of the hubs with one request to device-repository; hubs the user
@@ -179,7 +179,7 @@ func (this *Preparer) HubNames(ctx context.Context, token string, ids []string) 
 	return result, nil
 }
 
-func (this *Preparer) prepare(token string, process *bpmn.Process, localDevices []string) ([]model.PreparedElement, error) {
+func (this *Preparer) prepare(ctx context.Context, token string, process *bpmn.Process, localDevices []string) ([]model.PreparedElement, error) {
 	result := []model.PreparedElement{}
 	laneCriteria := map[string][]devicemodel.FilterCriteria{}
 	for _, e := range process.Ordered() {
@@ -215,7 +215,7 @@ func (this *Preparer) prepare(token string, process *bpmn.Process, localDevices 
 		}
 		bulk = append(bulk, request)
 	}
-	answer, _, err := this.client.GetBulkSelectablesV2(token, bulk, &dsclient.GetBulkSelectablesOptions{CompleteServices: true})
+	answer, _, err := this.client.GetBulkSelectablesV2(ctx, token, bulk, &dsclient.GetBulkSelectablesOptions{CompleteServices: true})
 	if err != nil {
 		return nil, model.Unavailable("device-selection: %v", err)
 	}

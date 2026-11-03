@@ -60,17 +60,17 @@ func (noDevices) ReadDeviceGroup(context.Context, string, string, bool) (models.
 func (noDevices) ListAspectNodes(context.Context, devicerepomodel.AspectListOptions) ([]models.AspectNode, int64, error, int) {
 	return nil, 0, errNotNeeded, http.StatusInternalServerError
 }
-func (noDevices) MarshalV2(models.Service, models.Protocol, []devicecommand.MarshallingV2RequestData) (map[string]string, error) {
-	return nil, errNotNeeded
+func (noDevices) MarshalV2(context.Context, devicecommand.MarshallingV2Request) (map[string]string, error, int) {
+	return nil, errNotNeeded, http.StatusInternalServerError
 }
-func (noDevices) UnmarshalV2(devicecommand.UnmarshallingV2Request) (any, error) {
-	return nil, errNotNeeded
+func (noDevices) UnmarshalV2(context.Context, devicecommand.UnmarshallingV2Request) (any, error, int) {
+	return nil, errNotNeeded, http.StatusInternalServerError
 }
-func (noDevices) MarshalFromServiceAndProtocol(string, models.Service, models.Protocol, any, []devicecommand.Configurable) (map[string]string, error) {
-	return nil, errNotNeeded
+func (noDevices) Marshal(context.Context, devicecommand.MarshallingRequest) (map[string]string, error, int) {
+	return nil, errNotNeeded, http.StatusInternalServerError
 }
-func (noDevices) UnmarshalFromServiceAndProtocol(string, models.Service, models.Protocol, map[string]string, []string) (any, error) {
-	return nil, errNotNeeded
+func (noDevices) Unmarshal(context.Context, devicecommand.UnmarshallingRequest) (any, error, int) {
+	return nil, errNotNeeded, http.StatusInternalServerError
 }
 func (noDevices) Produce(context.Context, string, string, []byte) error { return errNotNeeded }
 

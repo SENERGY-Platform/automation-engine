@@ -26,11 +26,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
-	"github.com/SENERGY-Platform/converter/lib/converter"
 	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	marshallerconfig "github.com/SENERGY-Platform/marshaller/lib/config"
 	v1 "github.com/SENERGY-Platform/marshaller/lib/marshaller"
@@ -48,7 +48,7 @@ type localMarshaller struct {
 // NewLocalMarshaller marshals with the device-repository mirror behind repository; the concepts
 // of marshaller v1 are loaded on first use and refreshed at the interval.
 func NewLocalMarshaller(ctx context.Context, repository devicerepository.Interface, cacheDuration time.Duration, refresh time.Duration, logger *slog.Logger) (Marshaller, error) {
-	c, err := converter.New()
+	c, err := events.NewLocalConverter()
 	if err != nil {
 		return nil, err
 	}
@@ -58,20 +58,27 @@ func NewLocalMarshaller(ctx context.Context, repository devicerepository.Interfa
 	return &localMarshaller{v1: v1.New(c, concepts, aspectsOnly{repo}), v2: v2.New(marshallerconfig.Config{}, c, repo), aspects: repo}, nil
 }
 
-func (this *localMarshaller) MarshalV2(service models.Service, protocol models.Protocol, data []MarshallingV2RequestData) (map[string]string, error) {
-	return this.v2.Marshal(protocol, service, data)
+// the marshaller library passes the context on to its reads of aspect nodes; characteristics,
+// concepts and functions it reads without one
+
+func (this *localMarshaller) MarshalV2(ctx context.Context, request MarshallingV2Request) (map[string]string, error, int) {
+	return withCode(this.v2.Marshal(ctx, request.Protocol, request.Service, request.Data))
 }
 
 // UnmarshalV2 finds the output path like the marshaller service when the request names none:
 // the paths of the function and aspects, the closest to the aspects first
-func (this *localMarshaller) UnmarshalV2(request UnmarshallingV2Request) (any, error) {
+func (this *localMarshaller) UnmarshalV2(ctx context.Context, request UnmarshallingV2Request) (any, error, int) {
+	return withCode(this.unmarshalV2(ctx, request))
+}
+
+func (this *localMarshaller) unmarshalV2(ctx context.Context, request UnmarshallingV2Request) (any, error) {
 	if request.Path == "" {
 		aspects := request.GetAspectNodes()
 		for _, id := range request.GetAspectNodeIds() {
 			if id == "" || marshallermodel.ContainsAspectNode(aspects, id) {
 				continue
 			}
-			node, err := this.aspects.GetAspectNode(id)
+			node, err := this.aspects.GetAspectNode(ctx, id)
 			if err != nil {
 				return nil, err
 			}
@@ -80,7 +87,7 @@ func (this *localMarshaller) UnmarshalV2(request UnmarshallingV2Request) (any, e
 		paths := this.v2.GetOutputPaths(request.Service, request.FunctionId, aspects)
 		if len(paths) > 1 {
 			var err error
-			if paths, err = this.v2.SortPathsByAspectDistance(this.aspects, request.Service, aspects, paths); err != nil {
+			if paths, err = this.v2.SortPathsByAspectDistance(ctx, this.aspects, request.Service, aspects, paths); err != nil {
 				return nil, err
 			}
 		}
@@ -89,15 +96,32 @@ func (this *localMarshaller) UnmarshalV2(request UnmarshallingV2Request) (any, e
 		}
 		request.Path = paths[0]
 	}
-	return this.v2.Unmarshal(request.Protocol, request.Service, request.CharacteristicId, request.Path, request.Message, nil)
+	return this.v2.Unmarshal(ctx, request.Protocol, request.Service, request.CharacteristicId, request.Path, request.Message, nil)
 }
 
-func (this *localMarshaller) MarshalFromServiceAndProtocol(characteristicId string, service models.Service, protocol models.Protocol, data any, configurables []Configurable) (map[string]string, error) {
-	return this.v1.MarshalInputs(protocol, service, data, characteristicId, nil, configurables...)
+// Marshal and Unmarshal need the protocol in the request; the marshaller service would read it
+// by the protocol id of the service, which the device commands always send along
+
+func (this *localMarshaller) Marshal(ctx context.Context, request MarshallingRequest) (map[string]string, error, int) {
+	if request.Protocol == nil {
+		return nil, errors.New("missing protocol"), http.StatusBadRequest
+	}
+	return withCode(this.v1.MarshalInputs(ctx, *request.Protocol, request.Service, request.Data, request.CharacteristicId, nil, request.Configurables...))
 }
 
-func (this *localMarshaller) UnmarshalFromServiceAndProtocol(characteristicId string, service models.Service, protocol models.Protocol, message map[string]string, hints []string) (any, error) {
-	return this.v1.UnmarshalOutputs(protocol, service, message, characteristicId, nil, hints...)
+func (this *localMarshaller) Unmarshal(ctx context.Context, request UnmarshallingRequest) (any, error, int) {
+	if request.Protocol == nil {
+		return nil, errors.New("missing protocol"), http.StatusBadRequest
+	}
+	return withCode(this.v1.UnmarshalOutputs(ctx, *request.Protocol, request.Service, request.Message, request.CharacteristicId, nil, request.ContentVariableHints...))
+}
+
+// withCode adds the http status the marshaller service would answer with
+func withCode[T any](result T, err error) (T, error, int) {
+	if err != nil {
+		return result, err, http.StatusInternalServerError
+	}
+	return result, nil, http.StatusOK
 }
 
 // aspectsOnly is what marshaller v1 asks of the device repository; device types it reads only
@@ -106,12 +130,12 @@ type aspectsOnly struct {
 	repo *events.CachedDeviceRepo
 }
 
-func (this aspectsOnly) GetDeviceType(id string) (models.DeviceType, error, int) {
+func (this aspectsOnly) GetDeviceType(_ context.Context, id string) (models.DeviceType, error, int) {
 	return models.DeviceType{}, errors.New("not available on gateways"), 500
 }
 
-func (this aspectsOnly) GetAspectNode(id string) (models.AspectNode, error) {
-	return this.repo.GetAspectNode(id)
+func (this aspectsOnly) GetAspectNode(ctx context.Context, id string) (models.AspectNode, error) {
+	return this.repo.GetAspectNode(ctx, id)
 }
 
 // conceptRepo holds all concepts, characteristics and functions, as marshaller v1 needs them

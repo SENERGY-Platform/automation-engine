@@ -17,6 +17,7 @@
 package prepare
 
 import (
+	"context"
 	"encoding/json"
 	"html"
 	"testing"
@@ -54,13 +55,13 @@ type fakeSelection struct {
 	request dsmodel.BulkRequestV2
 }
 
-func (this *fakeSelection) GetSelectables(string, []models.DeviceGroupFilterCriteria, *dsclient.GetSelectablesOptions) ([]dsmodel.Selectable, int, error) {
+func (this *fakeSelection) GetSelectables(context.Context, string, []models.DeviceGroupFilterCriteria, *dsclient.GetSelectablesOptions) ([]dsmodel.Selectable, int, error) {
 	return nil, 200, nil
 }
-func (this *fakeSelection) DeviceGroupHelper(string, []string, *dsclient.DeviceGroupHelperOptions) (dsmodel.DeviceGroupHelperResult, int, error) {
+func (this *fakeSelection) DeviceGroupHelper(context.Context, string, []string, *dsclient.DeviceGroupHelperOptions) (dsmodel.DeviceGroupHelperResult, int, error) {
 	return dsmodel.DeviceGroupHelperResult{}, 200, nil
 }
-func (this *fakeSelection) GetBulkSelectablesV2(_ string, bulk dsmodel.BulkRequestV2, _ *dsclient.GetBulkSelectablesOptions) (dsmodel.BulkResult, int, error) {
+func (this *fakeSelection) GetBulkSelectablesV2(_ context.Context, _ string, bulk dsmodel.BulkRequestV2, _ *dsclient.GetBulkSelectablesOptions) (dsmodel.BulkResult, int, error) {
 	this.request = bulk
 	result := dsmodel.BulkResult{}
 	for _, e := range bulk {
@@ -86,7 +87,7 @@ func (this *fakeSelection) GetBulkSelectablesV2(_ string, bulk dsmodel.BulkReque
 
 func TestPrepareFindsCriteriaAndSharesThemPerLane(t *testing.T) {
 	fake := &fakeSelection{}
-	elements, err := New(fake, Config{ImportsForEvents: true}).Prepare("token", testProcess(t))
+	elements, err := New(fake, Config{ImportsForEvents: true}).Prepare(context.Background(), "token", testProcess(t))
 	if err != nil {
 		t.Fatal(err)
 	}

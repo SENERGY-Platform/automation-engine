@@ -56,6 +56,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	devicerepositoryclient "github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
+	marshallerclient "github.com/SENERGY-Platform/marshaller/lib/client"
 	permclient "github.com/SENERGY-Platform/permissions-v2/pkg/client"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/invalidator"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
@@ -149,6 +150,13 @@ func engineConfig(config configuration.Config) (engine.Config, error) {
 
 // deviceRepositoryTimeout bounds every request to device-repository
 const deviceRepositoryTimeout = 10 * time.Second
+
+// deviceSelectionTimeout bounds every request to device-selection; a selectables query for many
+// devices takes longer than a read of device-repository
+const deviceSelectionTimeout = 30 * time.Second
+
+// marshallerTimeout bounds every request to the marshaller service
+const marshallerTimeout = 10 * time.Second
 
 // deviceCacheTimeout is how long reads of device-repository are cached per user
 func deviceCacheTimeout(config configuration.Config) (time.Duration, error) {
@@ -244,7 +252,12 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	if config.DeviceRepositoryUrl != "" {
 		configuredIot = iot
 	}
-	moduleSettings := moduleSettings(config, configuredIot)
+	// nil without a url, for the parts that then work without device-selection
+	var selection dsclient.Client
+	if config.DeviceSelectionUrl != "" {
+		selection = dsclient.NewClient(config.DeviceSelectionUrl, dsclient.Options{Timeout: deviceSelectionTimeout})
+	}
+	moduleSettings := moduleSettings(config, configuredIot, selection)
 	runtime := modules.NewRuntime(s, moduleSettings, userToken, logger)
 
 	// device-repository for device commands and event descriptions; nil if neither configured
@@ -283,17 +296,13 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	if configuredIot != nil {
 		characteristics = configuredIot
 	}
-	c.SetParameters(prepare.NewDescriber(config.DeviceSelectionUrl, characteristics), userToken)
+	c.SetParameters(prepare.NewDescriber(selection, characteristics), userToken)
 	runtime.AddProcessModules(c, registry)
 	runtime.AddWatcher(c, httpCalls, modules.WatcherSettings{AllowGenericRequests: config.AllowGenericWatchRequests,
 		MinInterval: configuration.Duration(config.WatcherMinInterval), DefaultInterval: configuration.Duration(config.WatcherDefaultInterval)})
 	runtime.Register(e, moduleSettings)
 	runtime.SetAdminToken(adminToken)
 	c.SetIo(io)
-	var selection dsclient.Client
-	if config.DeviceSelectionUrl != "" {
-		selection = dsclient.NewClient(config.DeviceSelectionUrl)
-	}
 	c.SetPreparation(
 		prepare.New(selection, prepare.Config{GroupsForTasks: config.DeviceGroupsForTasks, GroupsForEvents: config.DeviceGroupsForEvents, ImportsForEvents: config.ImportsForEvents, ModifiedDevices: config.ModifiedDevices,
 			DeviceRepository: configuredIot}),
@@ -440,7 +449,7 @@ func deviceCommands(ctx context.Context, config configuration.Config, deps Depen
 		return nil, nil
 	}
 	if mar == nil {
-		mar = devicecommand.NewMarshaller(config.MarshallerUrl)
+		mar = marshallerclient.NewClient(config.MarshallerUrl, marshallerclient.Options{Timeout: marshallerTimeout})
 	}
 	if ts == nil && config.TimescaleWrapperUrl != "" {
 		ts = devicecommand.NewTimescale(config.TimescaleWrapperUrl)
@@ -747,9 +756,9 @@ func (this *Server) Close() error {
 }
 
 // moduleSettings are the values of the former module workers (TASK-29)
-func moduleSettings(config configuration.Config, iot devicerepositoryclient.Interface) modules.Settings {
+func moduleSettings(config configuration.Config, iot devicerepositoryclient.Interface, selection dsclient.Client) modules.Settings {
 	return modules.Settings{
-		DeviceRepository: iot, DeviceSelectionUrl: config.DeviceSelectionUrl, DeviceManagerUrl: config.DeviceManagerUrl,
+		DeviceRepository: iot, DeviceSelection: selection, DeviceSelectionUrl: config.DeviceSelectionUrl, DeviceManagerUrl: config.DeviceManagerUrl,
 		FlowEngineUrl: config.FlowEngineUrl, FlowParserUrl: config.FlowParserUrl, ImportDeployUrl: config.ImportDeployUrl, ServingServiceUrl: config.ServingServiceUrl,
 		FlowRepoUrl: config.FlowRepoUrl, ImportRepositoryUrl: config.ImportRepositoryUrl,
 		AnalyticsEnableMultiplePaths: config.AnalyticsEnableMultiplePaths, AnalyticsDevicePathPrefix: config.AnalyticsDevicePathPrefix,

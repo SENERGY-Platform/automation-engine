@@ -17,7 +17,9 @@
 package devicecommand
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"sync"
 
 	"github.com/SENERGY-Platform/models/go/models"
@@ -52,38 +54,38 @@ type recordingMarshaller struct {
 	unmarshalV2 []UnmarshallingV2Request
 }
 
-func (this *recordingMarshaller) MarshalV2(service models.Service, protocol models.Protocol, data []MarshallingV2RequestData) (map[string]string, error) {
+func (this *recordingMarshaller) MarshalV2(ctx context.Context, request MarshallingV2Request) (map[string]string, error, int) {
 	this.mux.Lock()
-	this.marshalV2 = append(this.marshalV2, data)
+	this.marshalV2 = append(this.marshalV2, request.Data)
 	this.mux.Unlock()
 	if this.fail != nil {
-		return nil, this.fail
+		return nil, this.fail, http.StatusBadRequest
 	}
-	return this.fakeMarshaller.MarshalV2(service, protocol, data)
+	return this.fakeMarshaller.MarshalV2(ctx, request)
 }
 
-func (this *recordingMarshaller) UnmarshalV2(request UnmarshallingV2Request) (any, error) {
+func (this *recordingMarshaller) UnmarshalV2(ctx context.Context, request UnmarshallingV2Request) (any, error, int) {
 	this.mux.Lock()
 	this.unmarshalV2 = append(this.unmarshalV2, request)
 	this.mux.Unlock()
-	return this.fakeMarshaller.UnmarshalV2(request)
+	return this.fakeMarshaller.UnmarshalV2(ctx, request)
 }
 
-func (this *recordingMarshaller) MarshalFromServiceAndProtocol(characteristicId string, service models.Service, protocol models.Protocol, data any, configurables []Configurable) (map[string]string, error) {
+func (this *recordingMarshaller) Marshal(ctx context.Context, request MarshallingRequest) (map[string]string, error, int) {
 	this.mux.Lock()
-	this.marshalV1 = append(this.marshalV1, marshalCall{characteristicId: characteristicId, data: data, configurables: configurables})
+	this.marshalV1 = append(this.marshalV1, marshalCall{characteristicId: request.CharacteristicId, data: request.Data, configurables: request.Configurables})
 	this.mux.Unlock()
 	if this.fail != nil {
-		return nil, this.fail
+		return nil, this.fail, http.StatusBadRequest
 	}
-	return this.fakeMarshaller.MarshalFromServiceAndProtocol(characteristicId, service, protocol, data, configurables)
+	return this.fakeMarshaller.Marshal(ctx, request)
 }
 
-func (this *recordingMarshaller) UnmarshalFromServiceAndProtocol(characteristicId string, service models.Service, protocol models.Protocol, message map[string]string, hints []string) (any, error) {
+func (this *recordingMarshaller) Unmarshal(ctx context.Context, request UnmarshallingRequest) (any, error, int) {
 	this.mux.Lock()
-	this.unmarshalV1 = append(this.unmarshalV1, unmarshalCall{characteristicId: characteristicId, hints: hints})
+	this.unmarshalV1 = append(this.unmarshalV1, unmarshalCall{characteristicId: request.CharacteristicId, hints: request.ContentVariableHints})
 	this.mux.Unlock()
-	return this.fakeMarshaller.UnmarshalFromServiceAndProtocol(characteristicId, service, protocol, message, hints)
+	return this.fakeMarshaller.Unmarshal(ctx, request)
 }
 
 func (this *recordingMarshaller) v1Calls() []marshalCall {

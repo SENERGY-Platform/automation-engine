@@ -77,7 +77,8 @@ Feature branches, each forked from the default branch. Since 2026-10-22 all of t
 
 ### device-selection, device-repository, marshaller
 
-- [ ] **Task:** The Go clients take no context, so no trace context is passed on. For device-selection this concerns its own client, for marshaller the client from `marshaller/lib` (tracing, after M3). device-repository is done since 2026-11-02 (client v3.7.0, see PLAN.md), except the ontology reads of the marshaller library.
+- [x] The Go clients take a context and pass the trace on: device-repository since 2026-11-02 (client v3.7.0), device-selection (v2.2.0) and marshaller (v0.4.0) since 2026-11-03, see PLAN.md.
+- [ ] **Task:** Still without trace: the evaluation of events (no context through `Evaluate`), the ontology reads (characteristics, concepts, functions) of the marshaller library, and `ListImportTypes` inside device-selection, whose import-repository client takes no context even at v0.3.1.
 
 ### timescale-wrapper, timescale-rule-manager, timescale-tableworker
 

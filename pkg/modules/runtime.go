@@ -37,6 +37,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
+	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
 )
 
 // Settings are the configuration values of the former module workers (TASK-29). The parameter
@@ -44,6 +45,7 @@ import (
 type Settings struct {
 	// nil if not configured
 	DeviceRepository   devicerepository.Interface
+	DeviceSelection    dsclient.Client
 	DeviceSelectionUrl string
 	DeviceManagerUrl   string
 	FlowEngineUrl      string
@@ -113,10 +115,12 @@ type Runtime struct {
 	settings Settings
 	tokens   auth.UserTokenSource
 	iot      devicerepository.Interface
-	scripts  compat.Scripts
-	http     *http.Client
-	logger   *slog.Logger
-	types    map[string]*moduleType
+	// a client without url if not configured, whose calls fail
+	selection dsclient.Client
+	scripts   compat.Scripts
+	http      *http.Client
+	logger    *slog.Logger
+	types     map[string]*moduleType
 	// health checks per module type (SMS-11)
 	checks map[string]Check
 	// nil until AddWatcher
@@ -142,7 +146,11 @@ func NewRuntime(s *store.Store, settings Settings, tokens auth.UserTokenSource, 
 		// a read fails with an error, as with an empty url, instead of a nil dereference
 		iot = devicerepository.NewClient("", devicerepository.Options{})
 	}
-	result := &Runtime{store: s, settings: settings, tokens: tokens, iot: iot, logger: logger, http: &http.Client{Timeout: 30 * time.Second},
+	selection := settings.DeviceSelection
+	if selection == nil {
+		selection = dsclient.NewClient("", dsclient.Options{})
+	}
+	result := &Runtime{store: s, settings: settings, tokens: tokens, iot: iot, selection: selection, logger: logger, http: &http.Client{Timeout: 30 * time.Second},
 		types: map[string]*moduleType{}, checks: map[string]Check{}, now: time.Now, resources: storeResources{s}}
 	result.scripts = compat.Scripts{Logger: logger, Tokens: result.token, Iot: iot}
 	result.addExternalChecks()

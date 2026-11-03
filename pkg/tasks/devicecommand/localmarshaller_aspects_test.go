@@ -17,6 +17,7 @@
 package devicecommand
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -102,7 +103,7 @@ func TestLocalMarshallerFindsTheAnswerByEveryNamedAspect(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			request := temperatureRequest()
 			c.modify(&request)
-			result, err := flatAspects(t).UnmarshalV2(request)
+			result, err, _ := flatAspects(t).UnmarshalV2(context.Background(), request)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -116,7 +117,7 @@ func TestLocalMarshallerFindsTheAnswerByEveryNamedAspect(t *testing.T) {
 func TestLocalMarshallerFindsNoAnswerForAspectsNoVariableCarriesTogether(t *testing.T) {
 	request := temperatureRequest()
 	request.AspectNodes = []models.AspectNode{{Id: "inside"}, {Id: "outside"}}
-	if _, err := flatAspects(t).UnmarshalV2(request); err == nil {
+	if _, err, _ := flatAspects(t).UnmarshalV2(context.Background(), request); err == nil {
 		t.Fatal("no variable is inside and outside at once")
 	}
 }
@@ -124,7 +125,7 @@ func TestLocalMarshallerFindsNoAnswerForAspectsNoVariableCarriesTogether(t *test
 func TestLocalMarshallerRejectsAnUnknownAspect(t *testing.T) {
 	request := temperatureRequest()
 	request.AspectNodeIds = []string{"air", "unknown"}
-	if _, err := flatAspects(t).UnmarshalV2(request); err == nil {
+	if _, err, _ := flatAspects(t).UnmarshalV2(context.Background(), request); err == nil {
 		t.Fatal("an aspect the device-repository does not know is an error")
 	}
 }
@@ -137,7 +138,7 @@ func TestLocalMarshallerPrefersTheVariableClosestToTheAspect(t *testing.T) {
 		"air":        {Id: "air", RootId: "air", ChildIds: []string{"inside_air"}, DescendentIds: []string{"inside_air"}},
 		"inside_air": {Id: "inside_air", RootId: "air", ParentId: "air", AncestorIds: []string{"air"}},
 	})
-	result, err := m.UnmarshalV2(request)
+	result, err, _ := m.UnmarshalV2(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
 	}

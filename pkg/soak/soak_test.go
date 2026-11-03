@@ -171,27 +171,27 @@ func repository() *httptest.Server {
 // marshaller passes the segment "data" through; the marshalling itself is not under test here
 type marshaller struct{}
 
-func (marshaller) MarshalV2(_ models.Service, _ models.Protocol, data []devicecommand.MarshallingV2RequestData) (map[string]string, error) {
+func (marshaller) MarshalV2(_ context.Context, request devicecommand.MarshallingV2Request) (map[string]string, error, int) {
 	result := map[string]string{}
-	for _, d := range data {
+	for _, d := range request.Data {
 		raw, _ := json.Marshal(d.Value)
 		result["data"] = string(raw)
 	}
-	return result, nil
+	return result, nil, http.StatusOK
 }
 
-func (marshaller) UnmarshalV2(request devicecommand.UnmarshallingV2Request) (any, error) {
+func (marshaller) UnmarshalV2(_ context.Context, request devicecommand.UnmarshallingV2Request) (any, error, int) {
 	var v any
 	err := json.Unmarshal([]byte(request.Message["data"]), &v)
-	return v, err
+	return v, err, http.StatusOK
 }
 
-func (this marshaller) MarshalFromServiceAndProtocol(_ string, service models.Service, protocol models.Protocol, data any, _ []devicecommand.Configurable) (map[string]string, error) {
-	return this.MarshalV2(service, protocol, []devicecommand.MarshallingV2RequestData{{Value: data}})
+func (this marshaller) Marshal(ctx context.Context, request devicecommand.MarshallingRequest) (map[string]string, error, int) {
+	return this.MarshalV2(ctx, devicecommand.MarshallingV2Request{Data: []devicecommand.MarshallingV2RequestData{{Value: request.Data}}})
 }
 
-func (this marshaller) UnmarshalFromServiceAndProtocol(_ string, _ models.Service, _ models.Protocol, message map[string]string, _ []string) (any, error) {
-	return this.UnmarshalV2(devicecommand.UnmarshallingV2Request{Message: message})
+func (this marshaller) Unmarshal(ctx context.Context, request devicecommand.UnmarshallingRequest) (any, error, int) {
+	return this.UnmarshalV2(ctx, devicecommand.UnmarshallingV2Request{Message: request.Message})
 }
 
 type discard struct{}

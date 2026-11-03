@@ -60,7 +60,7 @@ func (this *Controller) PrepareDeployment(ctx context.Context, token string, nam
 		preparer = prepare.New(nil, prepare.Config{})
 	}
 	if input.NetworkId == "" {
-		result.Elements, err = preparer.Prepare(user.Jwt(), process)
+		result.Elements, err = preparer.Prepare(ctx, user.Jwt(), process)
 		return result, err
 	}
 	if _, err = this.GetNetwork(ctx, token, input.NetworkId); err != nil {

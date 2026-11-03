@@ -118,32 +118,32 @@ func (this *lamp) ListAspectNodes(_ context.Context, options devicerepomodel.Asp
 	}
 	return result, int64(len(result)), nil, http.StatusOK
 }
-func (this *lamp) MarshalV2(models.Service, models.Protocol, []devicecommand.MarshallingV2RequestData) (map[string]string, error) {
+func (this *lamp) MarshalV2(context.Context, devicecommand.MarshallingV2Request) (map[string]string, error, int) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
 	this.v2++
-	return nil, errors.New("payloads before version 3 are marshalled without paths")
+	return nil, errors.New("payloads before version 3 are marshalled without paths"), http.StatusBadRequest
 }
-func (this *lamp) UnmarshalV2(devicecommand.UnmarshallingV2Request) (any, error) {
+func (this *lamp) UnmarshalV2(context.Context, devicecommand.UnmarshallingV2Request) (any, error, int) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
 	this.v2++
-	return nil, errors.New("payloads before version 3 are unmarshalled without paths")
+	return nil, errors.New("payloads before version 3 are unmarshalled without paths"), http.StatusBadRequest
 }
-func (this *lamp) MarshalFromServiceAndProtocol(characteristicId string, _ models.Service, _ models.Protocol, data any, _ []devicecommand.Configurable) (map[string]string, error) {
+func (this *lamp) Marshal(_ context.Context, request devicecommand.MarshallingRequest) (map[string]string, error, int) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
-	this.marshalled = append(this.marshalled, marshalled{characteristicId: characteristicId, value: data})
-	raw, err := json.Marshal(data)
-	return map[string]string{"data": string(raw)}, err
+	this.marshalled = append(this.marshalled, marshalled{characteristicId: request.CharacteristicId, value: request.Data})
+	raw, err := json.Marshal(request.Data)
+	return map[string]string{"data": string(raw)}, err, http.StatusOK
 }
-func (this *lamp) UnmarshalFromServiceAndProtocol(characteristicId string, _ models.Service, _ models.Protocol, message map[string]string, _ []string) (any, error) {
+func (this *lamp) Unmarshal(_ context.Context, request devicecommand.UnmarshallingRequest) (any, error, int) {
 	this.mux.Lock()
-	this.unmarshalled = append(this.unmarshalled, characteristicId)
+	this.unmarshalled = append(this.unmarshalled, request.CharacteristicId)
 	this.mux.Unlock()
 	var result any
-	err := json.Unmarshal([]byte(message["data"]), &result)
-	return result, err
+	err := json.Unmarshal([]byte(request.Message["data"]), &result)
+	return result, err, http.StatusOK
 }
 func (this *lamp) Produce(_ context.Context, _ string, _ string, payload []byte) error {
 	var msg devicecommand.ProtocolMsg

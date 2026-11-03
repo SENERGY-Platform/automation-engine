@@ -18,15 +18,18 @@ package prepare
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
@@ -53,7 +56,7 @@ func TestIotOptionsKeepTheFormatOfReleases(t *testing.T) {
 		{Id: "all", Type: "string", Properties: map[string]string{"iot": "group", "multiple": "true", "auto_select_all": "true"}},
 		{Id: "free", Label: "Free", Type: "long", DefaultValue: "3", Properties: map[string]string{"order": "3", "description": "a number"}},
 	}}
-	described, err := NewDescriber(server.URL, nil).Describe(context.Background(), "Bearer user", start)
+	described, err := NewDescriber(dsclient.NewClient(server.URL, dsclient.Options{}), nil).Describe(context.Background(), "Bearer user", start)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,8 +66,14 @@ func TestIotOptionsKeepTheFormatOfReleases(t *testing.T) {
 	if !strings.Contains(query, "include_devices=true") || !strings.Contains(query, "include_groups=true") || !strings.Contains(query, "import_path_trim_first_element=true") || token != "Bearer user" {
 		t.Fatalf("device-selection query %v with token %v", query, token)
 	}
-	if body != `[{"function_id":"f","aspect_id":"a1","aspect_ids":["a1","a2"]}]` {
-		t.Fatalf("the criteria reach device-selection unchanged: %v", body)
+	// the client sends the criteria typed, empty fields included; device-selection reads an empty
+	// field as an absent one
+	var sent []models.DeviceGroupFilterCriteria
+	if err = json.Unmarshal([]byte(body), &sent); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 1 || sent[0].FunctionId != "f" || sent[0].AspectId != "a1" || !slices.Equal(sent[0].AspectIds, []string{"a1", "a2"}) || sent[0].Interaction != "" || sent[0].DeviceClassId != "" {
+		t.Fatalf("the criteria reach device-selection with aspect_id and aspect_ids: %v", body)
 	}
 	if mode := described[0]; mode.DefaultValue != "eco" || len(mode.Options) != 2 || mode.Options[0].Label != "Comfort" || mode.Type != "https://schema.org/Text" {
 		t.Fatalf("static options sorted by label, default kept: %+v", mode)
@@ -89,7 +98,7 @@ func TestIotOptionsKeepTheFormatOfReleases(t *testing.T) {
 		t.Fatalf("a free parameter: %+v", free)
 	}
 
-	auto, err := NewDescriber(server.URL, nil).AutoSelected(context.Background(), "Bearer user", start)
+	auto, err := NewDescriber(dsclient.NewClient(server.URL, dsclient.Options{}), nil).AutoSelected(context.Background(), "Bearer user", start)
 	if err != nil || len(auto["all"].([]any)) != 5 {
 		t.Fatalf("auto_select_all takes every option: %v %v", auto, err)
 	}
@@ -102,14 +111,14 @@ func TestIotParameterWithoutOptionsIsReported(t *testing.T) {
 		{Id: "required", Type: "string", Properties: map[string]string{"iot": "device"}},
 		{Id: "optional", Type: "string", Properties: map[string]string{"iot": "device", "optional": "true"}},
 	}}
-	described, err := NewDescriber(server.URL, nil).Describe(context.Background(), "Bearer user", start)
+	described, err := NewDescriber(dsclient.NewClient(server.URL, dsclient.Options{}), nil).Describe(context.Background(), "Bearer user", start)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !described[0].HasNoValidOption || described[1].HasNoValidOption || described[0].Options == nil {
 		t.Fatalf("a required IoT parameter without options is reported, its options are an empty list: %+v", described)
 	}
-	if _, err = NewDescriber(server.URL, nil).Describe(context.Background(), "", &bpmn.Element{FormFields: []bpmn.FormField{{Id: "x", Properties: map[string]string{"auto_select_all": "true"}}}}); model.AsError(err).Kind != model.KindValidation {
+	if _, err = NewDescriber(dsclient.NewClient(server.URL, dsclient.Options{}), nil).Describe(context.Background(), "", &bpmn.Element{FormFields: []bpmn.FormField{{Id: "x", Properties: map[string]string{"auto_select_all": "true"}}}}); model.AsError(err).Kind != model.KindValidation {
 		t.Fatalf("auto_select_all needs multiple: %v", err)
 	}
 }
@@ -132,7 +141,7 @@ func TestSelectablesCacheSendsEachQueryOnce(t *testing.T) {
 		{Id: "b", Type: "string", Properties: map[string]string{"iot": "device"}},
 		{Id: "c", Type: "string", Properties: map[string]string{"iot": "device_group"}},
 	}}
-	describer := NewDescriber(server.URL, nil)
+	describer := NewDescriber(dsclient.NewClient(server.URL, dsclient.Options{}), nil)
 	ctx := WithSelectablesCache(context.Background())
 	var wg sync.WaitGroup
 	for range 5 {
@@ -175,7 +184,7 @@ func TestSelectablesCacheReadsEachCharacteristicOnce(t *testing.T) {
 		{Id: "b", Type: "string", Properties: map[string]string{"characteristic_id": "c1"}},
 		{Id: "c", Type: "string", Properties: map[string]string{"characteristic_id": "c2"}},
 	}}
-	describer := NewDescriber("", characteristics)
+	describer := NewDescriber(nil, characteristics)
 	ctx := WithSelectablesCache(context.Background())
 	for range 3 {
 		described, err := describer.Describe(ctx, "Bearer user", start)

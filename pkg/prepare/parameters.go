@@ -17,22 +17,18 @@
 package prepare
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
-	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
+	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
+	dsmodel "github.com/SENERGY-Platform/device-selection/v2/pkg/model"
 	"github.com/SENERGY-Platform/models/go/models"
 )
 
@@ -45,14 +41,13 @@ type Characteristics interface {
 // smart-service-repository did for releases (SMS-08): form field properties, static options,
 // characteristics and IoT options from device-selection.
 type Describer struct {
-	deviceSelectionUrl string
-	characteristics    Characteristics
-	http               *http.Client
+	selection       dsclient.Client
+	characteristics Characteristics
 }
 
-// NewDescriber creates a describer; without deviceSelectionUrl, IoT parameters have no options.
-func NewDescriber(deviceSelectionUrl string, characteristics Characteristics) *Describer {
-	return &Describer{deviceSelectionUrl: deviceSelectionUrl, characteristics: characteristics, http: &http.Client{Timeout: 30 * time.Second}}
+// NewDescriber creates a describer; without selection, IoT parameters have no options.
+func NewDescriber(selection dsclient.Client, characteristics Characteristics) *Describer {
+	return &Describer{selection: selection, characteristics: characteristics}
 }
 
 // field is a form field with its properties read
@@ -66,8 +61,8 @@ type field struct {
 	autoSelectAll bool
 	iot           bool
 	typeFilter    []string
-	// passed to device-selection unchanged, so that aspect_id and aspect_ids both arrive
-	criteria   []json.RawMessage
+	// aspect_id and aspect_ids both reach device-selection
+	criteria   []models.DeviceGroupFilterCriteria
 	entityOnly bool
 	sameEntity string
 }
@@ -113,18 +108,21 @@ func read(f bpmn.FormField) (result field, err error) {
 				result.typeFilter = append(result.typeFilter, t)
 			}
 		}
+		var criteria []json.RawMessage
 		if raw, ok := p["criteria"]; ok {
-			result.criteria = []json.RawMessage{json.RawMessage(raw)}
+			criteria = []json.RawMessage{json.RawMessage(raw)}
 		}
 		if raw, ok := p["criteria_list"]; ok {
-			if err = json.Unmarshal([]byte(raw), &result.criteria); err != nil {
+			if err = json.Unmarshal([]byte(raw), &criteria); err != nil {
 				return result, fmt.Errorf("invalid criteria_list property for form field %v: %w", f.Id, err)
 			}
 		}
-		for _, c := range result.criteria {
-			if !json.Valid(c) {
-				return result, fmt.Errorf("invalid criteria property for form field %v", f.Id)
+		for _, c := range criteria {
+			var element models.DeviceGroupFilterCriteria
+			if err = json.Unmarshal(c, &element); err != nil {
+				return result, fmt.Errorf("invalid criteria property for form field %v: %w", f.Id, err)
 			}
+			result.criteria = append(result.criteria, element)
 		}
 		result.entityOnly, _ = strconv.ParseBool(p["entity_only"])
 		result.sameEntity = p["same_entity"]
@@ -258,7 +256,7 @@ func (this *Describer) options(ctx context.Context, token string, desc field) ([
 		return nil, nil
 	}
 	result := []model.ParameterOption{}
-	if this.deviceSelectionUrl == "" {
+	if this.selection == nil {
 		return result, nil
 	}
 	selectables, err := this.selectables(ctx, token, desc.typeFilter, desc.criteria)
@@ -281,34 +279,38 @@ func (this *Describer) options(ctx context.Context, token string, desc field) ([
 	return result, nil
 }
 
-func (this *Describer) selectables(ctx context.Context, token string, typeFilter []string, criteria []json.RawMessage) (result []models.Selectable, err error) {
-	query := url.Values{}
+func (this *Describer) selectables(ctx context.Context, token string, typeFilter []string, criteria []models.DeviceGroupFilterCriteria) (result []dsmodel.Selectable, err error) {
+	options := dsclient.GetSelectablesOptions{}
 	if len(typeFilter) == 0 {
 		typeFilter = []string{"device", "group", "import"}
 	}
 	for _, t := range typeFilter {
 		switch t {
 		case "device":
-			query.Set("include_devices", "true")
+			options.IncludeDevices = true
 		case "group":
-			query.Set("include_groups", "true")
+			options.IncludeGroups = true
 		case "import":
-			query.Set("include_imports", "true")
-			query.Set("import_path_trim_first_element", "true")
+			options.IncludeImports = true
+			options.ImportPathTrimFirstElement = true
 		case "device_service_group":
-			query.Set("include_devices", "true")
-			query.Set("include_id_modified", "true")
+			options.IncludeDevices = true
+			options.IncludeIdModified = true
 		}
 	}
 	if criteria == nil {
-		criteria = []json.RawMessage{}
+		criteria = []models.DeviceGroupFilterCriteria{}
 	}
 	body, err := json.Marshal(criteria)
 	if err != nil {
 		return nil, err
 	}
-	return shared(ctx, "selectables\n"+query.Encode()+"\n"+string(body), func() ([]models.Selectable, error) {
-		return this.querySelectables(ctx, token, query, body)
+	return shared(ctx, fmt.Sprintf("selectables\n%+v\n%s", options, body), func() ([]dsmodel.Selectable, error) {
+		result, _, err := this.selection.GetSelectables(ctx, token, criteria, &options)
+		if err != nil {
+			return nil, model.Unavailable("device-selection: %v", err)
+		}
+		return result, nil
 	})
 }
 
@@ -356,30 +358,6 @@ func WithSelectablesCache(ctx context.Context) context.Context {
 	return context.WithValue(ctx, requestCacheKey{}, &requestCache{entries: map[string]*requestCacheEntry{}})
 }
 
-func (this *Describer) querySelectables(ctx context.Context, token string, query url.Values, body []byte) (result []models.Selectable, err error) {
-	// built by hand: the client of device-selection takes no context and does not know
-	// import_path_trim_first_element (vault: The device-selection client takes no context)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, this.deviceSelectionUrl+"/v2/query/selectables?"+query.Encode(), bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", token)
-	req.Header.Set("Content-Type", "application/json")
-	if err = tracing.Inject(ctx, req); err != nil {
-		return nil, err
-	}
-	resp, err := this.http.Do(req)
-	if err != nil {
-		return nil, model.Unavailable("device-selection: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, model.Unavailable("device-selection answered %v: %s", resp.Status, bytes.TrimSpace(raw))
-	}
-	return result, json.NewDecoder(resp.Body).Decode(&result)
-}
-
 // the JSON of the selections modules read; field order and names as in smart-service-repository
 type iotOption struct {
 	DeviceSelection      *deviceSelection `json:"device_selection,omitempty"`
@@ -410,7 +388,7 @@ func encode(option iotOption) string {
 	return string(raw)
 }
 
-func deviceOptions(s models.Selectable, desc field) (result []model.ParameterOption) {
+func deviceOptions(s dsmodel.Selectable, desc field) (result []model.ParameterOption) {
 	device := *s.Device
 	option := func(service models.Service, services int, path string, characteristicId string, paths int) model.ParameterOption {
 		label := device.DisplayName
@@ -454,7 +432,7 @@ func deviceOptions(s models.Selectable, desc field) (result []model.ParameterOpt
 	return result
 }
 
-func importOptions(s models.Selectable, desc field) (result []model.ParameterOption) {
+func importOptions(s dsmodel.Selectable, desc field) (result []model.ParameterOption) {
 	imp := *s.Import
 	option := func(path string, characteristicId string, paths int) model.ParameterOption {
 		label := imp.Name

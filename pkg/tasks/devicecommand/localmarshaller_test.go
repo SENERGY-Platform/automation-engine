@@ -17,6 +17,7 @@
 package devicecommand
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -90,7 +91,7 @@ func TestLocalMarshallerReadsTheMirror(t *testing.T) {
 	}
 	service, protocol := temperatureService(false)
 	for range 2 {
-		message, err := m.MarshalFromServiceAndProtocol("celsius", service, protocol, 21.5, nil)
+		message, err, _ := m.Marshal(context.Background(), MarshallingRequest{CharacteristicId: "celsius", Service: service, Protocol: &protocol, Data: 21.5})
 		if err != nil || strings.TrimSpace(message["data"]) != "21.5" {
 			t.Fatalf("v1 writes the value into its segment: %v %v", message, err)
 		}
@@ -99,15 +100,15 @@ func TestLocalMarshallerReadsTheMirror(t *testing.T) {
 		t.Errorf("the concepts are read once and held: %v", fake.requests)
 	}
 	output, _ := temperatureService(true)
-	value, err := m.UnmarshalFromServiceAndProtocol("celsius", output, protocol, map[string]string{"data": "21.5"}, nil)
+	value, err, _ := m.Unmarshal(context.Background(), UnmarshallingRequest{CharacteristicId: "celsius", Service: output, Protocol: &protocol, Message: map[string]string{"data": "21.5"}})
 	if err != nil || value != 21.5 {
 		t.Errorf("v1 reads the value of its characteristic: %v %v", value, err)
 	}
-	value, err = m.UnmarshalV2(UnmarshallingV2Request{Service: output, Protocol: protocol, CharacteristicId: "celsius", FunctionId: measuring, Message: map[string]string{"data": "22.5"}})
+	value, err, _ = m.UnmarshalV2(context.Background(), UnmarshallingV2Request{Service: output, Protocol: protocol, CharacteristicId: "celsius", FunctionId: measuring, Message: map[string]string{"data": "22.5"}})
 	if err != nil || value != 22.5 {
 		t.Errorf("v2 finds the path by the function: %v %v", value, err)
 	}
-	message, err := m.MarshalV2(service, protocol, []MarshallingV2RequestData{{Value: 23.5, CharacteristicId: "celsius", FunctionId: measuring}})
+	message, err, _ := m.MarshalV2(context.Background(), MarshallingV2Request{Service: service, Protocol: protocol, Data: []MarshallingV2RequestData{{Value: 23.5, CharacteristicId: "celsius", FunctionId: measuring}}})
 	if err != nil || strings.TrimSpace(message["data"]) != "23.5" {
 		t.Errorf("v2 writes the value: %v %v", message, err)
 	}

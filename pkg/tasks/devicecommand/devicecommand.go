@@ -310,7 +310,7 @@ func (this *Type) send(ctx context.Context, token string, command Command, info 
 		if info.CompletionStrategy == Optimistic {
 			return nil, nil
 		}
-		value, err := this.lastValue(token, *event)
+		value, err := this.lastValue(ctx, token, *event)
 		if err != nil {
 			return nil, err
 		}
@@ -380,7 +380,7 @@ func (this *Type) HandleResponse(ctx context.Context, raw []byte) error {
 	if msg.TaskInfo.CompletionStrategy == Optimistic {
 		return nil
 	}
-	output, err := this.output(msg)
+	output, err := this.output(ctx, msg)
 	if err != nil {
 		jobId := jobIdOf(msg.TaskInfo.TaskId)
 		_, failErr := this.completer.FailTask(ctx, jobId, "unable to unmarshal device response: "+err.Error())

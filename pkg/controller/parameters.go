@@ -221,7 +221,7 @@ func (this *Controller) MaintenanceParameters(ctx context.Context, token string,
 
 func (this *Controller) describe(ctx context.Context, token string, start *bpmn.Element) ([]model.ParameterDescription, error) {
 	if this.parameters == nil {
-		return prepare.NewDescriber("", nil).Describe(ctx, token, start)
+		return prepare.NewDescriber(nil, nil).Describe(ctx, token, start)
 	}
 	return this.parameters.Describe(ctx, token, start)
 }

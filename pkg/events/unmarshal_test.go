@@ -17,6 +17,7 @@
 package events_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -63,16 +64,16 @@ func (this repoFixture) GetConceptIdOfFunction(id string) string {
 	return this.functions[id]
 }
 
-func (this repoFixture) GetAspectNode(id string) (models.AspectNode, error) {
+func (this repoFixture) GetAspectNode(_ context.Context, id string) (models.AspectNode, error) {
 	if node, ok := this.aspects[id]; ok {
 		return node, nil
 	}
 	return models.AspectNode{}, errors.New("unknown aspect node: " + id)
 }
 
-func (this repoFixture) GetAspectNodes(ids []string) (result []models.AspectNode, err error) {
+func (this repoFixture) GetAspectNodes(ctx context.Context, ids []string) (result []models.AspectNode, err error) {
 	for _, id := range ids {
-		node, err := this.GetAspectNode(id)
+		node, err := this.GetAspectNode(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -245,7 +246,7 @@ func TestDeviceRepoAsksTheEndpointOfEachEntityWithTheClientToken(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(response)
 	})
-	if node, err := repo.GetAspectNode("urn:aspect:1"); err != nil || !reflect.DeepEqual(node.ChildIds, []string{"urn:aspect:2"}) {
+	if node, err := repo.GetAspectNode(context.Background(), "urn:aspect:1"); err != nil || !reflect.DeepEqual(node.ChildIds, []string{"urn:aspect:2"}) {
 		t.Fatalf("aspect node: %+v %v", node, err)
 	}
 	if c, err := repo.GetCharacteristic("urn:characteristic:1"); err != nil || c.Type != models.Integer {
@@ -279,7 +280,7 @@ func TestDeviceRepoCachesAnswers(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(models.AspectNode{Id: "urn:aspect:1", Name: "aspect"})
 	})
 	for i := 0; i < 3; i++ {
-		if node, err := repo.GetAspectNode("urn:aspect:1"); err != nil || node.Id != "urn:aspect:1" {
+		if node, err := repo.GetAspectNode(context.Background(), "urn:aspect:1"); err != nil || node.Id != "urn:aspect:1" {
 			t.Fatalf("%+v %v", node, err)
 		}
 	}
@@ -301,7 +302,7 @@ func TestDeviceRepoMarksOnlyServerErrorsAsUnavailable(t *testing.T) {
 				w.WriteHeader(c.status)
 				_, _ = w.Write([]byte("no"))
 			})
-			_, err := repo.GetAspectNode("urn:aspect:" + strconv.Itoa(c.status))
+			_, err := repo.GetAspectNode(context.Background(), "urn:aspect:"+strconv.Itoa(c.status))
 			if err == nil || errors.Is(err, events.ErrUnavailable) != c.unavailable {
 				t.Errorf("%v", err)
 			}
@@ -311,7 +312,7 @@ func TestDeviceRepoMarksOnlyServerErrorsAsUnavailable(t *testing.T) {
 		server := httptest.NewServer(http.NotFoundHandler())
 		server.Close()
 		repo := events.NewCachedDeviceRepo(devicerepository.NewClient(server.URL, devicerepository.Options{OptionalAuthTokenForApiGatewayRequest: auth.Static(clientToken)}), time.Minute)
-		if _, err := repo.GetAspectNode("urn:aspect:1"); !errors.Is(err, events.ErrUnavailable) {
+		if _, err := repo.GetAspectNode(context.Background(), "urn:aspect:1"); !errors.Is(err, events.ErrUnavailable) {
 			t.Errorf("%v", err)
 		}
 	})
@@ -357,34 +358,34 @@ func TestDeviceRepoReadsAspectNodeLists(t *testing.T) {
 		return append([]string{}, requests[before:]...)
 	}
 
-	if nodes, err := repo.GetAspectNodes([]string{"urn:aspect:1", "urn:aspect:2"}); err != nil || len(nodes) != 2 {
+	if nodes, err := repo.GetAspectNodes(context.Background(), []string{"urn:aspect:1", "urn:aspect:2"}); err != nil || len(nodes) != 2 {
 		t.Fatalf("%+v %v", nodes, err)
 	}
 	if !reflect.DeepEqual(since(0), []string{"/v2/aspect-nodes?ids=urn:aspect:1,urn:aspect:2"}) {
 		t.Fatalf("one request for several nodes: %v", since(0))
 	}
 	before := len(since(0))
-	if _, err := repo.GetAspectNodes([]string{"urn:aspect:1", "urn:aspect:2"}); err != nil || len(since(before)) != 0 {
+	if _, err := repo.GetAspectNodes(context.Background(), []string{"urn:aspect:1", "urn:aspect:2"}); err != nil || len(since(before)) != 0 {
 		t.Fatalf("a repeated read is cached: %v %v", since(before), err)
 	}
-	if nodes, err := repo.GetAspectNodes([]string{"urn:aspect:2", "urn:aspect:2"}); err != nil || len(nodes) != 1 ||
+	if nodes, err := repo.GetAspectNodes(context.Background(), []string{"urn:aspect:2", "urn:aspect:2"}); err != nil || len(nodes) != 1 ||
 		!reflect.DeepEqual(since(before), []string{"/v2/aspect-nodes?ids=urn:aspect:2"}) {
 		t.Fatalf("the same id twice is one aspect: %+v %v %v", nodes, since(before), err)
 	}
 	// a one element list and a single read of the same node are cached side by side
-	_, _ = repo.GetAspectNodes([]string{"urn:aspect:3"})
-	_, _ = repo.GetAspectNode("urn:aspect:3")
+	_, _ = repo.GetAspectNodes(context.Background(), []string{"urn:aspect:3"})
+	_, _ = repo.GetAspectNode(context.Background(), "urn:aspect:3")
 	before = len(since(0))
-	_, _ = repo.GetAspectNodes([]string{"urn:aspect:3"})
-	_, _ = repo.GetAspectNode("urn:aspect:3")
+	_, _ = repo.GetAspectNodes(context.Background(), []string{"urn:aspect:3"})
+	_, _ = repo.GetAspectNode(context.Background(), "urn:aspect:3")
 	if len(since(before)) != 0 {
 		t.Fatalf("both reads are cached: %v", since(before))
 	}
-	if _, err := repo.GetAspectNodes([]string{"urn:aspect:1", "urn:aspect:unknown"}); err == nil || !strings.Contains(err.Error(), "urn:aspect:unknown") {
+	if _, err := repo.GetAspectNodes(context.Background(), []string{"urn:aspect:1", "urn:aspect:unknown"}); err == nil || !strings.Contains(err.Error(), "urn:aspect:unknown") {
 		t.Fatalf("unknown ids are reported: %v", err)
 	}
 	before = len(since(0))
-	if nodes, err := repo.GetAspectNodes(nil); err != nil || len(nodes) != 0 || len(since(before)) != 0 {
+	if nodes, err := repo.GetAspectNodes(context.Background(), nil); err != nil || len(nodes) != 0 || len(since(before)) != 0 {
 		t.Fatalf("nothing is read without an aspect: %+v %v %v", nodes, since(before), err)
 	}
 }

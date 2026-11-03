@@ -97,7 +97,7 @@ func (this *Type) message(ctx context.Context, command Command, info TaskInfo, t
 	var input map[string]string
 	var err error
 	if command.Version < 3 {
-		input, err = this.marshaller.MarshalFromServiceAndProtocol(inputCharacteristic, *service, *protocol, command.Input, command.Configurables)
+		input, err, _ = this.marshaller.Marshal(ctx, MarshallingRequest{CharacteristicId: inputCharacteristic, Service: *service, Protocol: protocol, Configurables: command.Configurables, Data: command.Input})
 	} else {
 		data := []MarshallingV2RequestData{}
 		somethingToSet := command.Function.ConceptId != "" || command.Input != nil
@@ -112,7 +112,7 @@ func (this *Type) message(ctx context.Context, command Command, info TaskInfo, t
 			data = append(data, MarshallingV2RequestData{Value: c.Value, CharacteristicId: c.CharacteristicId, Paths: paths, FunctionId: c.FunctionId, AspectNodes: c.GetAspectNodes()})
 		}
 		start := time.Now()
-		input, err = this.marshaller.MarshalV2(*service, *protocol, data)
+		input, err, _ = this.marshaller.MarshalV2(ctx, MarshallingV2Request{Service: *service, Protocol: *protocol, Data: data})
 		if err == nil {
 			functionIds := []string{}
 			for _, d := range data {
@@ -154,15 +154,17 @@ func (this *Type) message(ctx context.Context, command Command, info TaskInfo, t
 const nullCharacteristicId = "null"
 
 // output unmarshals the response of a protocol handler into the characteristic of the task
-func (this *Type) output(msg ProtocolMsg) (any, error) {
+func (this *Type) output(ctx context.Context, msg ProtocolMsg) (any, error) {
 	if msg.Metadata.OutputCharacteristic == nullCharacteristicId || msg.Metadata.OutputCharacteristic == "" {
 		return nil, nil
 	}
 	if msg.Metadata.Version < 3 {
-		return this.marshaller.UnmarshalFromServiceAndProtocol(msg.Metadata.OutputCharacteristic, msg.Metadata.Service, msg.Metadata.Protocol, msg.Response.Output, msg.Metadata.ContentVariableHints)
+		result, err, _ := this.marshaller.Unmarshal(ctx, UnmarshallingRequest{CharacteristicId: msg.Metadata.OutputCharacteristic, Service: msg.Metadata.Service, Protocol: &msg.Metadata.Protocol,
+			Message: msg.Response.Output, ContentVariableHints: msg.Metadata.ContentVariableHints})
+		return result, err
 	}
 	start := time.Now()
-	result, err := this.marshaller.UnmarshalV2(UnmarshallingV2Request{
+	result, err, _ := this.marshaller.UnmarshalV2(ctx, UnmarshallingV2Request{
 		Service: msg.Metadata.Service, Protocol: msg.Metadata.Protocol, CharacteristicId: msg.Metadata.OutputCharacteristic, Message: msg.Response.Output,
 		Path: msg.Metadata.OutputPath, FunctionId: msg.Metadata.OutputFunctionId, AspectNodes: msg.Metadata.GetOutputAspectNodes(),
 	})
@@ -173,7 +175,7 @@ func (this *Type) output(msg ProtocolMsg) (any, error) {
 }
 
 // lastValue reads the last event value of a service through timescale-wrapper (TASK-08)
-func (this *Type) lastValue(token string, event EventRequest) (any, error) {
+func (this *Type) lastValue(ctx context.Context, token string, event EventRequest) (any, error) {
 	if this.timescale == nil {
 		return nil, errors.New("reading event values needs a timescale-wrapper url")
 	}
@@ -212,9 +214,10 @@ func (this *Type) lastValue(token string, event EventRequest) (any, error) {
 			return nil, err
 		}
 	}
-	return this.marshaller.UnmarshalV2(UnmarshallingV2Request{
+	result, err, _ := this.marshaller.UnmarshalV2(ctx, UnmarshallingV2Request{
 		Service: event.Service, Protocol: event.Protocol, CharacteristicId: event.CharacteristicId, Message: message, FunctionId: event.FunctionId, AspectNodes: event.AspectNodes,
 	})
+	return result, err
 }
 
 func timescaleRequest(device models.Device, service models.Service) (result []TimescaleRequest) {

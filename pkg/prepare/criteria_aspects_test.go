@@ -17,6 +17,7 @@
 package prepare
 
 import (
+	"context"
 	"html"
 	"reflect"
 	"testing"
@@ -116,7 +117,7 @@ func TestBulkRequestCarriesTheAspectListOfTasksAndEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake := &fakeSelection{}
-	if _, err = New(fake, Config{}).Prepare("token", p); err != nil {
+	if _, err = New(fake, Config{}).Prepare(context.Background(), "token", p); err != nil {
 		t.Fatal(err)
 	}
 	asked := map[string][]string{}

@@ -120,12 +120,13 @@ func (this *deviceGroupHandler) sendRequest(ctx context.Context, task Task, meth
 		{Key: "platform/smart_service_definition", Value: task.DeploymentId, Origin: origin},
 	}}
 	if len(deviceIds) > 0 {
-		var helper struct {
-			Criteria []models.DeviceGroupFilterCriteria `json:"criteria"`
-		}
-		err := this.runtime.request(ctx, this.runtime.http, http.MethodPost, this.runtime.settings.DeviceSelectionUrl+"/device-group-helper", task.Owner, false, deviceIds, &helper)
+		token, err := this.runtime.token(task.Owner)
 		if err != nil {
 			return err
+		}
+		helper, _, err := this.runtime.selection.DeviceGroupHelper(ctx, token, deviceIds, nil)
+		if err != nil {
+			return fmt.Errorf("POST /device-group-helper: %w", err)
 		}
 		group.Criteria = helper.Criteria
 	}

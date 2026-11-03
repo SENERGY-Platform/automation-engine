@@ -49,8 +49,8 @@ type DeviceRepo interface {
 	GetConceptIdOfFunction(id string) string
 	// GetAspectNode is used by the aspect distance sorting of the marshaller, which walks the
 	// tree one node at a time
-	GetAspectNode(id string) (models.AspectNode, error)
-	GetAspectNodes(ids []string) ([]models.AspectNode, error)
+	GetAspectNode(ctx context.Context, id string) (models.AspectNode, error)
+	GetAspectNodes(ctx context.Context, ids []string) ([]models.AspectNode, error)
 }
 
 // Marshaller converts device and import messages into the characteristic of an event as the
@@ -61,11 +61,30 @@ type Marshaller struct {
 }
 
 func NewMarshaller(repo DeviceRepo) (*Marshaller, error) {
-	c, err := converter.New()
+	c, err := NewLocalConverter()
 	if err != nil {
 		return nil, err
 	}
 	return &Marshaller{marshaller: v2.New(marshallerconfig.Config{}, c, repo), repo: repo}, nil
+}
+
+// LocalConverter converts in the process, where the marshaller service calls the converter
+// service; it sends no request, so it has no use for the context of the marshaller library.
+type LocalConverter struct {
+	converter *converter.Converter
+}
+
+func NewLocalConverter() (LocalConverter, error) {
+	c, err := converter.New()
+	return LocalConverter{converter: c}, err
+}
+
+func (this LocalConverter) Cast(_ context.Context, in any, from string, to string) (any, error) {
+	return this.converter.Cast(in, from, to)
+}
+
+func (this LocalConverter) CastWithExtension(_ context.Context, in any, from string, to string, extensions []models.ConverterExtension) (any, error) {
+	return this.converter.CastWithExtension(in, from, to, extensions)
 }
 
 func (this *Marshaller) Unmarshal(desc MessageDesc) (value any, err error) {
@@ -75,8 +94,9 @@ func (this *Marshaller) Unmarshal(desc MessageDesc) (value any, err error) {
 			return nil, err
 		}
 	}
-	// no protocol is needed, the message is serialized already
-	return this.marshaller.Unmarshal(models.Protocol{}, desc.Service, desc.CharacteristicId, path, nil, desc.Message)
+	// no protocol is needed, the message is serialized already; the evaluation of events has no
+	// context yet, so the reads of aspect nodes carry no trace
+	return this.marshaller.Unmarshal(context.Background(), models.Protocol{}, desc.Service, desc.CharacteristicId, path, nil, desc.Message)
 }
 
 // path finds the output path of the function; every requested aspect has to be carried by the
@@ -88,13 +108,13 @@ func (this *Marshaller) path(desc MessageDesc) (string, error) {
 	if desc.FunctionId == "" {
 		return "", errors.New("missing function id in conditional event description")
 	}
-	aspects, err := this.repo.GetAspectNodes(desc.AspectIds)
+	aspects, err := this.repo.GetAspectNodes(context.Background(), desc.AspectIds)
 	if err != nil {
 		return "", err
 	}
 	paths := this.marshaller.GetOutputPaths(desc.Service, desc.FunctionId, aspects)
 	if len(paths) > 1 {
-		if paths, err = this.marshaller.SortPathsByAspectDistance(this.repo, desc.Service, aspects, paths); err != nil {
+		if paths, err = this.marshaller.SortPathsByAspectDistance(context.Background(), this.repo, desc.Service, aspects, paths); err != nil {
 			return "", err
 		}
 	}
@@ -109,8 +129,9 @@ func (this *Marshaller) path(desc MessageDesc) (string, error) {
 var ErrUnavailable = errors.New("device-repository unavailable")
 
 // CachedDeviceRepo gives the marshaller library characteristics, concepts, functions and aspect
-// nodes, read through devicerepository.WithCache with ttl. The library calls it without a
-// context, so these reads carry no trace.
+// nodes, read through devicerepository.WithCache with ttl. The library asks for aspect nodes
+// with a context; characteristics, concepts and functions it asks for without one, so these
+// reads carry no trace.
 type CachedDeviceRepo struct {
 	// subscribed to the cache invalidation signals by whoever created it
 	client devicerepository.Interface
@@ -158,17 +179,17 @@ func (this *CachedDeviceRepo) GetConceptIdOfFunction(id string) string {
 	return function.ConceptId
 }
 
-func (this *CachedDeviceRepo) GetAspectNode(id string) (models.AspectNode, error) {
-	result, err, code := devicerepository.WithCache(this.client, this.ttl).GetAspectNode(context.Background(), id)
+func (this *CachedDeviceRepo) GetAspectNode(ctx context.Context, id string) (models.AspectNode, error) {
+	result, err, code := devicerepository.WithCache(this.client, this.ttl).GetAspectNode(ctx, id)
 	return result, unavailable(err, code)
 }
 
 // GetAspectNodes reads the aspect nodes of several ids in one request, each id once; every id
 // has to resolve, because criteria with an unknown aspect cannot be answered
-func (this *CachedDeviceRepo) GetAspectNodes(ids []string) ([]models.AspectNode, error) {
+func (this *CachedDeviceRepo) GetAspectNodes(ctx context.Context, ids []string) ([]models.AspectNode, error) {
 	ids = slices.Clone(ids)
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
-	result, err, code := commons.AspectNodesByIds(context.Background(), devicerepository.WithCache(this.client, this.ttl), ids)
+	result, err, code := commons.AspectNodesByIds(ctx, devicerepository.WithCache(this.client, this.ttl), ids)
 	return result, unavailable(err, code)
 }

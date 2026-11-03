@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	dsclient "github.com/SENERGY-Platform/device-selection/v2/pkg/client"
 )
 
 // The options of IoT parameters come from the v2 selectables endpoint of device-selection,
@@ -35,7 +36,7 @@ func TestOptionsAreAskedAtTheV2SelectablesEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 	start := &bpmn.Element{Id: "start", FormFields: []bpmn.FormField{{Id: "device", Type: "string", Properties: map[string]string{"iot": "device"}}}}
-	if _, err := NewDescriber(server.URL, nil).Describe(context.Background(), "Bearer user", start); err != nil {
+	if _, err := NewDescriber(dsclient.NewClient(server.URL, dsclient.Options{}), nil).Describe(context.Background(), "Bearer user", start); err != nil {
 		t.Fatal(err)
 	}
 	if method != http.MethodPost || path != "/v2/query/selectables" {

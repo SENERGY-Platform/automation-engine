@@ -120,24 +120,24 @@ func newRepo() *fakeRepo {
 // fakeMarshaller writes the input value to the segment "data" and reads it back from there
 type fakeMarshaller struct{}
 
-func (fakeMarshaller) MarshalV2(_ models.Service, _ models.Protocol, data []MarshallingV2RequestData) (map[string]string, error) {
+func (fakeMarshaller) MarshalV2(_ context.Context, request MarshallingV2Request) (map[string]string, error, int) {
 	result := map[string]string{}
-	for _, d := range data {
+	for _, d := range request.Data {
 		raw, _ := json.Marshal(d.Value)
 		result["data"] = string(raw)
 	}
-	return result, nil
+	return result, nil, http.StatusOK
 }
-func (fakeMarshaller) UnmarshalV2(request UnmarshallingV2Request) (any, error) {
+func (fakeMarshaller) UnmarshalV2(_ context.Context, request UnmarshallingV2Request) (any, error, int) {
 	var v any
 	err := json.Unmarshal([]byte(request.Message["data"]), &v)
-	return v, err
+	return v, err, http.StatusOK
 }
-func (this fakeMarshaller) MarshalFromServiceAndProtocol(_ string, service models.Service, protocol models.Protocol, data any, _ []Configurable) (map[string]string, error) {
-	return this.MarshalV2(service, protocol, []MarshallingV2RequestData{{Value: data}})
+func (this fakeMarshaller) Marshal(ctx context.Context, request MarshallingRequest) (map[string]string, error, int) {
+	return this.MarshalV2(ctx, MarshallingV2Request{Data: []MarshallingV2RequestData{{Value: request.Data}}})
 }
-func (this fakeMarshaller) UnmarshalFromServiceAndProtocol(_ string, _ models.Service, _ models.Protocol, message map[string]string, _ []string) (any, error) {
-	return this.UnmarshalV2(UnmarshallingV2Request{Message: message})
+func (this fakeMarshaller) Unmarshal(ctx context.Context, request UnmarshallingRequest) (any, error, int) {
+	return this.UnmarshalV2(ctx, UnmarshallingV2Request{Message: request.Message})
 }
 
 type fakeTimescale struct{}
