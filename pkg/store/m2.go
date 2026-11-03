@@ -292,6 +292,37 @@ func (this *Tx) SetRestartStats(deploymentId string, stats RestartStats) error {
 	return err
 }
 
+// FaultySince lists the deployments marked faulty after a restart loop with the time of the mark;
+// with networkId, it lists every deployment of that gateway, a nil time for those not marked.
+func (this *Tx) FaultySince(networkId string) (map[string]*time.Time, error) {
+	query, args := "SELECT id, faulty_since FROM deployments WHERE faulty_since IS NOT NULL", []any{}
+	if networkId != "" {
+		query, args = "SELECT id, faulty_since FROM deployments WHERE network_id = ?", []any{networkId}
+	}
+	rows, err := this.query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[string]*time.Time{}
+	for rows.Next() {
+		var id string
+		var faulty sql.NullInt64
+		if err = rows.Scan(&id, &faulty); err != nil {
+			return nil, err
+		}
+		result[id] = fromNullMillis(faulty)
+	}
+	return result, rows.Err()
+}
+
+// SetFaultySince sets the faulty mark of a deployment alone; the cloud takes it so over from a
+// gateway, which counts the restarts (SYNC-02).
+func (this *Tx) SetFaultySince(deploymentId string, since *time.Time) error {
+	_, err := this.exec("UPDATE deployments SET faulty_since = ? WHERE id = ?", nullMillis(since), deploymentId)
+	return err
+}
+
 // DueRestarts lists instances whose automatic restart is due. Instances of gateways are left
 // out: their gateway restarts them, the cloud only shows the planned time (FOG-07).
 func (this *Tx) DueRestarts(now time.Time, limit int) (result []string, err error) {

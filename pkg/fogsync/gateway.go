@@ -64,6 +64,7 @@ type Local interface {
 	GetVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string) (model.Variable, error)
 	HistoryVariable(ctx context.Context, token string, namespace string, id string, name string, elementId string, options model.HistoryOptions) (model.HistoryVariable, error)
 	Watch(ctx context.Context, token string, namespace string, id string, options model.WatchOptions) (<-chan model.DebugMessage, error)
+	ResetRestarts(ctx context.Context, token string, namespace string, id string) (model.Deployment, error)
 }
 
 // Namespaces stores namespaces replicated from the cloud (NS-10).
@@ -353,9 +354,11 @@ func (this *Gateway) addInstance(tx *store.Tx, batch *Changes, id string) error 
 	return nil
 }
 
-// SendStatus reports versions, positions, applied resources and storage (SYNC-12, LONG-14).
+// SendStatus reports versions, positions, applied resources, storage and the deployments in a
+// restart loop (SYNC-12, LONG-14, SYNC-02).
 func (this *Gateway) SendStatus(ctx context.Context) error {
-	status := Status{Envelope: this.envelope(), StartedAt: this.started.UTC(), Storage: Storage{BudgetBytes: this.settings.StorageBudget, Rows: map[string]int64{}}}
+	status := Status{Envelope: this.envelope(), StartedAt: this.started.UTC(), Storage: Storage{BudgetBytes: this.settings.StorageBudget, Rows: map[string]int64{}},
+		Faulty: []FaultyDeployment{}}
 	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
 		if status.Latest, err = tx.LatestChangeSeq(); err != nil {
 			return err
@@ -372,6 +375,13 @@ func (this *Gateway) SendStatus(ctx context.Context) error {
 		}
 		for _, a := range applied {
 			status.Applied = append(status.Applied, Result{Kind: a.Kind, Id: a.Id, Version: a.Version, Error: a.Error, At: a.At})
+		}
+		faulty, err := tx.FaultySince("")
+		if err != nil {
+			return err
+		}
+		for id, since := range faulty {
+			status.Faulty = append(status.Faulty, FaultyDeployment{Id: id, Since: since.UTC()})
 		}
 		if status.Storage.UsedBytes, err = tx.UsedBytes(); err != nil {
 			return err
@@ -616,6 +626,18 @@ func (this *Gateway) answer(ctx context.Context, request Request) error {
 		var o model.HistoryOptions
 		if err = options(&o); err == nil {
 			result, err = this.local.HistoryVariable(ctx, gatewayAdmin, ns, id, args.Name, args.ElementId, o)
+		}
+	case MethodResetRestarts:
+		if result, err = this.local.ResetRestarts(ctx, gatewayAdmin, ns, args.Deployment); err == nil {
+			// a status sent before the reset may reach the cloud after it and mark the deployment
+			// again; the next tick sends one that no longer does
+			this.mux.Lock()
+			this.lastStatus = time.Time{}
+			this.mux.Unlock()
+			select {
+			case this.wake <- struct{}{}:
+			default:
+			}
 		}
 	case MethodWatch:
 		return this.watch(ctx, request, respond)

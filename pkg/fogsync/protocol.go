@@ -241,6 +241,16 @@ type Status struct {
 	// every resource the gateway applied, so that the cloud resends what is missing
 	Applied []Result `json:"applied,omitempty"`
 	Storage Storage  `json:"storage"`
+	// the deployments the gateway stopped restarting after a restart loop (INC-04, SYNC-02);
+	// a gateway that reports them sends an empty list when there are none, so that nil tells
+	// an older gateway, whose marks the cloud then leaves as they are
+	Faulty []FaultyDeployment `json:"faulty"`
+}
+
+// FaultyDeployment is a deployment of a gateway marked faulty after a restart loop (INC-04).
+type FaultyDeployment struct {
+	Id    string    `json:"id"`
+	Since time.Time `json:"since"`
 }
 
 // Storage of a gateway (LONG-14).
@@ -269,7 +279,8 @@ func CompatibleWith(own int, gatewayProtocol int, window int) bool {
 }
 
 // Requests read the history and the state of an instance on its gateway, where it stays
-// (DBG-15), or watch it live while the cloud renews the request (DBG-12).
+// (DBG-15), or watch it live while the cloud renews the request (DBG-12); one resets the
+// restart loop of a deployment there.
 const (
 	MethodDebugState       = "debug_state"
 	MethodHistoryState     = "history_state"
@@ -282,6 +293,9 @@ const (
 	// a stream of debug messages; the gateway ends it without renewal within WatchLease
 	MethodWatch   = "watch"
 	MethodUnwatch = "unwatch"
+	// allows automatic restarts of a deployment again after a restart loop (INC-04); the
+	// deployment is Args.Deployment, the request names no instance
+	MethodResetRestarts = "reset_restarts"
 )
 
 // WatchLease is how long a gateway streams after the last watch request.
@@ -295,15 +309,16 @@ type Request struct {
 	Method    string `json:"method"`
 	Namespace string `json:"namespace"`
 	Instance  string `json:"instance"`
-	// method parameters: options of the method, a variable name, element id or run
+	// method parameters: options of the method, a deployment, a variable name, element id or run
 	Args RequestArgs `json:"args"`
 }
 
 type RequestArgs struct {
-	Name      string          `json:"name,omitempty"`
-	ElementId string          `json:"element_id,omitempty"`
-	Run       int             `json:"run,omitempty"`
-	Options   json.RawMessage `json:"options,omitempty"`
+	Deployment string          `json:"deployment,omitempty"`
+	Name       string          `json:"name,omitempty"`
+	ElementId  string          `json:"element_id,omitempty"`
+	Run        int             `json:"run,omitempty"`
+	Options    json.RawMessage `json:"options,omitempty"`
 }
 
 // Response answers a request; a watch answers with one response per debug message and a final

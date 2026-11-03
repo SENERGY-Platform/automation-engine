@@ -28,6 +28,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
+	"github.com/SENERGY-Platform/automation-engine/pkg/fogsync"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/permissions"
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
@@ -455,8 +456,32 @@ func (this *Controller) registerOwner(ctx context.Context, namespace string, kin
 	return nil
 }
 
-// ResetRestarts clears the faulty mark of a deployment after a restart loop (INC-04).
+// ResetRestarts clears the faulty mark of a deployment after a restart loop (INC-04). A gateway
+// counts the restarts of its instances itself and reports the mark with its status (SYNC-02), so
+// for a deployment of a gateway the reset happens there first; an unreachable gateway answers
+// unavailable and nothing changes. On a gateway it needs the right x there, as a start does.
 func (this *Controller) ResetRestarts(ctx context.Context, token string, namespace string, id string) (result model.Deployment, err error) {
+	var networkId string
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		d, err := this.readDeployment(ctx, tx, token, namespace, id, Write, false)
+		networkId = d.NetworkId
+		return err
+	})
+	if err != nil {
+		return result, err
+	}
+	if networkId != "" {
+		user, _, err := this.begin(token, namespace)
+		if err != nil {
+			return result, err
+		}
+		if err = this.checkNetwork(ctx, user, networkId, Execute); err != nil {
+			return result, err
+		}
+		if err = this.networks.Call(ctx, networkId, fogsync.MethodResetRestarts, namespace, "", fogsync.RequestArgs{Deployment: id}, nil); err != nil {
+			return result, err
+		}
+	}
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		if _, err := this.readDeployment(ctx, tx, token, namespace, id, Write, true); err != nil {
 			return err

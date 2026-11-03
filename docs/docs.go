@@ -6890,6 +6890,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
+                "description": "Clears the faulty mark (` + "`" + `faulty_since` + "`" + `) set after a restart loop (INC-04). For a deployment of a gateway, the gateway counts the restarts and reports the mark with its status, so the reset is done there first and needs the right x on the gateway; an unreachable gateway answers 503 and nothing changes.",
                 "produces": [
                     "application/json"
                 ],
@@ -6928,6 +6929,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/model.Error"
                         }

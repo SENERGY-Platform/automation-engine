@@ -1279,6 +1279,18 @@
                 },
                 "type": "object"
             },
+            "FogsyncFaultyDeployment": {
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "since": {
+                        "format": "date-time",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
             "FogsyncInstanceSpec": {
                 "properties": {
                     "deployment_id": {
@@ -1346,6 +1358,9 @@
             },
             "FogsyncRequestArgs": {
                 "properties": {
+                    "deployment": {
+                        "type": "string"
+                    },
                     "element_id": {
                         "type": "string"
                     },
@@ -1444,6 +1459,15 @@
                     },
                     "engine": {
                         "type": "string"
+                    },
+                    "faulty": {
+                        "items": {
+                            "$ref": "#/components/schemas/FogsyncFaultyDeployment"
+                        },
+                        "type": [
+                            "array",
+                            "null"
+                        ]
                     },
                     "latest": {
                         "type": "integer"

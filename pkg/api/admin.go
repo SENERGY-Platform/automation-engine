@@ -85,13 +85,14 @@ func (h *handlers) setOwner(kind model.Kind) http.HandlerFunc {
 // resetRestarts godoc
 //
 //	@Summary		allow automatic restarts again after a restart loop
+//	@Description	Clears the faulty mark (`faulty_since`) set after a restart loop (INC-04). For a deployment of a gateway, the gateway counts the restarts and reports the mark with its status, so the reset is done there first and needs the right x on the gateway; an unreachable gateway answers 503 and nothing changes.
 //	@Tags			deployments
 //	@Security		Bearer
 //	@Produce		json
 //	@Param			ns	path		string	true	"namespace"
 //	@Param			id	path		string	true	"deployment id"
 //	@Success		200	{object}	model.Deployment
-//	@Failure		403,404	{object}	model.Error
+//	@Failure		403,404,503	{object}	model.Error
 //	@Router			/namespaces/{ns}/deployments/{id}/reset-restarts [post]
 func (h *handlers) resetRestarts(w http.ResponseWriter, r *http.Request) {
 	result, err := h.c.ResetRestarts(r.Context(), token(r), r.PathValue("ns"), r.PathValue("id"))

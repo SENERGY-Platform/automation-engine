@@ -316,6 +316,11 @@ func (this *Cloud) status(ctx context.Context, networkId string, status Status) 
 		if err = tx.UpdateNetwork(n); err != nil {
 			return err
 		}
+		if status.Faulty != nil {
+			if err = takeFaulty(tx, networkId, status.Faulty); err != nil {
+				return err
+			}
+		}
 		acked = n.Acked
 		reported := map[string]Result{}
 		for _, r := range status.Applied {
@@ -353,6 +358,33 @@ func (this *Cloud) status(ctx context.Context, networkId string, status Status) 
 	}
 	this.Wake()
 	return this.publish(ctx, networkId, KindUpAck, UpAck{Envelope: this.envelope(status.Protocol), Acked: acked})
+}
+
+// takeFaulty sets the faulty marks of the deployments of a gateway as the gateway reports them:
+// the gateway counts the restarts of its instances, the cloud runs none (FOG-07), so the mark is
+// the gateway's alone (SYNC-02, INC-04). Deployments of other networks are left alone.
+func takeFaulty(tx *store.Tx, networkId string, reported []FaultyDeployment) error {
+	since := map[string]time.Time{}
+	for _, f := range reported {
+		since[f.Id] = f.Since
+	}
+	marks, err := tx.FaultySince(networkId)
+	if err != nil {
+		return err
+	}
+	for id, current := range marks {
+		s, faulty := since[id]
+		switch {
+		case faulty && (current == nil || !current.Equal(s)):
+			err = tx.SetFaultySince(id, &s)
+		case !faulty && current != nil:
+			err = tx.SetFaultySince(id, nil)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (this *Cloud) applied(ctx context.Context, networkId string, protocol int, results []Result) error {
