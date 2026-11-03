@@ -2,7 +2,7 @@
 
 # Script environments
 
-The engine runs JavaScript with [goja](https://github.com/dop251/goja) (ECMAScript 5.1 with parts of ES6), in two places with different globals. This reference and the files next to it are generated from the Go source: methods and descriptions from `pkg/modules/compat`, types and field names by reflection with the name mapping of the runtime (JSON tags), deprecations from the comments of the models. A test fails when the files do not match the code.
+The engine runs JavaScript (ES2023) with [QuickJS](https://bellard.org/quickjs) in its Go port [modernc.org/quickjs](https://pkg.go.dev/modernc.org/quickjs), each evaluation in a runtime of its own, in two places with different globals. This reference and the files next to it are generated from the Go source: methods and descriptions from `pkg/modules/compat`, types and field names by reflection with the name mapping of the runtime (JSON tags), deprecations from the comments of the models. A test fails when the files do not match the code.
 
 | File | Content |
 |---|---|
@@ -19,7 +19,7 @@ Applies to script tasks, conditions on sequence flows, input and output mappings
 - The result is the value of the last expression. Conditions must return a boolean.
 - Values are JSON: numbers are doubles, missing values `null`.
 - `JSON.parse` returns a value that is no string as it is, in module scripts as well. Camunda handed some values over as JSON text that the engine keeps as objects, e.g. the value of a device event, and models parse them.
-- Limits per evaluation: run time `SCRIPT_TIMEOUT` (default 2 s, fixed 2 s for event conditions), result up to `MAX_VARIABLE_BYTES` (default 1 MiB), 100 log entries, call depth 1000. No access to the network, the file system or engine internals.
+- Limits per evaluation: run time `SCRIPT_TIMEOUT` (default 2 s, fixed 2 s for event conditions), result up to `MAX_VARIABLE_BYTES` (default 1 MiB), 100 log entries, 64 MiB of memory and a bounded stack; a script beyond memory or stack fails with `InternalError: out of memory` or `InternalError: stack overflow`. No access to the network, the file system or engine internals. Nothing a script changes, a built-in included, reaches the next evaluation.
 {{range .globals}}
 ### `{{.Signature}}`
 
@@ -32,7 +32,8 @@ Applies to the inputs `prescript*` and `postscript*` of the task types `info`, `
 - Order: prescripts with the raw inputs, then the string inputs are rendered as Go templates against the variables (`{{"{{"}}.name{{"}}"}}`), then the task runs, then postscripts with all outputs.
 - Variables are those of the instance, for maintenance procedures those of the parent instance. Written variables apply after the script.
 - `deviceRepo` asks device-repository with the token of the owner.
-- Run time at most 2 s per script.
+- Run time at most 2 s per script, memory and stack bounded as for BPMN scripts.
+- Values cross between script and engine as JSON: what a method returns is a copy, numbers arrive as doubles.
 - `console` writes to the log of the engine, not to the history of the instance.
 {{range .namespaces}}
 ### `{{.Name}}`

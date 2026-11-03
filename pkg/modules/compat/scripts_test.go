@@ -216,7 +216,8 @@ func TestValuesComeWithoutJsonText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := map[string]any{"single": "lamp", "text": "string", "second": "b", "listText": "x", "number": "42", "plain": "hello", "broken": "{not json", "fromInstance": int64(2)}
+	// numbers arrive as double, as everywhere in the engine (EXPR-05); goja handed integers to Go as int64
+	expected := map[string]any{"single": "lamp", "text": "string", "second": "b", "listText": "x", "number": "42", "plain": "hello", "broken": "{not json", "fromInstance": float64(2)}
 	for name, want := range expected {
 		if changes[name] != want {
 			t.Errorf("%v: %#v, want %#v", name, changes[name], want)

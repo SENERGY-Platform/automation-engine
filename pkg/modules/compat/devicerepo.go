@@ -32,11 +32,6 @@ func NewDeviceRepoScriptEnv(env *ScriptEnv) *ScriptEnvDeviceRepo {
 }
 
 func (this *ScriptEnvDeviceRepo) ReadDevice(id string) models.Device {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.ReadDevice(this.env.ctx, id, this.env.getToken(), model.READ)
 	if err != nil {
 		panic(fmt.Errorf("error in ReadDevice(%#v): %v", id, err))
@@ -45,11 +40,6 @@ func (this *ScriptEnvDeviceRepo) ReadDevice(id string) models.Device {
 }
 
 func (this *ScriptEnvDeviceRepo) ReadDeviceByLocalId(localId string) models.Device {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	//device-repository replaces ownerId="" with the requesting user id
 	result, err, _ := this.env.iotClient.ReadDeviceByLocalId(this.env.ctx, "", localId, this.env.getToken(), model.READ)
 	if err != nil {
@@ -59,11 +49,6 @@ func (this *ScriptEnvDeviceRepo) ReadDeviceByLocalId(localId string) models.Devi
 }
 
 func (this *ScriptEnvDeviceRepo) ReadHub(id string) models.Hub {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.ReadHub(this.env.ctx, id, this.env.getToken(), model.READ)
 	if err != nil {
 		panic(fmt.Errorf("error in ReadHub(%#v): %v", id, err))
@@ -72,11 +57,6 @@ func (this *ScriptEnvDeviceRepo) ReadHub(id string) models.Hub {
 }
 
 func (this *ScriptEnvDeviceRepo) ListHubDeviceIds(id string, asLocalId bool) []string {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.ListHubDeviceIds(this.env.ctx, id, this.env.getToken(), model.READ, asLocalId)
 	if err != nil {
 		panic(fmt.Errorf("error in ListHubDeviceIds(%#v, %#v): %v", id, asLocalId, err))
@@ -85,11 +65,6 @@ func (this *ScriptEnvDeviceRepo) ListHubDeviceIds(id string, asLocalId bool) []s
 }
 
 func (this *ScriptEnvDeviceRepo) ReadDeviceType(id string) models.DeviceType {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.ReadDeviceType(this.env.ctx, id, this.env.getToken())
 	if err != nil {
 		panic(fmt.Errorf("error in ReadDeviceType(%#v): %v", id, err))
@@ -98,11 +73,6 @@ func (this *ScriptEnvDeviceRepo) ReadDeviceType(id string) models.DeviceType {
 }
 
 func (this *ScriptEnvDeviceRepo) ListDeviceTypes(limit int64, offset int64, sort string, filter []model.FilterCriteria, includeModified bool, includeUnmodified bool) []models.DeviceType {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.ListDeviceTypesV2(this.env.ctx, this.env.getToken(), limit, offset, sort, filter, includeModified, includeUnmodified)
 	if err != nil {
 		panic(fmt.Errorf("error in ListDeviceTypes(): %v", err))
@@ -111,11 +81,6 @@ func (this *ScriptEnvDeviceRepo) ListDeviceTypes(limit int64, offset int64, sort
 }
 
 func (this *ScriptEnvDeviceRepo) GetDeviceTypeSelectables(query []model.FilterCriteria, pathPrefix string, includeModified bool, servicesMustMatchAllCriteria bool) []model.DeviceTypeSelectable {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetDeviceTypeSelectablesV2(this.env.ctx, query, pathPrefix, includeModified, servicesMustMatchAllCriteria)
 	if err != nil {
 		panic(fmt.Errorf("error in GetDeviceTypeSelectables(): %v", err))
@@ -124,11 +89,6 @@ func (this *ScriptEnvDeviceRepo) GetDeviceTypeSelectables(query []model.FilterCr
 }
 
 func (this *ScriptEnvDeviceRepo) ReadDeviceGroup(id string) models.DeviceGroup {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.ReadDeviceGroup(this.env.ctx, id, this.env.getToken(), false)
 	if err != nil {
 		panic(fmt.Errorf("error in ReadDeviceGroup(%#v): %v", id, err))
@@ -137,11 +97,6 @@ func (this *ScriptEnvDeviceRepo) ReadDeviceGroup(id string) models.DeviceGroup {
 }
 
 func (this *ScriptEnvDeviceRepo) GetService(id string) models.Service {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetService(this.env.ctx, id)
 	if err != nil {
 		panic(fmt.Errorf("error in GetService(%#v): %v", id, err))
@@ -150,11 +105,6 @@ func (this *ScriptEnvDeviceRepo) GetService(id string) models.Service {
 }
 
 func (this *ScriptEnvDeviceRepo) GetAspects() []models.Aspect {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetAspects(this.env.ctx)
 	if err != nil {
 		panic(fmt.Errorf("error in GetAspects(): %v", err))
@@ -163,11 +113,6 @@ func (this *ScriptEnvDeviceRepo) GetAspects() []models.Aspect {
 }
 
 func (this *ScriptEnvDeviceRepo) GetAspectsWithMeasuringFunction(ancestors bool, descendants bool) []models.Aspect {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetAspectsWithMeasuringFunction(this.env.ctx, ancestors, descendants)
 	if err != nil {
 		panic(fmt.Errorf("error in GetAspectsWithMeasuringFunction(): %v", err))
@@ -176,11 +121,6 @@ func (this *ScriptEnvDeviceRepo) GetAspectsWithMeasuringFunction(ancestors bool,
 }
 
 func (this *ScriptEnvDeviceRepo) GetAspect(id string) models.Aspect {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetAspect(this.env.ctx, id)
 	if err != nil {
 		panic(fmt.Errorf("error in GetAspect(%#v): %v", id, err))
@@ -189,11 +129,6 @@ func (this *ScriptEnvDeviceRepo) GetAspect(id string) models.Aspect {
 }
 
 func (this *ScriptEnvDeviceRepo) GetAspectNode(id string) models.AspectNode {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetAspectNode(this.env.ctx, id)
 	if err != nil {
 		panic(fmt.Errorf("error in GetAspectNode(%#v): %v", id, err))
@@ -202,11 +137,6 @@ func (this *ScriptEnvDeviceRepo) GetAspectNode(id string) models.AspectNode {
 }
 
 func (this *ScriptEnvDeviceRepo) GetAspectNodes() []models.AspectNode {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetAspectNodes(this.env.ctx)
 	if err != nil {
 		panic(fmt.Errorf("error in GetAspectNodes(): %v", err))
@@ -215,11 +145,6 @@ func (this *ScriptEnvDeviceRepo) GetAspectNodes() []models.AspectNode {
 }
 
 func (this *ScriptEnvDeviceRepo) GetAspectNodesMeasuringFunctions(id string, ancestors bool, descendants bool) []models.Function {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetAspectNodesMeasuringFunctions(this.env.ctx, id, ancestors, descendants)
 	if err != nil {
 		panic(fmt.Errorf("error in GetAspectNodesMeasuringFunctions(%#v, %#v, %#v): %v", id, ancestors, descendants, err))
@@ -228,11 +153,6 @@ func (this *ScriptEnvDeviceRepo) GetAspectNodesMeasuringFunctions(id string, anc
 }
 
 func (this *ScriptEnvDeviceRepo) GetAspectNodesWithMeasuringFunction(ancestors bool, descendants bool) []models.AspectNode {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetAspectNodesWithMeasuringFunction(this.env.ctx, ancestors, descendants)
 	if err != nil {
 		panic(fmt.Errorf("error in GetAspectNodesWithMeasuringFunction(%#v, %#v): %v", ancestors, descendants, err))
@@ -241,11 +161,6 @@ func (this *ScriptEnvDeviceRepo) GetAspectNodesWithMeasuringFunction(ancestors b
 }
 
 func (this *ScriptEnvDeviceRepo) GetAspectNodesByIdList(ids []string) []models.AspectNode {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetAspectNodesByIdList(this.env.ctx, ids)
 	if err != nil {
 		panic(fmt.Errorf("error in GetAspectNodesByIdList(%#v): %v", ids, err))
@@ -254,11 +169,6 @@ func (this *ScriptEnvDeviceRepo) GetAspectNodesByIdList(ids []string) []models.A
 }
 
 func (this *ScriptEnvDeviceRepo) GetLeafCharacteristics() []models.Characteristic {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetCharacteristics(this.env.ctx, true)
 	if err != nil {
 		panic(fmt.Errorf("error in GetCharacteristics(true): %v", err))
@@ -267,11 +177,6 @@ func (this *ScriptEnvDeviceRepo) GetLeafCharacteristics() []models.Characteristi
 }
 
 func (this *ScriptEnvDeviceRepo) GetCharacteristic(id string) models.Characteristic {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetCharacteristic(this.env.ctx, id)
 	if err != nil {
 		panic(fmt.Errorf("error in GetCharacteristic(%#v): %v", id, err))
@@ -280,11 +185,6 @@ func (this *ScriptEnvDeviceRepo) GetCharacteristic(id string) models.Characteris
 }
 
 func (this *ScriptEnvDeviceRepo) GetConceptWithCharacteristics(id string) models.ConceptWithCharacteristics {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetConceptWithCharacteristics(this.env.ctx, id)
 	if err != nil {
 		panic(fmt.Errorf("error in GetConceptWithCharacteristics(%#v): %v", id, err))
@@ -293,11 +193,6 @@ func (this *ScriptEnvDeviceRepo) GetConceptWithCharacteristics(id string) models
 }
 
 func (this *ScriptEnvDeviceRepo) GetConceptWithoutCharacteristics(id string) models.Concept {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetConceptWithoutCharacteristics(this.env.ctx, id)
 	if err != nil {
 		panic(fmt.Errorf("error in GetConceptWithoutCharacteristics(%#v): %v", id, err))
@@ -306,11 +201,6 @@ func (this *ScriptEnvDeviceRepo) GetConceptWithoutCharacteristics(id string) mod
 }
 
 func (this *ScriptEnvDeviceRepo) GetDeviceClasses() []models.DeviceClass {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetDeviceClasses(this.env.ctx)
 	if err != nil {
 		panic(fmt.Errorf("error in GetDeviceClasses(): %v", err))
@@ -319,11 +209,6 @@ func (this *ScriptEnvDeviceRepo) GetDeviceClasses() []models.DeviceClass {
 }
 
 func (this *ScriptEnvDeviceRepo) GetDeviceClassesWithControllingFunctions() []models.DeviceClass {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetDeviceClassesWithControllingFunctions(this.env.ctx)
 	if err != nil {
 		panic(fmt.Errorf("error in GetDeviceClassesWithControllingFunctions(): %v", err))
@@ -332,11 +217,6 @@ func (this *ScriptEnvDeviceRepo) GetDeviceClassesWithControllingFunctions() []mo
 }
 
 func (this *ScriptEnvDeviceRepo) GetDeviceClassesFunctions(id string) []models.Function {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetDeviceClassesFunctions(this.env.ctx, id)
 	if err != nil {
 		panic(fmt.Errorf("error in GetDeviceClassesFunctions(%#v): %v", id, err))
@@ -345,11 +225,6 @@ func (this *ScriptEnvDeviceRepo) GetDeviceClassesFunctions(id string) []models.F
 }
 
 func (this *ScriptEnvDeviceRepo) GetDeviceClassesControllingFunctions(id string) []models.Function {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetDeviceClassesControllingFunctions(this.env.ctx, id)
 	if err != nil {
 		panic(fmt.Errorf("error in GetDeviceClassesControllingFunctions(%#v): %v", id, err))
@@ -358,11 +233,6 @@ func (this *ScriptEnvDeviceRepo) GetDeviceClassesControllingFunctions(id string)
 }
 
 func (this *ScriptEnvDeviceRepo) GetDeviceClass(id string) models.DeviceClass {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetDeviceClass(this.env.ctx, id)
 	if err != nil {
 		panic(fmt.Errorf("error in GetDeviceClass(%#v): %v", id, err))
@@ -371,11 +241,6 @@ func (this *ScriptEnvDeviceRepo) GetDeviceClass(id string) models.DeviceClass {
 }
 
 func (this *ScriptEnvDeviceRepo) GetFunctionsByType(rdfType string) []models.Function {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetFunctionsByType(this.env.ctx, rdfType)
 	if err != nil {
 		panic(fmt.Errorf("error in GetFunctionsByType(%#v): %v", rdfType, err))
@@ -384,11 +249,6 @@ func (this *ScriptEnvDeviceRepo) GetFunctionsByType(rdfType string) []models.Fun
 }
 
 func (this *ScriptEnvDeviceRepo) GetFunction(id string) models.Function {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetFunction(this.env.ctx, id)
 	if err != nil {
 		panic(fmt.Errorf("error in GetFunction(%#v): %v", id, err))
@@ -397,11 +257,6 @@ func (this *ScriptEnvDeviceRepo) GetFunction(id string) models.Function {
 }
 
 func (this *ScriptEnvDeviceRepo) GetLocation(id string) models.Location {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result, err, _ := this.env.iotClient.GetLocation(this.env.ctx, id, this.env.getToken())
 	if err != nil {
 		panic(fmt.Errorf("error in GetLocation(%#v): %v", id, err))

@@ -28,21 +28,11 @@ func NewOutputsScriptEnv(env *ScriptEnv) *ScriptEnvOutputs {
 
 // Set a process worker output
 func (this *ScriptEnvOutputs) Set(name string, value interface{}) {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	this.env.Outputs[name] = value
 }
 
 // Get a process worker output
 func (this *ScriptEnvOutputs) Get(name string) interface{} {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	return this.env.Outputs[name]
 }
 
@@ -50,11 +40,6 @@ func (this *ScriptEnvOutputs) Get(name string) interface{} {
 //
 // Deprecated: use set; the engine keeps values as they are, Camunda needed the JSON text
 func (this *ScriptEnvOutputs) SetJson(name string, value interface{}) {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	temp, err := json.Marshal(value)
 	if err != nil {
 		panic(err)

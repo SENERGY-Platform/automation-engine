@@ -25,12 +25,12 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules/compat"
 	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 	devicemodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
-	"github.com/dop251/goja"
 )
 
 // Most tests here are those of the generator of smart-service-module-worker-lib.
@@ -79,7 +79,7 @@ type VisibilityPromote struct {
 	Promoted string `json:"promoted"`
 }
 
-// A field a script cannot reach is not documented, and the rule is checked against goja.
+// A field a script cannot reach is not documented, and the rule is checked against the runtime.
 func TestTypeDefFieldVisibility(t *testing.T) {
 	_ = visibilityFixture{}.unexported
 	defs := TypeDefOf(visibilityFixture{})
@@ -137,7 +137,12 @@ func TestDocumentedMethodsAreTheCallableOnes(t *testing.T) {
 // The globals of the BPMN sandbox besides the standard library are exactly the documented ones.
 func TestEngineGlobalsAreDocumented(t *testing.T) {
 	names := `Object.getOwnPropertyNames(this)`
-	standard, err := goja.New().RunString(names)
+	vm, err := script.NewVM(time.Second, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer vm.Close()
+	standard, err := vm.Eval(names, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +152,7 @@ func TestEngineGlobalsAreDocumented(t *testing.T) {
 	}
 	registered := []string{}
 	for _, name := range result.Value.([]any) {
-		if !slices.Contains(standard.Export().([]any), name) {
+		if !slices.Contains(standard.([]any), name) {
 			registered = append(registered, name.(string))
 		}
 	}
@@ -309,27 +314,15 @@ func TestDeclarationsAreConsistent(t *testing.T) {
 
 func scriptVisibleProperties(t *testing.T, value any) []string {
 	t.Helper()
-	vm := goja.New()
-	vm.SetFieldNameMapper(fieldNameMapper)
-	if err := vm.Set("value", value); err != nil {
-		t.Fatal(err)
-	}
-	keys, err := vm.RunString(`Object.keys(value)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods := scriptVisibleMethods(value)
 	result := []string{}
-	for _, key := range keys.Export().([]any) {
-		if !slices.Contains(methods, key.(string)) {
-			result = append(result, key.(string))
-		}
+	for key := range script.ToScript(value).(map[string]any) {
+		result = append(result, key)
 	}
 	sort.Strings(result)
 	return result
 }
 
-// goja makes values addressable, so methods of pointer receivers are visible as well
+// a namespace is bound by pointer, so methods of pointer receivers are visible as well
 func scriptVisibleMethods(value any) (result []string) {
 	t := reflect.TypeOf(value)
 	if t.Kind() == reflect.Pointer {
@@ -337,7 +330,7 @@ func scriptVisibleMethods(value any) (result []string) {
 	}
 	for _, candidate := range []reflect.Type{t, reflect.PointerTo(t)} {
 		for i := 0; i < candidate.NumMethod(); i++ {
-			if name := fieldNameMapper.MethodName(candidate, candidate.Method(i)); !slices.Contains(result, name) {
+			if name := script.MethodName(candidate.Method(i).Name); !slices.Contains(result, name) {
 				result = append(result, name)
 			}
 		}

@@ -31,11 +31,6 @@ func NewInputsScriptEnv(env *ScriptEnv) *ScriptEnvInputs {
 //
 // Deprecated: use getValue, which returns selections and lists as values instead of JSON text
 func (this *ScriptEnvInputs) Get(name string) interface{} {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	// the worker library fetched its tasks without naming variables, so Camunda also handed over
 	// every variable of the instance
 	if value, ok := this.env.Inputs[name]; ok {
@@ -48,21 +43,11 @@ func (this *ScriptEnvInputs) Get(name string) interface{} {
 // of an object or a list, as IoT and multiple selections arrive, becomes that object or list,
 // also in each element of a list; other values stay as they are
 func (this *ScriptEnvInputs) GetValue(name string) interface{} {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	return parsedValue(this.Get(name))
 }
 
 // Exists checks if a process worker input or a variable of the instance exists
 func (this *ScriptEnvInputs) Exists(name string) bool {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	_, exists := this.env.Inputs[name]
 	if !exists {
 		_, exists = this.env.InstanceVariables[name]
@@ -72,11 +57,6 @@ func (this *ScriptEnvInputs) Exists(name string) bool {
 
 // List input values sorted by their names
 func (this *ScriptEnvInputs) List() []interface{} {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result := []interface{}{}
 	for _, name := range this.ListNames() {
 		result = append(result, this.Get(name))
@@ -86,11 +66,6 @@ func (this *ScriptEnvInputs) List() []interface{} {
 
 // ListNames lists sorted input names
 func (this *ScriptEnvInputs) ListNames() []string {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	result := []string{}
 	for name, _ := range this.env.Inputs {
 		result = append(result, name)

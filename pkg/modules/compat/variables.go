@@ -30,11 +30,6 @@ func NewVariablesScriptEnv(env *ScriptEnv) *ScriptEnvVariables {
 
 // Write value as smart-service instance variable
 func (this *ScriptEnvVariables) Write(name string, value interface{}) {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	this.env.Variables[name] = value
 	this.env.VariablesUpdates[name] = value
 }
@@ -43,11 +38,6 @@ func (this *ScriptEnvVariables) Write(name string, value interface{}) {
 //
 // Deprecated: use readValue, which returns selections and lists as values instead of JSON text
 func (this *ScriptEnvVariables) Read(name string) interface{} {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	return this.env.Variables[name]
 }
 
@@ -55,21 +45,11 @@ func (this *ScriptEnvVariables) Read(name string) interface{} {
 // list, as IoT and multiple selections arrive, becomes that object or list, also in each element
 // of a list; other values stay as they are
 func (this *ScriptEnvVariables) ReadValue(name string) interface{} {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	return parsedValue(this.Read(name))
 }
 
 // Exists checks if a smart-service instance variable exists
 func (this *ScriptEnvVariables) Exists(name string) bool {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	_, exists := this.env.Variables[name]
 	return exists
 }
@@ -77,11 +57,6 @@ func (this *ScriptEnvVariables) Exists(name string) bool {
 // Ref creates a reference to a variable (e.g. "my_var_name" --> "{{.my_var_name}}")
 // throws exception if variable is unknown
 func (this *ScriptEnvVariables) Ref(name string) string {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	_, ok := this.env.Variables[name]
 	if !ok {
 		panic("unknown variable name")
@@ -93,11 +68,6 @@ var TrowErrorForUnknownDerefName = false
 
 // DerefName returns the name of a smart-service instance variable referenced in parameter ref
 func (this *ScriptEnvVariables) DerefName(ref string) string {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	if !strings.HasPrefix(ref, "{{.") {
 		panic("derefName input is not valid reference: missing '{{.' prefix")
 	}
@@ -116,21 +86,11 @@ func (this *ScriptEnvVariables) DerefName(ref string) string {
 
 // DerefValue returns the value of a smart-service instance variable referenced in parameter ref
 func (this *ScriptEnvVariables) DerefValue(ref string) interface{} {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	return this.env.Variables[this.DerefName(ref)]
 }
 
 // DerefTemplate replaces variable references in the input string with the corresponding variable values
 func (this *ScriptEnvVariables) DerefTemplate(templ string) string {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	placeholder, err := GetPlaceholder(this.env.Variables)
 	if err != nil {
 		panic(err)

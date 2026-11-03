@@ -153,3 +153,78 @@ func TestJsonParseReturnsAValueThatIsNoStringAsItIs(t *testing.T) {
 		t.Error("invalid JSON text still fails")
 	}
 }
+
+// Scripts that recurse natively killed the process on goja with "fatal error: stack overflow",
+// which no recover catches; on QuickJS they fail alone (EXPR-03).
+func TestRunContainsWhatKilledTheProcess(t *testing.T) {
+	for name, src := range map[string]string{
+		"built-in as toString":    `var o = {}; o.toString = String.prototype.trim; String(o)`,
+		"built-in as toPrimitive": `var o = {}; o[Symbol.toPrimitive] = String.prototype.trim; String(o)`,
+		"computed key":            `var o = {}; o["to" + "String"] = String.prototype.trim; String(o)`,
+		"deep array as text":      `var a = []; for (var i = 0; i < 1000000; i++) { a = [a] }; String(a).length`,
+		"proxy chain":             `var q = new Proxy({}, {}); for (var i = 0; i < 100000; i++) { q = new Proxy(q, {}) }; q.x`,
+		"map containing itself":   `var m = new Map(); m.set("a", m); m`,
+		"recursion caught in try": `function f() { return f() } try { f() } catch (e) { throw e }`,
+	} {
+		if _, err := NewSandbox().Run(src, nil); err == nil && name != "map containing itself" {
+			t.Errorf("%v: expected an error", name)
+		}
+	}
+}
+
+func TestRunLimitsMemory(t *testing.T) {
+	s := NewSandbox()
+	s.MaxMemory = 16 << 20
+	_, err := s.Run(`var a = []; while (true) { a.push(new Array(100000).fill(1)) }`, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of memory") {
+		t.Fatalf("expected out of memory, got %v", err)
+	}
+	if got, err := s.Run(`1 + 1`, nil); err != nil || got.Value != float64(2) {
+		t.Fatalf("the next evaluation is not affected: %v %v", got.Value, err)
+	}
+}
+
+// Nothing a script changes reaches the next evaluation, a built-in included.
+func TestRunIsolatesEvaluations(t *testing.T) {
+	s := NewSandbox()
+	if _, err := s.Run(`String.prototype.trim = function () { return "changed" }; var leaked = 1; implicit = 2`, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Run(`[" a ".trim(), typeof leaked, typeof implicit]`, nil)
+	if err != nil || !reflect.DeepEqual(got.Value, []any{"a", "undefined", "undefined"}) {
+		t.Fatalf("%#v %v", got.Value, err)
+	}
+}
+
+func TestRunNamesWhereTheScriptFailed(t *testing.T) {
+	_, err := NewSandbox().Run("var a = 1;\n\nmissing()", nil)
+	if err == nil || !strings.Contains(err.Error(), "'missing' is not defined at <eval>:3:1") {
+		t.Fatalf("unexpected %v", err)
+	}
+	if err = Check("a &&"); err == nil || !strings.Contains(err.Error(), "<eval>:1:5") {
+		t.Fatalf("unexpected %v", err)
+	}
+}
+
+func TestRunEncodesValuesAsGojaDid(t *testing.T) {
+	s := NewSandbox()
+	cases := map[string]any{
+		"({a: undefined, b: [undefined]})": map[string]any{"a": nil, "b": []any{nil}},
+		"NaN":                              "NaN",
+		"Infinity":                         "+Inf",
+	}
+	for src, expected := range cases {
+		got, err := s.Run(src, nil)
+		if err != nil || !reflect.DeepEqual(got.Value, expected) {
+			t.Errorf("%v: %#v %v", src, got.Value, err)
+		}
+	}
+	for _, src := range []string{"({a: NaN})", "(function () {})", "({f: function () {}})"} {
+		if _, err := s.Run(src, nil); err == nil {
+			t.Errorf("%v: expected an error", src)
+		}
+	}
+	if _, err := s.Run(`setVariable("x", {a: NaN})`, nil); err == nil || !strings.Contains(err.Error(), `setVariable("x")`) {
+		t.Errorf("setVariable names the variable: %v", err)
+	}
+}

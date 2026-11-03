@@ -29,14 +29,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules/compat"
+	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 	devicemodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
-	"github.com/dop251/goja"
 )
-
-// fieldNameMapper is the one the script runtimes install: scripts see struct fields under their
-// json tag name, and fields without a tag usable as identifier not at all.
-var fieldNameMapper = goja.TagFieldNameMapper("json", true)
 
 type TypeDefField struct {
 	Name string
@@ -103,7 +99,9 @@ func typeDefOf(t reflect.Type, done map[string]bool) (result []TypeDef) {
 		if !field.IsExported() {
 			continue
 		}
-		name := fieldNameMapper.FieldName(t, field)
+		// scripts see struct fields under their json tag name, and fields without a tag usable as
+		// identifier not at all (script.ToScript)
+		name := script.FieldName(field)
 		if name == "" || slices.ContainsFunc(def.Fields, func(f TypeDefField) bool { return f.Name == name }) {
 			// invisible to scripts, or shadowed by a field closer to the surface
 			continue

@@ -32,11 +32,6 @@ func NewConsoleScriptEnv(env *ScriptEnv) *ScriptEnvConsole {
 
 // Log writes the arguments, separated by spaces, as info message to the worker log; strings are written as they are, everything else as json
 func (this *ScriptEnvConsole) Log(args ...interface{}) {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	parts := make([]string, 0, len(args))
 	for _, arg := range args {
 		parts = append(parts, formatLogArg(arg))
@@ -47,11 +42,6 @@ func (this *ScriptEnvConsole) Log(args ...interface{}) {
 
 // Dump writes all smart-service instance variables, the variables changed by this script, process worker inputs and process worker outputs known at the time of the call to the worker log
 func (this *ScriptEnvConsole) Dump() {
-	defer func() {
-		if caught := recover(); caught != nil {
-			panic(this.env.GetVm().ToValue(caught))
-		}
-	}()
 	this.env.logger.InfoContext(this.env.ctx, "script dump", "variables", this.env.Variables, "variablesUpdates", this.env.VariablesUpdates, "inputs", this.env.Inputs, "outputs", this.env.Outputs)
 }
 

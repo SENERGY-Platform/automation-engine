@@ -30,7 +30,6 @@ import (
 
 	enginescript "github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/device-repository/v3/lib/client"
-	"github.com/dop251/goja"
 )
 
 const PreScriptPrefix = "prescript"
@@ -42,7 +41,6 @@ type TokenSource func(userId string) (string, error)
 // ScriptEnv is what a script sees: the variables of the instance, the inputs and outputs of the
 // task, the device repository and helpers, all with the rights of the user.
 type ScriptEnv struct {
-	vm               *goja.Runtime
 	ctx              context.Context
 	logger           *slog.Logger
 	Variables        map[string]interface{}
@@ -81,10 +79,6 @@ func RemoveScriptInputs(inputs map[string]interface{}) map[string]interface{} {
 		}
 	}
 	return result
-}
-
-func (this *ScriptEnv) GetVm() *goja.Runtime {
-	return this.vm
 }
 
 // Namespaces are the global objects a script sees, with the Go values behind them; the script
@@ -144,23 +138,18 @@ func (this Scripts) Run(ctx context.Context, userId string, prefix string, input
 	}
 	env := NewScriptEnv(ctx, this.Logger.With("script", prefix), this.Tokens, this.Iot, userId, variables, inputs, outputs)
 	env.InstanceVariables = instanceVariables
-	vm := goja.New()
-	timer := time.AfterFunc(2*time.Second, func() {
-		vm.Interrupt("script execution timeout")
-	})
-	defer timer.Stop()
-	env.vm = vm
-	vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
-	// as in BPMN scripts, so that JSON.parse behaves the same wherever a design calls it
-	if err = enginescript.LenientJsonParse(vm); err != nil {
+	// JSON.parse behaves as in BPMN scripts, so that it does wherever a design calls it
+	vm, err := enginescript.NewVM(2*time.Second, enginescript.NewSandbox().MaxMemory)
+	if err != nil {
 		return nil, nil, err
 	}
+	defer vm.Close()
 	for key, value := range env.environment() {
-		if err = vm.Set(key, value); err != nil {
+		if err = vm.Bind(key, value); err != nil {
 			return nil, nil, err
 		}
 	}
-	if _, err = vm.RunString(script.String()); err != nil {
+	if err = vm.Exec(script.String()); err != nil {
 		return nil, nil, err
 	}
 	return env.VariablesUpdates, env.Outputs, nil

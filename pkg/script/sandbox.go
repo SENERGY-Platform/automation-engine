@@ -22,24 +22,22 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/dop251/goja"
+	"modernc.org/quickjs"
 )
 
 // Sandbox evaluates JavaScript, the only expression and script language of the engine (EXPR-01).
 // Scripts see the variables as globals plus log(...) and setVariable(name, value) (EXPR-04).
-// They have no access to engine internals, the file system or the network, because goja
-// provides none of these by default and nothing else is registered (EXPR-03).
-//
-// goja has no memory limit. The timeout and the result size limit bound what a script can do,
-// but a script can allocate memory until the timeout interrupts it.
+// Each evaluation runs in a QuickJS VM of its own (VM), which provides no access to engine
+// internals, the file system or the network, and which bounds time, memory and stack: a script
+// that exceeds one of them fails alone instead of the process (EXPR-03).
 type Sandbox struct {
 	Timeout        time.Duration
 	MaxResultBytes int
 	MaxLogEntries  int
-	MaxCallStack   int
+	// bytes the JavaScript heap of one evaluation may take
+	MaxMemory int
 }
 
 func NewSandbox() *Sandbox {
@@ -47,7 +45,7 @@ func NewSandbox() *Sandbox {
 		Timeout:        2 * time.Second,
 		MaxResultBytes: 1 << 20,
 		MaxLogEntries:  100,
-		MaxCallStack:   1000,
+		MaxMemory:      64 << 20,
 	}
 }
 
@@ -79,106 +77,60 @@ func (this *Error) Unwrap() error {
 	return this.Err
 }
 
-// LenientJsonParse makes JSON.parse return a value that is no string as it is. Camunda handed
-// some variables over as JSON text that the engine keeps as objects, e.g. the value of a device
-// event, and models parse them; parsing an object would read "[object Object]".
-func LenientJsonParse(vm *goja.Runtime) error {
-	_, err := vm.RunString(`(function () {
-	var parse = JSON.parse;
-	JSON.parse = function (text, reviver) {
-		return typeof text === "string" ? parse.call(JSON, text, reviver) : text;
-	};
-})()`)
-	return err
-}
-
 // Check compiles the source without running it.
 func Check(src string) error {
-	_, err := goja.Compile("", src, false)
-	return err
+	vm, err := quickjs.NewVM()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = vm.Close() }()
+	_, err = vm.Compile(src, quickjs.EvalGlobal)
+	return scriptError(err)
 }
 
 // Run evaluates src; the value of the last expression statement is the result.
 func (this *Sandbox) Run(src string, variables map[string]any) (result Result, err error) {
-	vm := goja.New()
-	vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
-	if this.MaxCallStack > 0 {
-		vm.SetMaxCallStackSize(this.MaxCallStack)
-	}
 	fail := func(err error) (Result, error) {
 		return Result{}, &Error{Err: err, Logs: result.Logs}
 	}
-	if err = LenientJsonParse(vm); err != nil {
+	vm, err := NewVM(this.Timeout, this.MaxMemory)
+	if err != nil {
 		return fail(err)
 	}
-	for name, value := range variables {
-		if err = vm.Set(name, value); err != nil {
-			return fail(fmt.Errorf("unable to set variable %v: %w", name, err))
+	defer vm.Close()
+	vm.onLog = func(line string) {
+		if this.MaxLogEntries <= 0 || len(result.Logs) < this.MaxLogEntries {
+			result.Logs = append(result.Logs, line)
 		}
 	}
-	logFn := func(call goja.FunctionCall) goja.Value {
-		if this.MaxLogEntries > 0 && len(result.Logs) >= this.MaxLogEntries {
-			return goja.Undefined()
+	vm.onAssign = func(name string, raw string) (string, error) {
+		var value any
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+			return "", err
 		}
-		parts := make([]string, 0, len(call.Arguments))
-		for _, arg := range call.Arguments {
-			parts = append(parts, stringify(arg))
-		}
-		result.Logs = append(result.Logs, strings.Join(parts, " "))
-		return goja.Undefined()
-	}
-	if err = vm.Set("log", logFn); err != nil {
-		return fail(err)
-	}
-	console := vm.NewObject()
-	_ = console.Set("log", logFn)
-	if err = vm.Set("console", console); err != nil {
-		return fail(err)
-	}
-	err = vm.Set("setVariable", func(name string, value goja.Value) goja.Value {
-		normalized, err := this.normalize(value)
+		normalized, err := Normalize(value, this.MaxResultBytes)
 		if err != nil {
-			panic(vm.NewTypeError(fmt.Sprintf("setVariable(%q): %v", name, err)))
+			return "", err
 		}
 		result.Assignments = append(result.Assignments, Assignment{Name: name, Value: normalized})
-		_ = vm.Set(name, normalized)
-		return goja.Undefined()
-	})
+		out, err := json.Marshal(normalized)
+		return string(out), err
+	}
+	if err = vm.SetGlobals(variables); err != nil {
+		return fail(fmt.Errorf("unable to set variables: %w", err))
+	}
+	if _, err = vm.call("sandbox"); err != nil {
+		return fail(err)
+	}
+	value, err := vm.Eval(src, this.MaxResultBytes)
 	if err != nil {
 		return fail(err)
 	}
-
-	timer := time.AfterFunc(this.Timeout, func() {
-		vm.Interrupt(ErrTimeout)
-	})
-	defer timer.Stop()
-
-	value, err := vm.RunString(src)
-	if err != nil {
-		var interrupted *goja.InterruptedError
-		if errors.As(err, &interrupted) {
-			return fail(fmt.Errorf("%w after %v", ErrTimeout, this.Timeout))
-		}
-		return fail(err)
-	}
-	result.Value, err = this.normalize(value)
+	result.Value, err = Normalize(value, this.MaxResultBytes)
 	if err != nil {
 		return fail(err)
 	}
 	return result, nil
-}
-
-// normalize converts a JS value into its JSON form, so that numbers are float64 and objects
-// are maps, independent of how goja exports them.
-func (this *Sandbox) normalize(value goja.Value) (any, error) {
-	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
-		return nil, nil
-	}
-	exported := value.Export()
-	if _, isFunc := goja.AssertFunction(value); isFunc {
-		return nil, errors.New("a function is not a valid value")
-	}
-	return Normalize(exported, this.MaxResultBytes)
 }
 
 // Normalize converts a Go value into its JSON form and enforces maxBytes if positive.
@@ -208,20 +160,6 @@ func Normalize(value any, maxBytes int) (any, error) {
 	var result any
 	err = json.Unmarshal(raw, &result)
 	return result, err
-}
-
-func stringify(value goja.Value) string {
-	if value == nil || goja.IsUndefined(value) {
-		return "undefined"
-	}
-	if s, ok := value.Export().(string); ok {
-		return s
-	}
-	raw, err := json.Marshal(value.Export())
-	if err != nil {
-		return value.String()
-	}
-	return string(raw)
 }
 
 // Truthy reports whether a condition result selects a sequence flow; only booleans are accepted.
