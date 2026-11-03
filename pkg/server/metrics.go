@@ -44,6 +44,7 @@ type Metrics struct {
 	taskDuration   *prometheus.HistogramVec
 	timerDelay     prometheus.Histogram
 	storageRows    *prometheus.GaugeVec
+	storageBytes   *prometheus.GaugeVec
 	deprecated     *prometheus.CounterVec
 	databaseBytes  prometheus.Gauge
 	stalled        *prometheus.GaugeVec
@@ -55,6 +56,10 @@ type Metrics struct {
 	commandSent        *prometheus.CounterVec
 	marshallingLatency *prometheus.HistogramVec
 	instanceId         string
+
+	// the size per part reads every page of a SQLite database; it is measured at most every
+	// storageBytesEvery
+	storageBytesAt time.Time
 }
 
 var _ engine.Metrics = (*Metrics)(nil)
@@ -83,6 +88,8 @@ func NewMetrics(stalledAfter time.Duration) *Metrics {
 			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 300, 3600}}),
 		storageRows: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: metricsPrefix + "storage_rows", Help: "rows per table of runtime state, history, outboxes and IO"},
 			[]string{"table"}),
+		storageBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: metricsPrefix + "storage_bytes", Help: "size of runtime state, history, outboxes and IO with their indexes (LONG-14)"},
+			[]string{"category"}),
 		databaseBytes: prometheus.NewGauge(prometheus.GaugeOpts{Name: metricsPrefix + "database_bytes", Help: "size of the database"}),
 		stalled: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: metricsPrefix + "stalled_instances", Help: "running instances without element change for the configured time"},
 			[]string{"namespace"}),
@@ -101,7 +108,7 @@ func NewMetrics(stalledAfter time.Duration) *Metrics {
 	}
 	m.instanceId, _ = os.Hostname()
 	m.registry.MustRegister(m.started, m.ended, m.incidents, m.restarts, m.correlations, m.tasks, m.taskDuration, m.timerDelay,
-		m.storageRows, m.databaseBytes, m.stalled, m.topActivities, m.networkContact, m.networkBacklog, m.commandSent, m.marshallingLatency, m.deprecated,
+		m.storageRows, m.storageBytes, m.databaseBytes, m.stalled, m.topActivities, m.networkContact, m.networkBacklog, m.commandSent, m.marshallingLatency, m.deprecated,
 		prometheus.NewGoCollector(), prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
 	return m
 }
@@ -157,6 +164,10 @@ func (this *Metrics) TimerDelay(delay time.Duration) {
 	this.timerDelay.Observe(delay.Seconds())
 }
 
+// storageBytesEvery bounds how often the size per part is measured, as often as a gateway
+// reports it with its status
+const storageBytesEvery = 5 * time.Minute
+
 // Collect updates the gauges from the database.
 func (this *Metrics) Collect(ctx context.Context, s *store.Store) error {
 	return s.Tx(ctx, func(tx *store.Tx) error {
@@ -172,6 +183,16 @@ func (this *Metrics) Collect(ctx context.Context, s *store.Store) error {
 			return err
 		}
 		this.databaseBytes.Set(float64(size))
+		if time.Since(this.storageBytesAt) >= storageBytesEvery {
+			sizes, err := tx.StorageBytes()
+			if err != nil {
+				return err
+			}
+			for category, n := range sizes {
+				this.storageBytes.WithLabelValues(category).Set(float64(n))
+			}
+			this.storageBytesAt = time.Now()
+		}
 		stalled, err := tx.StalledInstances(time.Now().Add(-this.stalledAfter))
 		if err != nil {
 			return err

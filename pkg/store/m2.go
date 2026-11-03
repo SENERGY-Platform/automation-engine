@@ -360,15 +360,70 @@ func (this *Tx) ConsecutiveIncidentRuns(instanceId string) (int, error) {
 	return n, nil
 }
 
-// StorageRows counts rows per table, for the storage metrics (LONG-14).
+// StorageCategories assigns the tables of instances to the parts of the storage report
+// (LONG-14): runtime state, history, outboxes and IO values.
+var StorageCategories = map[string][]string{
+	"runtime": {"instances", "tokens", "subscriptions", "jobs", "variables", "command_subtasks", "instance_messages", "message_receipts", "modules", "module_keys", "watches"},
+	"history": {"activities", "incidents", "runs", "element_stats", "history_snapshots"},
+	"outbox":  {"changes", "notifications", "permission_removals", "module_removals"},
+	"io":      {"io_values"},
+}
+
+// StorageRows counts rows per table of the storage report (LONG-14).
 func (this *Tx) StorageRows() (map[string]int, error) {
 	result := map[string]int{}
-	for _, table := range []string{"tokens", "subscriptions", "jobs", "variables", "activities", "incidents", "instances", "permission_removals", "notifications", "changes", "history_snapshots"} {
-		n, err := this.count("SELECT COUNT(*) FROM " + table)
+	for _, tables := range StorageCategories {
+		for _, table := range tables {
+			n, err := this.count("SELECT COUNT(*) FROM " + table)
+			if err != nil {
+				return nil, err
+			}
+			result[table] = n
+		}
+	}
+	return result, nil
+}
+
+// StorageBytes is the size of the tables per part of the storage report, their indexes
+// included (LONG-14). On SQLite it reads every page of the database, so callers ask at most every
+// few minutes.
+func (this *Tx) StorageBytes() (map[string]int64, error) {
+	perTable := map[string]int64{}
+	if this.dialect == Postgres {
+		for _, tables := range StorageCategories {
+			for _, table := range tables {
+				var size int64
+				if err := this.queryRow("SELECT COALESCE(pg_total_relation_size(to_regclass(?)), 0)", table).Scan(&size); err != nil {
+					return nil, err
+				}
+				perTable[table] = size
+			}
+		}
+	} else {
+		// an index counts for its table
+		rows, err := this.query("SELECT COALESCE(m.tbl_name, s.name), SUM(s.pgsize) FROM dbstat s LEFT JOIN sqlite_master m ON m.name = s.name GROUP BY 1")
 		if err != nil {
 			return nil, err
 		}
-		result[table] = n
+		defer rows.Close()
+		for rows.Next() {
+			var table string
+			var size int64
+			if err = rows.Scan(&table, &size); err != nil {
+				return nil, err
+			}
+			perTable[table] = size
+		}
+		if err = rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	result := map[string]int64{}
+	for category, tables := range StorageCategories {
+		result[category] = 0
+		for _, table := range tables {
+			result[category] += perTable[table]
+		}
 	}
 	return result, nil
 }

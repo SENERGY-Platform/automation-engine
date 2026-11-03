@@ -387,8 +387,18 @@ func (this *Gateway) SendStatus(ctx context.Context) error {
 			return err
 		}
 		rows, err := tx.StorageRows()
+		if err != nil {
+			return err
+		}
 		for table, n := range rows {
 			status.Storage.Rows[table] = int64(n)
+		}
+		if status.Storage.Bytes, err = tx.StorageBytes(); err != nil {
+			return err
+		}
+		top, err := tx.TopActivityInstances(10)
+		for _, c := range top {
+			status.Storage.Top = append(status.Storage.Top, TopInstance{Id: c.InstanceId, Namespace: c.Namespace, Entries: c.Count})
 		}
 		return err
 	})

@@ -258,6 +258,17 @@ type Storage struct {
 	UsedBytes   int64            `json:"used_bytes"`
 	BudgetBytes int64            `json:"budget_bytes"`
 	Rows        map[string]int64 `json:"rows,omitempty"`
+	// size per part: runtime, history, outbox and io, indexes included
+	Bytes map[string]int64 `json:"bytes,omitempty"`
+	// the instances with the most history entries
+	Top []TopInstance `json:"top,omitempty"`
+}
+
+// TopInstance is an instance with many history entries (LONG-14).
+type TopInstance struct {
+	Id        string `json:"id"`
+	Namespace string `json:"namespace"`
+	Entries   int64  `json:"entries"`
 }
 
 // encode writes a message of the cloud to a gateway in the format of the version its envelope

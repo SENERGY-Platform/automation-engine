@@ -1494,14 +1494,40 @@
                     "budget_bytes": {
                         "type": "integer"
                     },
+                    "bytes": {
+                        "additionalProperties": {
+                            "type": "integer"
+                        },
+                        "type": "object"
+                    },
                     "rows": {
                         "additionalProperties": {
                             "type": "integer"
                         },
                         "type": "object"
                     },
+                    "top": {
+                        "items": {
+                            "$ref": "#/components/schemas/FogsyncTopInstance"
+                        },
+                        "type": "array"
+                    },
                     "used_bytes": {
                         "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "FogsyncTopInstance": {
+                "properties": {
+                    "entries": {
+                        "type": "integer"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "namespace": {
+                        "type": "string"
                     }
                 },
                 "type": "object"

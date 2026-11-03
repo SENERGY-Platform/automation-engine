@@ -284,6 +284,9 @@ func TestMetricsAreExposed(t *testing.T) {
 	for _, expected := range []string{
 		`automation_engine_runs_started_total{deployment_id="` + d.Id + `",namespace="processes",user_id="alice"} 1`,
 		`automation_engine_storage_rows{table="tokens"} 1`,
+		`automation_engine_storage_rows{table="io_values"} 0`,
+		`automation_engine_storage_bytes{category="history"}`,
+		`automation_engine_storage_bytes{category="io"}`,
 		`automation_engine_database_bytes`,
 	} {
 		if !strings.Contains(string(body), expected) {
