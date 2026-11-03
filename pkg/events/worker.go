@@ -331,7 +331,8 @@ func (this *Worker) process(ctx context.Context, d model.EventDescription, paylo
 			Name: d.MessageName, All: true, MessageId: messageId + "|" + d.MessageName,
 			LocalVariables: locals,
 		},
-		OwnerFilter: d.Owner,
+		OwnerFilter:       d.Owner,
+		DeploymentVersion: d.Version,
 	})
 	var modelErr *model.Error
 	if errors.As(err, &modelErr) && modelErr.Kind != model.KindInternal && modelErr.Kind != model.KindUnavailable {

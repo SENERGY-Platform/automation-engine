@@ -156,7 +156,11 @@ func (this *Tx) ListSubscriptions(instanceId string) ([]Subscription, error) {
 }
 
 // MessageSubscriptions finds waiting message events, optionally of one instance or owner.
-func (this *Tx) MessageSubscriptions(messageName string, instanceId string, owner string) ([]Subscription, error) {
+// MessageSubscriptions lists the subscriptions waiting for a message. With version, the message
+// comes from an event description of that version (DEP-04) and reaches the instances on it;
+// an instance on a version without descriptions of its own, which kept running on it before
+// descriptions were kept per version, takes those of the current version.
+func (this *Tx) MessageSubscriptions(messageName string, instanceId string, owner string, version int) ([]Subscription, error) {
 	w := &where{}
 	w.add("s.kind = ?", SubscriptionMessage)
 	w.add("s.message_name = ?", messageName)
@@ -165,6 +169,10 @@ func (this *Tx) MessageSubscriptions(messageName string, instanceId string, owne
 	}
 	if owner != "" {
 		w.add("i.owner = ?", owner)
+	}
+	if version > 0 {
+		w.add(`(i.deployment_version = ? OR (? = (SELECT d.version FROM deployments d WHERE d.id = i.deployment_id)
+			AND NOT EXISTS (SELECT 1 FROM event_descriptions e WHERE e.deployment_id = i.deployment_id AND e.version = i.deployment_version)))`, version, version)
 	}
 	return scanSubscriptions(this.query(subscriptionSelect+w.String()+" ORDER BY s.created_at, s.id", w.args...))
 }

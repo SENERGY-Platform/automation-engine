@@ -74,7 +74,7 @@ func TestADeviceThatJoinsAGroupGetsItsEventDescriptionOnTheGateway(t *testing.T)
 		t.Fatal(err)
 	}
 	descriptions := func() (result []model.EventDescription) {
-		_ = e.gateway.Store.Tx(ctx, func(tx *store.Tx) (err error) { result, err = tx.ListEventDescriptions(d.Id); return err })
+		_ = e.gateway.Store.Tx(ctx, func(tx *store.Tx) (err error) { result, err = tx.ListEventDescriptions(d.Id, 0); return err })
 		return result
 	}
 	e.waitFor("the description of the first device on the gateway", func() bool { return len(descriptions()) == 1 })

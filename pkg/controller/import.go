@@ -149,12 +149,17 @@ func (this *Controller) importDeployment(tx *store.Tx, networkId string, owner s
 			return report, err
 		}
 	}
-	descriptions := slices.Clone(entry.EventDescriptions)
-	for i := range descriptions {
-		descriptions[i].DeploymentId, descriptions[i].Owner = d.Id, owner
+	// the cloud keeps the descriptions of the current version, which it sends to the gateway;
+	// those of older versions serve only the gateway, which keeps its own
+	var descriptions []model.EventDescription
+	for _, description := range entry.EventDescriptions {
+		if description.Version == d.Version {
+			description.DeploymentId, description.Owner = d.Id, owner
+			descriptions = append(descriptions, description)
+		}
 	}
 	if len(descriptions) > 0 || len(entry.DeviceGroups) > 0 {
-		if err = tx.ReplaceEventDescriptions(d.Id, descriptions, entry.DeviceGroups, now); err != nil {
+		if err = tx.ReplaceEventDescriptions(d.Id, d.Version, descriptions, entry.DeviceGroups, now); err != nil {
 			return report, err
 		}
 	}

@@ -331,6 +331,8 @@ func DefaultNamespaces() []model.Namespace {
 			JsonStringParameters:       true,
 			// smart services run on the platform only; the processes they deploy may go to gateways
 			CloudOnly: true,
+			// versions of smart service designs are releases, which users delete themselves
+			KeepVersions: true,
 		},
 	}
 }

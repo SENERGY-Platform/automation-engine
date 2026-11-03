@@ -254,13 +254,18 @@ func scanStartEvents(rows *sql.Rows, err error) (result []StartEvent, _ error) {
 }
 
 // MessageStartEvents finds message start events by message name, optionally of one owner.
-func (this *Tx) MessageStartEvents(messageName string, owner string) ([]StartEvent, error) {
+// MessageStartEvents lists the message start events of current versions; with version, the
+// message comes from an event description of that version, and only a current one starts.
+func (this *Tx) MessageStartEvents(messageName string, owner string, version int) ([]StartEvent, error) {
 	w := &where{}
 	w.add("s.kind = 'message'")
 	w.add("d.disabled = 0")
 	w.add("s.message_name = ?", messageName)
 	if owner != "" {
 		w.add("d.owner = ?", owner)
+	}
+	if version > 0 {
+		w.add("s.version = ?", version)
 	}
 	return scanStartEvents(this.query(startEventSelect+w.String()+" ORDER BY s.deployment_id, s.element_id", w.args...))
 }

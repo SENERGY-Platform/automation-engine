@@ -160,7 +160,7 @@ func (this *Tx) GatewayExport() (result model.GatewayExport, err error) {
 		if entry.EventDescriptions, err = this.exportEventDescriptions(d.Id); err != nil {
 			return result, err
 		}
-		if entry.DeviceGroups, err = this.DeviceGroupsOfDeployment(d.Id); err != nil {
+		if entry.DeviceGroups, err = this.DeviceGroupsOfDeployment(d.Id, 0); err != nil {
 			return result, err
 		}
 		if entry.DeviceGroups == nil {

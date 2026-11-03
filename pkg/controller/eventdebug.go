@@ -135,7 +135,7 @@ func (this *Controller) EventEvaluations(ctx context.Context, token string, name
 		if deployment, err = tx.GetDeployment(inst.DeploymentId, false); err != nil {
 			return err
 		}
-		stored, err := tx.ListEventDescriptions(inst.DeploymentId)
+		stored, err := tx.ListEventDescriptions(inst.DeploymentId, 0)
 		if err != nil {
 			return err
 		}
@@ -318,7 +318,7 @@ func (this *Controller) currentEvaluation(ctx context.Context, inst model.Instan
 	var d model.EventDescription
 	found := false
 	_ = this.store.Tx(ctx, func(tx *store.Tx) error {
-		descriptions, err := tx.ListEventDescriptions(inst.DeploymentId)
+		descriptions, err := tx.ListEventDescriptions(inst.DeploymentId, 0)
 		for _, candidate := range descriptions {
 			if candidate.Id == source.EventDescriptionId {
 				d, found = candidate, true

@@ -1978,6 +1978,12 @@ definitions:
           non-string values of string form fields are stored as JSON strings, as Camunda did; models
           of smart services parse them, e.g. a list of selected devices (SMS-08)
         type: boolean
+      keep_versions:
+        description: |-
+          older versions of a deployment stay until the deployment is deleted, instead of going once
+          no instance refers to them (DEP-04); for smart services, whose versions are releases
+          that users list and delete themselves (SMS-03)
+        type: boolean
       limits:
         $ref: '#/definitions/model.Limits'
       message_starts_are_procedures:
@@ -7723,6 +7729,10 @@ paths:
       - deployments
   /namespaces/{ns}/deployments/{id}/versions:
     get:
+      description: An older version is removed once no instance and no run refers
+        to it any more, i.e. after the retention removed the last instance on it;
+        the current version stays. In a namespace with keep_versions (smart-services),
+        every version stays until the deployment is deleted (DEP-04).
       parameters:
       - description: namespace
         in: path

@@ -84,7 +84,7 @@ func workerWith(t *testing.T, descriptions ...conditionDescription) (*events.Wor
 		if err := tx.InsertDeployment(model.Deployment{Id: "dep", Namespace: "processes", Name: "d", Owner: "alice", Version: 1, CreatedAt: now, UpdatedAt: now}); err != nil {
 			return err
 		}
-		return tx.ReplaceEventDescriptions("dep", list, nil, now)
+		return tx.ReplaceEventDescriptions("dep", 1, list, nil, now)
 	})
 	if err != nil {
 		t.Fatal(err)

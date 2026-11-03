@@ -245,11 +245,11 @@ func (this *Controller) desireDeployment(tx *store.Tx, d model.Deployment) error
 	if err != nil {
 		return err
 	}
-	descriptions, err := tx.ListEventDescriptions(d.Id)
+	descriptions, err := tx.ListEventDescriptions(d.Id, d.Version)
 	if err != nil {
 		return err
 	}
-	groups, err := tx.DeviceGroupsOfDeployment(d.Id)
+	groups, err := tx.DeviceGroupsOfDeployment(d.Id, d.Version)
 	if err != nil {
 		return err
 	}

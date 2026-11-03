@@ -492,7 +492,7 @@ func (this *Gateway) applyDeployment(ctx context.Context, id string, spec Deploy
 		}
 		if !created && existing.Version == d.Version {
 			// the same version with descriptions derived again, after a device group changed (SYNC-06)
-			return tx.ReplaceEventDescriptions(id, spec.Descriptions, spec.Groups, now)
+			return tx.ReplaceEventDescriptions(id, d.Version, spec.Descriptions, spec.Groups, now)
 		}
 		if created {
 			if err = tx.InsertDeployment(d); err != nil {
@@ -514,7 +514,7 @@ func (this *Gateway) applyDeployment(ctx context.Context, id string, spec Deploy
 		if err = tx.InsertDeploymentVersion(v); err != nil {
 			return err
 		}
-		if err = tx.ReplaceEventDescriptions(id, spec.Descriptions, spec.Groups, now); err != nil {
+		if err = tx.ReplaceEventDescriptions(id, d.Version, spec.Descriptions, spec.Groups, now); err != nil {
 			return err
 		}
 		if err = this.engine.ActivateVersion(tx, id, d.Version); err != nil {

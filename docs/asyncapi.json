@@ -2155,6 +2155,9 @@
                     "json_string_parameters": {
                         "type": "boolean"
                     },
+                    "keep_versions": {
+                        "type": "boolean"
+                    },
                     "limits": {
                         "$ref": "#/components/schemas/ModelLimits"
                     },

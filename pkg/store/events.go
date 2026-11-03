@@ -17,6 +17,7 @@
 package store
 
 import (
+	"strings"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -44,13 +45,14 @@ func (this *Tx) nextRevision() (int64, error) {
 	return revision, err
 }
 
-// ReplaceEventDescriptions sets the descriptions and device groups of a deployment.
-func (this *Tx) ReplaceEventDescriptions(deploymentId string, descriptions []model.EventDescription, groups []string, now time.Time) error {
+// ReplaceEventDescriptions sets the descriptions and device groups of one version of a
+// deployment; those of other versions stay, for the instances still running on them (DEP-04).
+func (this *Tx) ReplaceEventDescriptions(deploymentId string, version int, descriptions []model.EventDescription, groups []string, now time.Time) error {
 	revision, err := this.nextRevision()
 	if err != nil {
 		return err
 	}
-	if err = this.tombstoneEventDescriptions(deploymentId, revision, now); err != nil {
+	if err = this.tombstoneEventDescriptions(deploymentId, version, revision, now); err != nil {
 		return err
 	}
 	for _, d := range descriptions {
@@ -68,22 +70,102 @@ func (this *Tx) ReplaceEventDescriptions(deploymentId string, descriptions []mod
 			return err
 		}
 	}
-	if _, err = this.exec("DELETE FROM deployment_device_groups WHERE deployment_id = ?", deploymentId); err != nil {
+	if _, err = this.exec("DELETE FROM deployment_device_groups WHERE deployment_id = ? AND version = ?", deploymentId, version); err != nil {
 		return err
 	}
 	for _, g := range groups {
-		if _, err = this.exec("INSERT INTO deployment_device_groups (deployment_id, group_id) VALUES (?, ?) ON CONFLICT (deployment_id, group_id) DO NOTHING", deploymentId, g); err != nil {
+		if _, err = this.exec("INSERT INTO deployment_device_groups (deployment_id, version, group_id) VALUES (?, ?, ?) ON CONFLICT (deployment_id, version, group_id) DO NOTHING", deploymentId, version, g); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (this *Tx) tombstoneEventDescriptions(deploymentId string, revision int64, now time.Time) error {
-	if _, err := this.exec("INSERT INTO event_description_tombstones (id, revision, removed_at) SELECT id, ?, ? FROM event_descriptions WHERE deployment_id = ?", revision, millis(now), deploymentId); err != nil {
+// tombstoneEventDescriptions removes the descriptions of a version of a deployment, of all its
+// versions with version 0, and leaves tombstones for the event workers
+func (this *Tx) tombstoneEventDescriptions(deploymentId string, version int, revision int64, now time.Time) error {
+	w := &where{}
+	w.add("deployment_id = ?", deploymentId)
+	if version > 0 {
+		w.add("version = ?", version)
+	}
+	args := append([]any{revision, millis(now)}, w.args...)
+	if _, err := this.exec("INSERT INTO event_description_tombstones (id, revision, removed_at) SELECT id, ?, ? FROM event_descriptions"+w.String(), args...); err != nil {
 		return err
 	}
-	_, err := this.exec("DELETE FROM event_descriptions WHERE deployment_id = ?", deploymentId)
+	_, err := this.exec("DELETE FROM event_descriptions"+w.String(), w.args...)
+	return err
+}
+
+// RemoveUnusedVersions removes what older versions of deployments no longer need, of one
+// deployment or, with an empty id, of all (DEP-04): the event descriptions and device groups of a
+// version on which no instance runs any more, and a version that no instance and no run refers
+// to; the current version stays. Ended instances keep their version for history and debugging
+// (DBG-13) until the retention removes them.
+// Versions of deployments in the namespaces keep stay (KeepVersions); their descriptions go all
+// the same.
+func (this *Tx) RemoveUnusedVersions(deploymentId string, keep []string, now time.Time) error {
+	filter, args := "", []any{}
+	if deploymentId != "" {
+		filter, args = " AND e.deployment_id = ?", []any{deploymentId}
+	}
+	rows, err := this.query(`SELECT DISTINCT e.deployment_id, e.version FROM (
+			SELECT deployment_id, version FROM event_descriptions UNION SELECT deployment_id, version FROM deployment_device_groups
+		) e JOIN deployments d ON d.id = e.deployment_id
+		WHERE e.version < d.version AND NOT EXISTS (
+			SELECT 1 FROM instances i WHERE i.deployment_id = e.deployment_id AND i.deployment_version = e.version AND i.state = ?
+		)`+filter, append([]any{model.StateRunning}, args...)...)
+	if err != nil {
+		return err
+	}
+	type key struct {
+		deploymentId string
+		version      int
+	}
+	var unused []key
+	for rows.Next() {
+		var k key
+		if err = rows.Scan(&k.deploymentId, &k.version); err != nil {
+			rows.Close()
+			return err
+		}
+		unused = append(unused, k)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	if len(unused) > 0 {
+		revision, err := this.nextRevision()
+		if err != nil {
+			return err
+		}
+		for _, k := range unused {
+			if err = this.tombstoneEventDescriptions(k.deploymentId, k.version, revision, now); err != nil {
+				return err
+			}
+			if _, err = this.exec("DELETE FROM deployment_device_groups WHERE deployment_id = ? AND version = ?", k.deploymentId, k.version); err != nil {
+				return err
+			}
+		}
+	}
+	filter = ""
+	if deploymentId != "" {
+		filter = " AND v.deployment_id = ?"
+	}
+	unusedVersion := `v.version < (SELECT d.version FROM deployments d WHERE d.id = v.deployment_id)
+		AND NOT EXISTS (SELECT 1 FROM instances i WHERE i.deployment_id = v.deployment_id AND i.deployment_version = v.version)
+		AND NOT EXISTS (SELECT 1 FROM runs r JOIN instances i ON i.id = r.instance_id WHERE i.deployment_id = v.deployment_id AND r.deployment_version = v.version)` + filter
+	if len(keep) > 0 {
+		unusedVersion += " AND (SELECT d.namespace FROM deployments d WHERE d.id = v.deployment_id) NOT IN (?" + strings.Repeat(", ?", len(keep)-1) + ")"
+		for _, ns := range keep {
+			args = append(args, ns)
+		}
+	}
+	if _, err = this.exec("DELETE FROM resource_checks WHERE EXISTS (SELECT 1 FROM deployment_versions v WHERE v.deployment_id = resource_checks.deployment_id AND v.version = resource_checks.version AND "+unusedVersion+")", args...); err != nil {
+		return err
+	}
+	_, err = this.exec("DELETE FROM deployment_versions WHERE EXISTS (SELECT 1 FROM deployment_versions v WHERE v.deployment_id = deployment_versions.deployment_id AND v.version = deployment_versions.version AND "+unusedVersion+")", args...)
 	return err
 }
 
@@ -97,7 +179,7 @@ func (this *Tx) RemoveEventDescriptions(deploymentId string, now time.Time) erro
 	if err != nil {
 		return err
 	}
-	return this.tombstoneEventDescriptions(deploymentId, revision, now)
+	return this.tombstoneEventDescriptions(deploymentId, 0, revision, now)
 }
 
 // EventDescriptionsSince returns descriptions and removed ids with a revision above the given
@@ -145,8 +227,15 @@ func (this *Tx) EventDescriptionsSince(revision int64) (result []model.EventDesc
 	return result, removed, latest, nil
 }
 
-func (this *Tx) ListEventDescriptions(deploymentId string) (result []model.EventDescription, err error) {
-	rows, err := this.query("SELECT "+eventColumns+" FROM event_descriptions WHERE deployment_id = ? ORDER BY element_id, id", deploymentId)
+// ListEventDescriptions lists the descriptions of one version of a deployment, of all its
+// versions with version 0.
+func (this *Tx) ListEventDescriptions(deploymentId string, version int) (result []model.EventDescription, err error) {
+	w := &where{}
+	w.add("deployment_id = ?", deploymentId)
+	if version > 0 {
+		w.add("version = ?", version)
+	}
+	rows, err := this.query("SELECT "+eventColumns+" FROM event_descriptions"+w.String()+" ORDER BY element_id, id", w.args...)
 	if err != nil {
 		return nil, err
 	}
@@ -162,9 +251,43 @@ func (this *Tx) ListEventDescriptions(deploymentId string) (result []model.Event
 	return result, rows.Err()
 }
 
+// DeploymentNamespaces lists the namespaces that have deployments.
+func (this *Tx) DeploymentNamespaces() (result []string, err error) {
+	rows, err := this.query("SELECT DISTINCT namespace FROM deployments ORDER BY namespace")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err = rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		result = append(result, name)
+	}
+	return result, rows.Err()
+}
+
+// DescribedVersions lists the versions of a deployment with event descriptions or device groups.
+func (this *Tx) DescribedVersions(deploymentId string) (result []int, err error) {
+	rows, err := this.query("SELECT version FROM event_descriptions WHERE deployment_id = ? UNION SELECT version FROM deployment_device_groups WHERE deployment_id = ? ORDER BY version", deploymentId, deploymentId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var version int
+		if err = rows.Scan(&version); err != nil {
+			return nil, err
+		}
+		result = append(result, version)
+	}
+	return result, rows.Err()
+}
+
 // DeploymentsOfDeviceGroup lists deployments whose events depend on a device group (DEP-08).
 func (this *Tx) DeploymentsOfDeviceGroup(groupId string) (result []string, err error) {
-	rows, err := this.query("SELECT deployment_id FROM deployment_device_groups WHERE group_id = ? ORDER BY deployment_id", groupId)
+	rows, err := this.query("SELECT DISTINCT deployment_id FROM deployment_device_groups WHERE group_id = ? ORDER BY deployment_id", groupId)
 	if err != nil {
 		return nil, err
 	}
@@ -184,9 +307,15 @@ func (this *Tx) PurgeEventTombstones(before time.Time) error {
 	return err
 }
 
-// DeviceGroupsOfDeployment lists the device groups the events of a deployment depend on.
-func (this *Tx) DeviceGroupsOfDeployment(deploymentId string) (result []string, err error) {
-	rows, err := this.query("SELECT group_id FROM deployment_device_groups WHERE deployment_id = ? ORDER BY group_id", deploymentId)
+// DeviceGroupsOfDeployment lists the device groups the events of one version of a deployment
+// depend on, of all its versions with version 0.
+func (this *Tx) DeviceGroupsOfDeployment(deploymentId string, version int) (result []string, err error) {
+	w := &where{}
+	w.add("deployment_id = ?", deploymentId)
+	if version > 0 {
+		w.add("version = ?", version)
+	}
+	rows, err := this.query("SELECT DISTINCT group_id FROM deployment_device_groups"+w.String()+" ORDER BY group_id", w.args...)
 	if err != nil {
 		return nil, err
 	}

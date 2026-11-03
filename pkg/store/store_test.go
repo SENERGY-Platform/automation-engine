@@ -246,7 +246,7 @@ func TestEventDescriptionsAreReadByRevision(t *testing.T) {
 				{Id: "e1", DeploymentId: "d1", Version: 1, ElementId: "a", Namespace: "processes", Owner: "alice", MessageName: "d1_a", DeviceId: "x", ServiceId: "s", Topic: "t1", Script: "true", ValueVariable: "v", Variables: map[string]string{"k": "1"}, AspectIds: []string{"air"}, Service: []byte(`{"id":"s"}`)},
 				{Id: "e2", DeploymentId: "d1", Version: 1, ElementId: "a", Namespace: "processes", Owner: "alice", MessageName: "d1_a", DeviceGroupId: "g", Topic: "t2", Script: "true", ValueVariable: "v"},
 			}
-			if err := tx.ReplaceEventDescriptions("d1", descriptions, []string{"g"}, t0); err != nil {
+			if err := tx.ReplaceEventDescriptions("d1", 1, descriptions, []string{"g"}, t0); err != nil {
 				return err
 			}
 			all, removed, latest, err := tx.EventDescriptionsSince(0)
@@ -258,7 +258,7 @@ func TestEventDescriptionsAreReadByRevision(t *testing.T) {
 			if err != nil || len(deployments) != 1 {
 				return fmt.Errorf("groups: %v %v", deployments, err)
 			}
-			return tx.ReplaceEventDescriptions("d1", descriptions[:1], nil, t0)
+			return tx.ReplaceEventDescriptions("d1", 1, descriptions[:1], nil, t0)
 		})
 		tx(t, s, func(tx *store.Tx) error {
 			changed, removed, latest, err := tx.EventDescriptionsSince(first)

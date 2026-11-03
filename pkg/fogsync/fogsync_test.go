@@ -452,7 +452,10 @@ func TestProcessDeploymentChoosesTheGatewayOfTheDevices(t *testing.T) {
 	deploymentId, _ := values["deployment"].(string)
 	e.waitFor("the deployment on the gateway", func() bool { _, err := e.gatewayDeployment(deploymentId); return err == nil })
 	var descriptions []model.EventDescription
-	_ = e.gateway.Store.Tx(ctx, func(tx *store.Tx) (err error) { descriptions, err = tx.ListEventDescriptions(deploymentId); return err })
+	_ = e.gateway.Store.Tx(ctx, func(tx *store.Tx) (err error) {
+		descriptions, err = tx.ListEventDescriptions(deploymentId, 0)
+		return err
+	})
 	if len(descriptions) != 1 || descriptions[0].Topic != "event/local-d1/temperature" {
 		t.Errorf("the gateway gets the descriptions of the cloud with its local topics (SYNC-06, FOG-06): %+v", descriptions)
 	}

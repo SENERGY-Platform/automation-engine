@@ -492,8 +492,12 @@ func (this *Engine) housekeeping(ctx context.Context, now time.Time) error {
 		if _, err := tx.TrimChanges(now.Add(-this.config.ChangeRetention), 10000); err != nil {
 			return err
 		}
-		_, err := tx.PurgeReceipts(now.Add(-this.config.ReceiptRetention))
-		return err
+		if _, err := tx.PurgeReceipts(now.Add(-this.config.ReceiptRetention)); err != nil {
+			return err
+		}
+		// what older deployment versions no longer need, once their instances ended or the
+		// retention removed them (DEP-04)
+		return this.RemoveUnusedVersions(tx, "")
 	})
 	return errors.Join(err, this.enforceRetention(ctx, now), this.enforceBudget(ctx, now), this.trimModelVersions(ctx), this.store.Vacuum(ctx, 256))
 }

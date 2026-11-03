@@ -581,27 +581,44 @@ func (this *Engine) TriggerWait(ctx context.Context, instanceId string, elementI
 	})
 }
 
-// ApplyUpdate handles running instances after a deployment got a new version (DEP-04).
+// ApplyUpdate handles running instances after a deployment got a new version (DEP-04). With
+// drain they stay on their version and keep its event descriptions; with stop and restart none
+// stays, and older versions lose their descriptions at once.
 func (this *Engine) ApplyUpdate(tx *store.Tx, deploymentId string, strategy model.UpdateStrategy) error {
-	if strategy == model.UpdateDrain {
-		return nil
-	}
-	ids, err := tx.InstanceIdsOfDeployment(deploymentId, model.StateRunning)
-	if err != nil {
-		return err
-	}
-	for _, id := range ids {
-		switch strategy {
-		case model.UpdateStop:
-			err = this.stopInstance(tx, id, "deployment updated")
-		case model.UpdateRestart:
-			err = this.restartOnUpdate(tx, id)
-		}
+	if strategy != model.UpdateDrain {
+		ids, err := tx.InstanceIdsOfDeployment(deploymentId, model.StateRunning)
 		if err != nil {
 			return err
 		}
+		for _, id := range ids {
+			switch strategy {
+			case model.UpdateStop:
+				err = this.stopInstance(tx, id, "deployment updated")
+			case model.UpdateRestart:
+				err = this.restartOnUpdate(tx, id)
+			}
+			if err != nil {
+				return err
+			}
+		}
 	}
-	return nil
+	return this.RemoveUnusedVersions(tx, deploymentId)
+}
+
+// RemoveUnusedVersions removes what older versions of a deployment, of all with an empty id, no
+// longer need; versions in namespaces with keep_versions stay (DEP-04).
+func (this *Engine) RemoveUnusedVersions(tx *store.Tx, deploymentId string) error {
+	names, err := tx.DeploymentNamespaces()
+	if err != nil {
+		return err
+	}
+	var keep []string
+	for _, name := range names {
+		if ns, ok := this.namespaces.Get(name); ok && ns.KeepVersions {
+			keep = append(keep, name)
+		}
+	}
+	return tx.RemoveUnusedVersions(deploymentId, keep, this.now())
 }
 
 // restartOnUpdate restarts an instance on the current version. An instance that cannot be

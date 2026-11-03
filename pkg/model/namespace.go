@@ -171,6 +171,10 @@ type Namespace struct {
 	// reject sequence flow cycles at deploy, so that every run ends; for namespaces whose task
 	// types create modules, which are removed with every new run (SMS-03)
 	ForbidCycles bool `json:"forbid_cycles,omitempty"`
+	// older versions of a deployment stay until the deployment is deleted, instead of going once
+	// no instance refers to them (DEP-04); for smart services, whose versions are releases
+	// that users list and delete themselves (SMS-03)
+	KeepVersions bool `json:"keep_versions,omitempty"`
 	// deployments run only in the cloud: a deployment for a gateway (network_id) is rejected,
 	// and modules that deploy into this namespace keep their deployments in the cloud (NS-10)
 	CloudOnly bool `json:"cloud_only,omitempty"`

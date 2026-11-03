@@ -52,7 +52,7 @@ func deploy(tx *store.Tx, id string, version int) error {
 			return err
 		}
 	}
-	return tx.ReplaceEventDescriptions(id, []model.EventDescription{{Id: "e-" + id, Version: version, ElementId: "wait", Namespace: "processes", Owner: "alice",
+	return tx.ReplaceEventDescriptions(id, version, []model.EventDescription{{Id: "e-" + id, Version: version, ElementId: "wait", Namespace: "processes", Owner: "alice",
 		MessageName: id + "_wait", DeviceGroupId: "g-1", Topic: "t", Script: "x", ValueVariable: "v"}}, []string{"g-1"}, now)
 }
 

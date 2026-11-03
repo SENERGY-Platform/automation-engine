@@ -379,12 +379,30 @@ func TestWorkerEvaluatesCorrelatesAndFollowsChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.sync()
-	// a description counts only messages from after its version (SNRGY-5037)
+	// with drain the instance stays on version 1 and keeps its events: the old device counts for
+	// it, the device of version 2 only for instances on version 2 (DEP-04)
 	afterUpdate := time.Now()
 	e.send(6, "d1", 30.0, afterUpdate)
+	if e.count(inst.Id) != 3.0 {
+		t.Fatalf("the instance on version 1 keeps its device: %v", e.count(inst.Id))
+	}
 	e.send(7, "d2", 30.0, afterUpdate)
 	if e.count(inst.Id) != 3.0 {
-		t.Fatalf("after the update only the new device counts (revision sync, DEP-08): %v", e.count(inst.Id))
+		t.Fatalf("the device of version 2 does not reach the instance on version 1: %v", e.count(inst.Id))
+	}
+	second, err := c.StartInstance(ctx, alice, "processes", model.StartInstanceInput{DeploymentId: d.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.send(8, "d2", 30.0, time.Now())
+	e.send(9, "d1", 30.0, time.Now())
+	if e.count(second.Id) != 1.0 || e.count(inst.Id) != 4.0 {
+		t.Fatalf("each instance gets the events of its version: %v %v", e.count(second.Id), e.count(inst.Id))
+	}
+	// a description counts only messages from after its version (SNRGY-5037)
+	e.send(10, "d2", 30.0, afterUpdate.Add(-time.Hour))
+	if e.count(second.Id) != 1.0 {
+		t.Fatalf("an old message does not count for version 2: %v", e.count(second.Id))
 	}
 	if err = c.DeleteDeployment(ctx, alice, "processes", d.Id); err != nil {
 		t.Fatal(err)

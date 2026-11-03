@@ -401,7 +401,8 @@ func (h *handlers) deleteDeployment(w http.ResponseWriter, r *http.Request) {
 
 // listDeploymentVersions godoc
 //
-//	@Summary	list versions of a deployment, newest first, without XML and SVG
+//	@Summary		list versions of a deployment, newest first, without XML and SVG
+//	@Description	An older version is removed once no instance and no run refers to it any more, i.e. after the retention removed the last instance on it; the current version stays. In a namespace with keep_versions (smart-services), every version stays until the deployment is deleted (DEP-04).
 //	@Tags		deployments
 //	@Security	Bearer
 //	@Produce	json

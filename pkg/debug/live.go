@@ -163,7 +163,7 @@ func Live(tx *store.Tx, inst store.Instance, proc *bpmn.Process) (result model.D
 			wait.Kind = model.WaitMessage
 			wait.Message = &model.MessageWait{Name: s.MessageName}
 			if descriptions == nil {
-				if descriptions, err = tx.ListEventDescriptions(inst.DeploymentId); err != nil {
+				if descriptions, err = tx.ListEventDescriptions(inst.DeploymentId, inst.DeploymentVersion); err != nil {
 					return result, err
 				}
 			}

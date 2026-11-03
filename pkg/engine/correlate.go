@@ -30,6 +30,9 @@ type CorrelationRequest struct {
 	model.MessageInput
 	// restricts correlation to resources of this owner; empty for all (admins)
 	OwnerFilter string
+	// the version of the event description a device or import event matched; it reaches only
+	// instances on that version (DEP-04). 0 for a message by name, which reaches every version.
+	DeploymentVersion int
 }
 
 // Correlate delivers a message by name (EVT-01, EVT-02). Without All exactly one target is
@@ -51,12 +54,12 @@ func (this *Engine) Correlate(ctx context.Context, request CorrelationRequest) (
 	var subscriptions []store.Subscription
 	var starts []store.StartEvent
 	err = this.store.Tx(ctx, func(tx *store.Tx) (err error) {
-		subscriptions, err = tx.MessageSubscriptions(request.Name, request.InstanceId, request.OwnerFilter)
+		subscriptions, err = tx.MessageSubscriptions(request.Name, request.InstanceId, request.OwnerFilter, request.DeploymentVersion)
 		if err != nil {
 			return err
 		}
 		if request.InstanceId == "" || len(subscriptions) == 0 {
-			starts, err = tx.MessageStartEvents(request.Name, request.OwnerFilter)
+			starts, err = tx.MessageStartEvents(request.Name, request.OwnerFilter, request.DeploymentVersion)
 		}
 		return err
 	})

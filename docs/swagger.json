@@ -6991,6 +6991,7 @@
                         "Bearer": []
                     }
                 ],
+                "description": "An older version is removed once no instance and no run refers to it any more, i.e. after the retention removed the last instance on it; the current version stays. In a namespace with keep_versions (smart-services), every version stays until the deployment is deleted (DEP-04).",
                 "produces": [
                     "application/json"
                 ],
@@ -13277,6 +13278,10 @@
                 },
                 "json_string_parameters": {
                     "description": "non-string values of string form fields are stored as JSON strings, as Camunda did; models\nof smart services parse them, e.g. a list of selected devices (SMS-08)",
+                    "type": "boolean"
+                },
+                "keep_versions": {
+                    "description": "older versions of a deployment stay until the deployment is deleted, instead of going once\nno instance refers to them (DEP-04); for smart services, whose versions are releases\nthat users list and delete themselves (SMS-03)",
                     "type": "boolean"
                 },
                 "limits": {

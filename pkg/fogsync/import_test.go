@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -93,7 +94,8 @@ func variant(message string) string {
 }
 
 // runningInVersion3 deploys a model in three versions to the gateway, one deployment version
-// per model version, and starts instances of the last one there
+// per model version, and starts instances of the last one there; an instance on each older
+// version keeps it, since a version no instance refers to goes (DEP-04)
 func (this *env) runningInVersion3(instanceIds ...string) model.Deployment {
 	this.t.Helper()
 	c := this.cloud.Controller
@@ -109,6 +111,14 @@ func (this *env) runningInVersion3(instanceIds ...string) model.Deployment {
 	// there and in its export
 	this.waitFor("version 1 on the gateway", func() bool { gd, err := deploymentOn(this.gateway, d.Id); return err == nil && gd.Version == 1 })
 	for version := 2; version <= 3; version++ {
+		keeper := fmt.Sprintf("keeps-v%v", version-1)
+		if _, err = c.PutInstance(ctx, alice, "processes", keeper, model.StartInstanceInput{DeploymentId: d.Id}); err != nil {
+			this.t.Fatal(err)
+		}
+		this.waitFor("the instance on the older version", func() bool {
+			inst, err := instanceOn(this.gateway, keeper)
+			return err == nil && inst.State == model.StateRunning
+		})
 		xml := variant("v" + string(rune('0'+version)))
 		if _, err = c.UpdateModel(ctx, alice, "processes", m.Id, model.ModelInput{Name: "heating", Xml: xml}); err != nil {
 			this.t.Fatal(err)
@@ -326,11 +336,11 @@ func TestImportSkipsNamespacesTheCloudDoesNotRunOnGatewaysAndTakesTheOwnerOfTheH
 		t.Errorf("owner of the hub: %+v %v", d, err)
 	}
 	_ = e.cloud.Store.Tx(ctx, func(tx *store.Tx) error {
-		descriptions, err := tx.ListEventDescriptions("d-1")
+		descriptions, err := tx.ListEventDescriptions("d-1", 0)
 		if err != nil || len(descriptions) != 1 || descriptions[0].Owner != "alice" || descriptions[0].DeviceGroupId != "g-1" {
 			t.Errorf("event descriptions with the owner of the hub: %+v %v", descriptions, err)
 		}
-		groups, err := tx.DeviceGroupsOfDeployment("d-1")
+		groups, err := tx.DeviceGroupsOfDeployment("d-1", 0)
 		if err != nil || len(groups) != 1 {
 			t.Errorf("device groups: %v %v", groups, err)
 		}

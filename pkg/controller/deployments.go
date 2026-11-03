@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
@@ -249,7 +250,7 @@ func (this *Controller) createDeployment(ctx context.Context, token string, name
 			return err
 		}
 		if len(plan.descriptions) > 0 || len(plan.groups) > 0 {
-			if err = tx.ReplaceEventDescriptions(id, plan.descriptions, plan.groups, now); err != nil {
+			if err = tx.ReplaceEventDescriptions(id, 1, plan.descriptions, plan.groups, now); err != nil {
 				return err
 			}
 		}
@@ -376,7 +377,7 @@ func (this *Controller) PutDeployment(ctx context.Context, token string, namespa
 		for i := range plan.descriptions {
 			plan.descriptions[i].Version = result.Version
 		}
-		if err = tx.ReplaceEventDescriptions(id, plan.descriptions, plan.groups, now); err != nil {
+		if err = tx.ReplaceEventDescriptions(id, result.Version, plan.descriptions, plan.groups, now); err != nil {
 			return err
 		}
 		if result.NetworkId != "" {
@@ -534,19 +535,44 @@ func (this *Controller) GetStartParameters(ctx context.Context, token string, na
 	return result, err
 }
 
-// RecomputeEvents derives the event descriptions of the current version again, e.g. after a
-// device group changed (DEP-08); only this deployment's descriptions change.
+// RecomputeEvents derives the event descriptions again, e.g. after a device group changed
+// (DEP-08): of the current version and of every older version that still has descriptions for
+// instances running on it (DEP-04), each from its own model and selections. A gateway gets
+// those of its current version with its deployment; older ones it keeps as it got them.
 func (this *Controller) RecomputeEvents(ctx context.Context, deploymentId string) error {
 	if this.describer == nil {
 		return nil
 	}
 	var deployment model.Deployment
-	var version model.DeploymentVersion
+	var versions []int
 	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
 		if deployment, err = tx.GetDeployment(deploymentId, false); err != nil {
 			return err
 		}
-		version, err = tx.GetDeploymentVersion(deploymentId, deployment.Version)
+		if deployment.NetworkId == "" {
+			if versions, err = tx.DescribedVersions(deploymentId); err != nil {
+				return err
+			}
+		}
+		if !slices.Contains(versions, deployment.Version) {
+			versions = append(versions, deployment.Version)
+		}
+		return nil
+	})
+	if err != nil {
+		return ignoreNotFound(err)
+	}
+	var errs []error
+	for _, version := range versions {
+		errs = append(errs, this.recomputeVersion(ctx, deployment, version))
+	}
+	return errors.Join(errs...)
+}
+
+func (this *Controller) recomputeVersion(ctx context.Context, deployment model.Deployment, number int) error {
+	var version model.DeploymentVersion
+	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+		version, err = tx.GetDeploymentVersion(deployment.Id, number)
 		return err
 	})
 	if err != nil {
@@ -566,18 +592,22 @@ func (this *Controller) RecomputeEvents(ctx context.Context, deploymentId string
 		return err
 	}
 	return this.store.Tx(ctx, func(tx *store.Tx) error {
-		current, err := tx.GetDeployment(deploymentId, true)
+		current, err := tx.GetDeployment(deployment.Id, true)
 		if err != nil {
 			return ignoreNotFound(err)
 		}
-		if current.Version != version.Version {
-			// an update replaced the descriptions meanwhile
-			return nil
+		if number != current.Version {
+			// an older version keeps descriptions only while instances run on it; once the
+			// cleanup removed them, nothing waits for them any more
+			described, err := tx.DescribedVersions(deployment.Id)
+			if err != nil || !slices.Contains(described, number) {
+				return err
+			}
 		}
-		if err = tx.ReplaceEventDescriptions(deploymentId, descriptions, groups, time.Now()); err != nil {
+		if err = tx.ReplaceEventDescriptions(deployment.Id, number, descriptions, groups, time.Now()); err != nil {
 			return err
 		}
-		if current.NetworkId != "" && this.networks != nil {
+		if current.NetworkId != "" && this.networks != nil && number == current.Version {
 			// a gateway gets changed descriptions with its deployment (SYNC-06)
 			return this.desireDeployment(tx, current)
 		}
@@ -609,12 +639,15 @@ func ignoreNotFound(err error) error {
 	return err
 }
 
+// ListEventDescriptions lists the event descriptions of the current version of a deployment;
+// those of older versions serve instances still running on them (DEP-04).
 func (this *Controller) ListEventDescriptions(ctx context.Context, token string, namespace string, deploymentId string) (result []model.EventDescription, err error) {
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
-		if _, err := this.readDeployment(ctx, tx, token, namespace, deploymentId, Read, false); err != nil {
+		d, err := this.readDeployment(ctx, tx, token, namespace, deploymentId, Read, false)
+		if err != nil {
 			return err
 		}
-		result, err = tx.ListEventDescriptions(deploymentId)
+		result, err = tx.ListEventDescriptions(deploymentId, d.Version)
 		return err
 	})
 	return result, err
