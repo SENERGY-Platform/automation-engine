@@ -104,6 +104,10 @@ func Check(src string) error {
 	return err
 }
 
+// GojaPatches are the patches the engine applies to goja (third_party/goja-patches). Referring to
+// them keeps the engine from building with goja unpatched, e.g. without the replace in go.mod.
+var GojaPatches = goja.EnginePatches()
+
 // NewRuntime returns a goja runtime that compiles, also for eval and new Function, as Compile.
 func NewRuntime() *goja.Runtime {
 	vm := goja.New()

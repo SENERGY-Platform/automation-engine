@@ -35,6 +35,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # goja is replaced by third_party/goja, the required version with the patches in
+      # third_party/goja-patches; the committed copy has to be exactly that
+      - name: Patched goja
+        run: third_party/goja.sh check
+
       # the OpenAPI and the documentation of the script environments are committed; they have
       # to match the code. git diff does not see files that generation creates, hence the
       # second check.

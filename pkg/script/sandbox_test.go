@@ -19,6 +19,7 @@ package script
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -177,5 +178,12 @@ func TestRunRefusesBlockedScripts(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// The engine runs on goja with its patches (third_party/goja.sh).
+func TestGojaIsPatched(t *testing.T) {
+	if !slices.Contains(GojaPatches, "engine-patches") {
+		t.Fatalf("%v", GojaPatches)
 	}
 }
