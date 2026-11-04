@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"modernc.org/quickjs"
@@ -38,6 +40,11 @@ type Sandbox struct {
 	MaxLogEntries  int
 	// bytes the JavaScript heap of one evaluation may take
 	MaxMemory int
+	// VMs RunReused keeps, about 175 KiB each; the least recently used goes first
+	MaxReused int
+
+	reuseMux sync.Mutex
+	reused   map[string]*reusedVM
 }
 
 func NewSandbox() *Sandbox {
@@ -46,6 +53,7 @@ func NewSandbox() *Sandbox {
 		MaxResultBytes: 1 << 20,
 		MaxLogEntries:  100,
 		MaxMemory:      64 << 20,
+		MaxReused:      200,
 	}
 }
 
@@ -90,14 +98,36 @@ func Check(src string) error {
 
 // Run evaluates src; the value of the last expression statement is the result.
 func (this *Sandbox) Run(src string, variables map[string]any) (result Result, err error) {
-	fail := func(err error) (Result, error) {
-		return Result{}, &Error{Err: err, Logs: result.Logs}
-	}
-	vm, err := NewVM(this.Timeout, this.MaxMemory)
+	vm, err := this.newVM(variables)
 	if err != nil {
-		return fail(err)
+		return result, &Error{Err: err}
 	}
 	defer vm.Close()
+	this.collect(vm, &result)
+	value, err := vm.Eval(src, this.MaxResultBytes)
+	return this.finish(result, value, err)
+}
+
+// newVM returns a VM with the variables and the functions of the sandbox as globals; a function
+// replaces a variable of the same name
+func (this *Sandbox) newVM(variables map[string]any) (*VM, error) {
+	vm, err := NewVM(this.Timeout, this.MaxMemory)
+	if err != nil {
+		return nil, err
+	}
+	if err = vm.SetGlobals(variables); err != nil {
+		vm.Close()
+		return nil, fmt.Errorf("unable to set variables: %w", err)
+	}
+	if _, err = vm.call("sandbox"); err != nil {
+		vm.Close()
+		return nil, err
+	}
+	return vm, nil
+}
+
+// collect makes the logs and assignments of the next evaluation on vm go into result
+func (this *Sandbox) collect(vm *VM, result *Result) {
 	vm.onLog = func(line string) {
 		if this.MaxLogEntries <= 0 || len(result.Logs) < this.MaxLogEntries {
 			result.Logs = append(result.Logs, line)
@@ -116,21 +146,121 @@ func (this *Sandbox) Run(src string, variables map[string]any) (result Result, e
 		out, err := json.Marshal(normalized)
 		return string(out), err
 	}
-	if err = vm.SetGlobals(variables); err != nil {
-		return fail(fmt.Errorf("unable to set variables: %w", err))
+}
+
+func (this *Sandbox) finish(result Result, value any, err error) (Result, error) {
+	if err == nil {
+		result.Value, err = Normalize(value, this.MaxResultBytes)
 	}
-	if _, err = vm.call("sandbox"); err != nil {
-		return fail(err)
-	}
-	value, err := vm.Eval(src, this.MaxResultBytes)
 	if err != nil {
-		return fail(err)
-	}
-	result.Value, err = Normalize(value, this.MaxResultBytes)
-	if err != nil {
-		return fail(err)
+		return Result{}, &Error{Err: err, Logs: result.Logs}
 	}
 	return result, nil
+}
+
+// reusedVM is a VM RunReused keeps for one key
+type reusedVM struct {
+	mux sync.Mutex
+	vm  *VM
+	src string
+	// guarded by Sandbox.reuseMux
+	used time.Time
+	// set once the entry left the map; the holder of mux closes the VM
+	dropped atomic.Bool
+}
+
+// RunReused is Run in a VM kept for key and reused while src stays the same, which saves creating
+// a VM for each evaluation of a script that runs again and again, like the condition of an event
+// (EVENT_SCRIPT_REUSE). The variables are visible only to the script, and what it declares or
+// assigns globally is removed afterwards; a change of a built-in object such as
+// String.prototype, however, stays for the next evaluation in that VM, which is why the key must
+// not be shared by scripts of different owners. A VM is dropped after an error, so that a script
+// that ran out of time or memory starts fresh. While the VM of key is busy, a fresh one is used.
+func (this *Sandbox) RunReused(key string, src string, variables map[string]any) (result Result, err error) {
+	entry := this.reusedEntry(key, src)
+	if entry == nil || !entry.mux.TryLock() {
+		return this.Run(src, variables)
+	}
+	defer entry.mux.Unlock()
+	if entry.dropped.Load() {
+		return this.Run(src, variables)
+	}
+	if entry.vm == nil {
+		if entry.vm, err = this.newVM(nil); err == nil {
+			if err = entry.vm.reusable(); err != nil {
+				entry.vm.Close()
+				entry.vm = nil
+			}
+		}
+		if err != nil {
+			this.drop(key, entry)
+			return result, &Error{Err: err}
+		}
+	}
+	this.collect(entry.vm, &result)
+	value, err := entry.vm.EvalReused(src, variables, this.MaxResultBytes)
+	if err != nil {
+		this.drop(key, entry)
+	}
+	if entry.dropped.Load() {
+		entry.vm.Close()
+		entry.vm = nil
+	}
+	return this.finish(result, value, err)
+}
+
+// reusedEntry returns the entry of key, a new one if there is none or its script differs
+func (this *Sandbox) reusedEntry(key string, src string) *reusedVM {
+	if this.MaxReused <= 0 {
+		return nil
+	}
+	this.reuseMux.Lock()
+	defer this.reuseMux.Unlock()
+	if this.reused == nil {
+		this.reused = map[string]*reusedVM{}
+	}
+	entry, ok := this.reused[key]
+	if ok && entry.src != src {
+		this.dropLocked(key, entry)
+		ok = false
+	}
+	if !ok {
+		if len(this.reused) >= this.MaxReused {
+			oldestKey := ""
+			var oldest *reusedVM
+			for k, e := range this.reused {
+				if oldest == nil || e.used.Before(oldest.used) {
+					oldestKey, oldest = k, e
+				}
+			}
+			this.dropLocked(oldestKey, oldest)
+		}
+		entry = &reusedVM{src: src}
+		this.reused[key] = entry
+	}
+	entry.used = time.Now()
+	return entry
+}
+
+func (this *Sandbox) drop(key string, entry *reusedVM) {
+	this.reuseMux.Lock()
+	defer this.reuseMux.Unlock()
+	this.dropLocked(key, entry)
+}
+
+// dropLocked removes the entry; its VM is closed now if it is idle, otherwise by its holder
+func (this *Sandbox) dropLocked(key string, entry *reusedVM) {
+	if this.reused[key] == entry {
+		delete(this.reused, key)
+	}
+	entry.dropped.Store(true)
+	if entry.mux.TryLock() {
+		if entry.vm != nil {
+			entry.vm.Close()
+			entry.vm = nil
+		}
+		entry.mux.Unlock()
+	}
 }
 
 // Normalize converts a Go value into its JSON form and enforces maxBytes if positive.

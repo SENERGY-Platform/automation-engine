@@ -209,7 +209,16 @@ func (fakeUnmarshaller) Unmarshal(desc events.MessageDesc) (any, error) {
 }
 
 func TestEvaluatorTriggerRules(t *testing.T) {
-	e := events.NewEvaluator(fakeUnmarshaller{})
+	for _, reuse := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reuse %v", reuse), func(t *testing.T) {
+			testEvaluatorTriggerRules(t, events.NewEvaluator(fakeUnmarshaller{}).ReuseVMs(reuse))
+		})
+	}
+}
+
+// the same rules with a VM per condition kept for the next message (EVENT_SCRIPT_REUSE); each case
+// runs twice, so that the second evaluation is one in a reused VM
+func testEvaluatorTriggerRules(t *testing.T, e *events.Evaluator) {
 	cases := []struct {
 		script    string
 		value     any
@@ -224,11 +233,13 @@ func TestEvaluatorTriggerRules(t *testing.T) {
 		{"x > limit", 25.0, false, false},
 		{"({})", 1.0, false, true},
 	}
-	for _, c := range cases {
-		d := model.EventDescription{Script: c.script, ValueVariable: "x", Variables: map[string]string{"limit": "30"}}
-		result, err := e.Evaluate(d, map[string]any{"value": c.value})
-		if (err != nil) != c.fails || result.Triggered != c.triggered {
-			t.Errorf("%v with %v: triggered %v, error %v", c.script, c.value, result.Triggered, err)
+	for i, c := range cases {
+		d := model.EventDescription{Id: fmt.Sprint(i), Script: c.script, ValueVariable: "x", Variables: map[string]string{"limit": "30"}}
+		for range 2 {
+			result, err := e.Evaluate(d, map[string]any{"value": c.value})
+			if (err != nil) != c.fails || result.Triggered != c.triggered {
+				t.Errorf("%v with %v: triggered %v, error %v", c.script, c.value, result.Triggered, err)
+			}
 		}
 	}
 }

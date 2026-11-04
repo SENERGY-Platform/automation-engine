@@ -44,6 +44,8 @@ type VM struct {
 	vm       *quickjs.VM
 	timeout  time.Duration
 	internal quickjs.Value
+	// set by reusable: evaluates a script and resets the globals afterwards
+	reused   quickjs.Value
 	bound    map[string]reflect.Value
 	onLog    func(string)
 	onAssign func(name string, raw string) (string, error)
@@ -51,10 +53,17 @@ type VM struct {
 
 // prelude installs what every VM has and returns the functions the Go side calls. It runs before
 // any script and takes the host function off the global object, so scripts see only the standard
-// library and what the caller exposes.
-const prelude = `(function (g, host) {
+// library and what the caller exposes. __evalIn is defined in global code, so that a script it
+// evaluates sees only its scope and the globals, not the functions of the prelude.
+const prelude = `globalThis.__evalIn = function (__scope, __src) { with (__scope) { return eval(__src); } };
+(function (g, host, evalIn) {
 	delete g.__host;
+	delete g.__evalIn;
 	var parse = JSON.parse, stringify = JSON.stringify, define = Object.defineProperty;
+	var names = Object.getOwnPropertyNames, descriptor = Object.getOwnPropertyDescriptor, create = Object.create;
+	// the variables of the evaluation running in a reused VM, and the names of the functions of the
+	// sandbox, which variables do not hide
+	var scope = null, functions = create(null);
 	// Camunda handed some variables over as JSON text that the engine keeps as objects, e.g. the
 	// value of a device event, and models parse them; parsing an object would read "[object Object]"
 	JSON.parse = function (text, reviver) {
@@ -119,6 +128,7 @@ const prelude = `(function (g, host) {
 			for (var name in values) set(name, values[name]);
 		},
 		sandbox: function () {
+			functions.log = functions.console = functions.setVariable = true;
 			set("log", log);
 			set("console", {log: log});
 			set("setVariable", function (name, value) {
@@ -128,8 +138,50 @@ const prelude = `(function (g, host) {
 				} catch (e) {
 					throw new TypeError("setVariable(" + stringify(String(name)) + "): " + e.message);
 				}
-				set(name, parse(raw));
+				var value = parse(raw);
+				set(name, value);
+				if (scope && name in scope) scope[name] = value;
 			});
+		},
+		// reusable returns a function that evaluates a script with its variables in a scope of
+		// their own and afterwards restores the global object as it was before the first one:
+		// what a script declared, assigned or deleted there does not reach the next evaluation
+		reusable: function () {
+			// values are compared, not descriptors: creating a descriptor per global and evaluation
+			// took more time than the evaluation itself
+			var baseNames = names(g), base = create(null), values = [], i;
+			for (i = 0; i < baseNames.length; i++) {
+				var d = descriptor(g, baseNames[i]);
+				base[baseNames[i]] = d;
+				values.push(d.get || d.set ? base : d.value);
+			}
+			function reset() {
+				var current = names(g), i;
+				for (i = 0; i < current.length; i++) {
+					if (!base[current[i]]) {
+						try { delete g[current[i]]; } catch (e) {}
+					}
+				}
+				for (i = 0; i < baseNames.length; i++) {
+					var was = values[i], is = g[baseNames[i]];
+					if (was !== base && is !== was && !(is !== is && was !== was)) {
+						try { define(g, baseNames[i], base[baseNames[i]]); } catch (e) {}
+					}
+				}
+			}
+			return function (src, raw) {
+				var values = parse(raw);
+				scope = create(null);
+				for (var name in values) {
+					if (!functions[name]) scope[name] = values[name];
+				}
+				try {
+					return encode(evalIn(scope, src));
+				} finally {
+					scope = null;
+					reset();
+				}
+			};
 		},
 		bind: function (namespace, methods) {
 			var object = {};
@@ -143,7 +195,7 @@ const prelude = `(function (g, host) {
 			set(namespace, object);
 		}
 	};
-})(globalThis, globalThis.__host)`
+})(globalThis, globalThis.__host, globalThis.__evalIn)`
 
 // preludeCode is the prelude compiled once; compiling it took most of the time of a new VM
 var preludeCode = sync.OnceValues(func() ([]byte, error) {
@@ -187,8 +239,10 @@ func NewVM(timeout time.Duration, maxMemory int) (result *VM, err error) {
 }
 
 func (this *VM) Close() {
-	if this.internal.VM() != nil {
-		this.internal.Free()
+	for _, v := range []*quickjs.Value{&this.reused, &this.internal} {
+		if v.VM() != nil {
+			v.Free()
+		}
 	}
 	_ = this.vm.Close()
 }
@@ -206,6 +260,36 @@ func (this *VM) call(name string, args ...any) (any, error) {
 	defer fn.Free()
 	result, err := fn.Call(this.internal, args...)
 	return result, scriptError(err)
+}
+
+// reusable prepares the VM for EvalReused; the globals as they are now are what each evaluation
+// starts with.
+func (this *VM) reusable() error {
+	atom, err := this.vm.NewAtom("reusable")
+	if err != nil {
+		return err
+	}
+	fn, err := this.internal.GetPropertyValue(atom)
+	if err != nil {
+		return err
+	}
+	defer fn.Free()
+	this.reused, err = fn.CallValue(this.internal)
+	return scriptError(err)
+}
+
+// EvalReused is Eval for a VM prepared by reusable: the variables are visible to src only, and the
+// global object is reset afterwards.
+func (this *VM) EvalReused(src string, variables map[string]any, maxBytes int) (any, error) {
+	raw, err := json.Marshal(variables)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := this.reused.Call(this.internal, src, string(raw))
+	if err != nil {
+		return nil, this.failure(err)
+	}
+	return decode(encoded, maxBytes)
 }
 
 // SetGlobals defines the values, which must be JSON compatible, as global variables.
@@ -262,12 +346,17 @@ func (this *VM) Eval(src string, maxBytes int) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decode(encoded, maxBytes)
+}
+
+// decode reads what encode of the prelude returned
+func decode(encoded any, maxBytes int) (any, error) {
 	raw, _ := encoded.(string)
 	if maxBytes > 0 && len(raw) > maxBytes {
 		return nil, fmt.Errorf("value exceeds %v bytes", maxBytes)
 	}
 	var result any
-	if err = json.Unmarshal([]byte(raw), &result); err != nil {
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		return nil, fmt.Errorf("value is not JSON serializable: %w", err)
 	}
 	return result, nil
@@ -530,7 +619,8 @@ func scriptError(err error) error {
 	if first == "" {
 		return jsErr
 	}
-	return &locatedError{err: jsErr, at: first}
+	// a script evaluated by a reused VM runs through eval, which QuickJS names <input>
+	return &locatedError{err: jsErr, at: strings.Replace(first, "<input>", "<eval>", 1)}
 }
 
 type locatedError struct {

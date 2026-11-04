@@ -172,6 +172,10 @@ type Config struct {
 	// permissions-v2 publishes rights changes of the engine topics here; the engine restores
 	// the owner's administrate right (SEC-10); empty disables
 	PermissionsKafkaTopic string `json:"permissions_kafka_topic" env_var:"PERMISSIONS_KAFKA_TOPIC"`
+	// keep the VM of an event condition for its next message instead of creating one per message,
+	// which costs about 200 us; a condition then sees what its own earlier evaluations changed in
+	// built-in objects, never what another condition changed (EXPR-03)
+	EventScriptReuse bool `json:"event_script_reuse" env_var:"EVENT_SCRIPT_REUSE"`
 
 	// cloud or fog; selects the http policy of the namespaces (NS-04) and, in fog, the services
 	// of the gateway (FOG-01)

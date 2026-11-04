@@ -37,10 +37,19 @@ type Unmarshaller interface {
 type Evaluator struct {
 	unmarshaller Unmarshaller
 	sandbox      *script.Sandbox
+	reuse        bool
 }
 
 func NewEvaluator(unmarshaller Unmarshaller) *Evaluator {
 	return &Evaluator{unmarshaller: unmarshaller, sandbox: script.NewSandbox()}
+}
+
+// ReuseVMs makes each condition run in a VM kept for its event description instead of a fresh
+// one per message (EVENT_SCRIPT_REUSE, script.Sandbox.RunReused). The key is the description,
+// whose condition belongs to one owner.
+func (this *Evaluator) ReuseVMs(enabled bool) *Evaluator {
+	this.reuse = enabled
+	return this
 }
 
 type Evaluation struct {
@@ -69,7 +78,12 @@ func (this *Evaluator) Evaluate(d model.EventDescription, message map[string]any
 		}
 		variables[key] = value
 	}
-	run, err := this.sandbox.Run(d.Script, variables)
+	var run script.Result
+	if this.reuse {
+		run, err = this.sandbox.RunReused(d.Id, d.Script, variables)
+	} else {
+		run, err = this.sandbox.Run(d.Script, variables)
+	}
 	result.Logs = run.Logs
 	if err != nil {
 		return result, fmt.Errorf("condition script: %w", err)

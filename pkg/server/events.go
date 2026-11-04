@@ -113,7 +113,7 @@ func NewEventServer(ctx context.Context, config configuration.Config, logger *sl
 		consumer = result.kafkaConsumer
 	}
 	worker := events.DefaultWorkerConfig()
-	result.Worker = events.NewWorker(worker, s, events.NewEvaluator(unmarshaller), e, consumer, logger)
+	result.Worker = events.NewWorker(worker, s, events.NewEvaluator(unmarshaller).ReuseVMs(config.EventScriptReuse), e, consumer, logger)
 	return result, nil
 }
 

@@ -147,7 +147,7 @@ As in the other platform services, through `gin-middleware/otelx`:
 
 The same binary runs in two roles, scalable separately and bound to the same database:
 - `ROLE=engine` (default): API, execution, tasks, schedules.
-- `ROLE=event`: event worker. Reads the event descriptions from the database, subscribes to the related device data topics in the consumer group `EVENT_CONSUMER_GROUP` and correlates matches directly. Needs `KAFKA_URL` and, for the evaluation, `DEVICE_REPOSITORY_URL` with the `AUTH_*` values; unmarshalling runs in the process. If device-repository is not reachable, a QoS 1 message is read again instead of being reported to the owner.
+- `ROLE=event`: event worker. Reads the event descriptions from the database, subscribes to the related device data topics in the consumer group `EVENT_CONSUMER_GROUP` and correlates matches directly. Needs `KAFKA_URL` and, for the evaluation, `DEVICE_REPOSITORY_URL` with the `AUTH_*` values; unmarshalling runs in the process. If device-repository is not reachable, a QoS 1 message is read again instead of being reported to the owner. With `EVENT_SCRIPT_REUSE=true` each condition keeps its JavaScript VM for the next message instead of creating one per message (about 200 µs each), up to 200 conditions at about 175 KiB each; a condition then sees what its own earlier evaluations changed in built-in objects, never what another one changed. The same holds for the event worker on a gateway.
 
 ## Gateway (fog)
 

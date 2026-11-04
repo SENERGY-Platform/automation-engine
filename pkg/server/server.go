@@ -351,7 +351,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		}
 		workerConfig := events.DefaultWorkerConfig()
 		workerConfig.Local = true
-		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller), e, events.LocalConsumer(broker, 1, logger), logger)
+		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller).ReuseVMs(config.EventScriptReuse), e, events.LocalConsumer(broker, 1, logger), logger)
 	}
 	var networks *fogsync.Cloud
 	syncBroker := deps.SyncBroker
