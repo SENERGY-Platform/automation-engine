@@ -61,3 +61,18 @@ type EventDescription struct {
 	// the worker, not part of the API.
 	ActiveSince time.Time `json:"-"`
 }
+
+// BlockedScript is a script that ended the engine with a fatal error; it is refused on save and
+// deploy and not run, also in copies that differ only in comments and whitespace (EXPR-03).
+type BlockedScript struct {
+	// SHA-256 of the token sequence of the script
+	Fingerprint string `json:"fingerprint"`
+	Source      string `json:"source"`
+	// the error the script ended the engine with
+	Reason string `json:"reason"`
+	// where it ran, e.g. the element of a deployment
+	Origin    string    `json:"origin"`
+	CreatedAt time.Time `json:"created_at"`
+	// when the stored deployments were searched for it; empty until then
+	ScannedAt *time.Time `json:"scanned_at,omitempty"`
+}

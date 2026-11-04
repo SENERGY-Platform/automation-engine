@@ -28,23 +28,23 @@ import (
 
 // ApplyCrashDecisions stops what the crash brake found to have ended the previous process with a
 // fatal error, so that it does not run again after every restart (EXPR-03):
-//   - a script of an instance: an incident at its element;
+//   - a script of an instance: an incident at its element; the deployment version is quarantined
+//     and its other running instances get an incident too, because they would run the same
+//     script at the element, also one assembled at runtime that no fingerprint catches;
 //   - the condition of an event: the description is suspended, and the instances waiting for it
 //     get an incident;
 //   - the expression of a start timer, or a script of an instance whose creation the crash rolled
 //     back, e.g. started by a message or a timer: the deployment version is quarantined, which
 //     disables the deployment, also when it is created only later (applyQuarantine).
 //
-// The deployment is marked faulty, which pauses automatic restarts, and its owner is notified
-// once. A reset of the restarts lifts all of it, an update the suspension and the mark, a newer
-// version or enabling the deployment the quarantine. It returns the decisions it could not apply,
-// for the next start.
+// The script goes on the blocklist, and the smart service instance that deployed it is stopped
+// (stopOriginator). The deployment is marked faulty, which pauses automatic restarts, and its
+// owner is notified once. A reset of the restarts lifts all of it but the blocklist, an update the
+// suspension and the mark, a newer version or enabling the deployment the quarantine. It returns
+// the decisions it could not apply completely, for the next start; applying one again is harmless.
 func (this *Engine) ApplyCrashDecisions(ctx context.Context, decisions []crashbrake.Decision) (remaining []crashbrake.Decision) {
 	for _, decision := range decisions {
-		err := this.store.Tx(ctx, func(tx *store.Tx) error {
-			return this.applyCrash(tx, decision)
-		})
-		if err != nil {
+		if err := this.applyCrash(ctx, decision); err != nil {
 			this.logger.Error("unable to stop the script that ended the previous process, retried at the next start", "kind", decision.Unit.Kind, "id", decision.Unit.Id, "error", err)
 			remaining = append(remaining, decision)
 			continue
@@ -56,7 +56,58 @@ func (this *Engine) ApplyCrashDecisions(ctx context.Context, decisions []crashbr
 	return remaining
 }
 
-func (this *Engine) applyCrash(tx *store.Tx, decision crashbrake.Decision) error {
+// applyCrash applies a decision in three transactions, so that a failure in the larger steps
+// keeps the smaller ones: the stop of the unit, the blocklist, then the copies and the originator.
+func (this *Engine) applyCrash(ctx context.Context, decision crashbrake.Decision) error {
+	var ran ranAt
+	stopErr := this.store.Tx(ctx, func(tx *store.Tx) error {
+		ran = ranAt{}
+		return this.stopCrashed(tx, decision, &ran)
+	})
+	if decision.Unit.Script != "" {
+		// also when the unit is gone or could not be stopped: the next copy of the script must not run
+		var b blocked
+		if err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+			b, err = this.blockScript(tx, decision, ran)
+			return err
+		}); err != nil {
+			return errors.Join(stopErr, err)
+		}
+		this.blocklist.Add(decision.Unit.Script, decision.Error)
+		if b.added {
+			// once, by the replica that added it
+			this.logBlocked(decision, b)
+		}
+	}
+	if stopErr != nil || ran.deploymentId == "" {
+		return stopErr
+	}
+	return this.store.Tx(ctx, func(tx *store.Tx) error {
+		if decision.Unit.Kind == crashbrake.KindInstance && ran.version > 0 {
+			element := decision.Unit.Element
+			q := store.Quarantine{DeploymentId: ran.deploymentId, Version: ran.version, ElementId: element, Error: decision.Error, Since: this.now()}
+			if err := this.quarantine(tx, q, fmt.Sprintf("A script of element %v ended the engine with %v.", element, decision.Error)); err != nil {
+				return err
+			}
+			if err := this.stopVersion(tx, ran.deploymentId, ran.version, element, fmt.Sprintf("another instance of this deployment version ended the engine with %v at element %v; this one would run the same script", decision.Error, element)); err != nil {
+				return err
+			}
+		}
+		return this.stopOriginator(tx, ran.deploymentId, decision.Unit.ManagedBy, decision.Error)
+	})
+}
+
+// ranAt is the deployment version a crashing script ran on, and its element and source if the
+// unit does not name them
+type ranAt struct {
+	deploymentId string
+	version      int
+	element      string
+	source       string
+}
+
+// stopCrashed stops the unit of a decision and records in ran where its script ran
+func (this *Engine) stopCrashed(tx *store.Tx, decision crashbrake.Decision, ran *ranAt) error {
 	unit := decision.Unit
 	switch unit.Kind {
 	case crashbrake.KindInstance:
@@ -67,12 +118,14 @@ func (this *Engine) applyCrash(tx *store.Tx, decision crashbrake.Decision) error
 				return nil
 			}
 			// the crash rolled back the creation of the instance; the trigger would create it again
+			*ran = ranAt{deploymentId: unit.Deployment, version: unit.Version}
 			return this.quarantine(tx, store.Quarantine{DeploymentId: unit.Deployment, Version: unit.Version, ElementId: unit.Element, Error: decision.Error, Since: this.now()},
 				fmt.Sprintf("A script of element %v ended the engine with %v while a new instance started.", unit.Element, decision.Error))
 		}
 		if err != nil {
 			return err
 		}
+		*ran = ranAt{deploymentId: inst.DeploymentId, version: inst.DeploymentVersion}
 		if inst.State != model.StateRunning {
 			if inst.RestartAt == nil {
 				return nil
@@ -91,6 +144,9 @@ func (this *Engine) applyCrash(tx *store.Tx, decision crashbrake.Decision) error
 		return this.markCrashed(tx, inst.DeploymentId, fmt.Sprintf("A script of element %v of instance %v ended the engine with %v. The instance stopped with an incident.", unit.Element, inst.Id, decision.Error))
 	case crashbrake.KindEvent:
 		d, suspended, err := tx.SuspendEventDescription(unit.Id, decision.Error)
+		if err == nil {
+			*ran = ranAt{deploymentId: d.DeploymentId, version: d.Version, element: d.ElementId, source: d.Script}
+		}
 		if err != nil || !suspended {
 			return ignoreNotFound(err)
 		}
@@ -109,6 +165,7 @@ func (this *Engine) applyCrash(tx *store.Tx, decision crashbrake.Decision) error
 		}
 		return this.markCrashed(tx, d.DeploymentId, fmt.Sprintf("The condition of event %v ended the engine with %v. It is no longer evaluated, and the %v instances waiting for it stopped with an incident.", d.ElementId, decision.Error, len(stopped)))
 	case crashbrake.KindDeployment:
+		*ran = ranAt{deploymentId: unit.Id, version: unit.Version}
 		return this.quarantine(tx, store.Quarantine{DeploymentId: unit.Id, Version: unit.Version, ElementId: unit.Element, Error: decision.Error, Since: this.now()},
 			fmt.Sprintf("The timer expression of start event %v ended the engine with %v.", unit.Element, decision.Error))
 	}
@@ -118,6 +175,11 @@ func (this *Engine) applyCrash(tx *store.Tx, decision crashbrake.Decision) error
 // crashIncident ends the run of a running instance with an incident at the element whose script
 // ended the process, and reports whether it did
 func (this *Engine) crashIncident(tx *store.Tx, instanceId string, elementId string, crash string) (bool, error) {
+	return this.stopWithIncident(tx, instanceId, elementId, fmt.Sprintf("the engine ended with %v while this element evaluated a script; it is not run again automatically", crash))
+}
+
+// stopWithIncident ends the run of a running instance with an incident and reports whether it did
+func (this *Engine) stopWithIncident(tx *store.Tx, instanceId string, elementId string, message string) (bool, error) {
 	r, err := this.lockRunning(tx, instanceId)
 	if errors.Is(err, model.ErrConflict) || errors.Is(err, model.ErrNotFound) {
 		return false, nil
@@ -125,26 +187,31 @@ func (this *Engine) crashIncident(tx *store.Tx, instanceId string, elementId str
 	if err != nil {
 		return false, err
 	}
-	if err = r.incident(elementId, fmt.Sprintf("the engine ended with %v while this element evaluated a script; it is not run again automatically", crash)); err != nil {
+	if err = r.incident(elementId, message); err != nil {
 		return false, err
 	}
 	return true, r.finish()
 }
 
 // quarantine records the quarantine of a deployment version and disables the deployment, if it
-// exists already; the first quarantine counts
+// exists already; the first quarantine counts. A version older than the active one is not
+// quarantined: the newer version would lift it (applyQuarantine).
 func (this *Engine) quarantine(tx *store.Tx, q store.Quarantine, what string) error {
 	if q.DeploymentId == "" {
 		return nil
 	}
-	added, err := tx.QuarantineDeployment(q)
-	if err != nil || !added {
+	deployment, err := tx.GetDeployment(q.DeploymentId, true)
+	exists := err == nil
+	if err = ignoreNotFound(err); err != nil {
 		return err
 	}
-	deployment, err := tx.GetDeployment(q.DeploymentId, true)
-	if err != nil {
-		// created later, e.g. applied again by a gateway: ActivateVersion disables it then
-		return ignoreNotFound(err)
+	if exists && deployment.Version > q.Version {
+		return nil
+	}
+	added, err := tx.QuarantineDeployment(q)
+	if err != nil || !added || !exists {
+		// one created later, e.g. applied again by a gateway, is disabled by ActivateVersion
+		return err
 	}
 	return this.enforceQuarantine(tx, deployment, what)
 }

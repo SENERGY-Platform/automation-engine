@@ -23,7 +23,6 @@ package compat
 import (
 	"context"
 	"log/slog"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -125,26 +124,20 @@ type Scripts struct {
 	Logger *slog.Logger
 	Tokens TokenSource
 	Iot    client.Interface
+	// scripts that ended the engine; nil blocks nothing (EXPR-03)
+	Blocklist *enginescript.Blocklist
 }
 
 // Run runs the scripts with the given prefix; instanceVariables, which may be nil, are what
 // inputs.get and inputs.exists find for a name that is no input of the task.
 func (this Scripts) Run(ctx context.Context, userId string, prefix string, inputs map[string]interface{}, outputs map[string]interface{}, variables map[string]interface{}, instanceVariables map[string]interface{}) (variableChanges map[string]interface{}, result map[string]interface{}, err error) {
-	type keyValue struct{ key, value string }
-	parts := []keyValue{}
-	for name, value := range inputs {
-		if str, ok := value.(string); ok && strings.HasPrefix(name, prefix) {
-			parts = append(parts, keyValue{name, str})
-		}
-	}
-	sort.Slice(parts, func(i, j int) bool { return parts[i].key < parts[j].key })
-	script := strings.Builder{}
-	for _, part := range parts {
-		script.WriteString(part.value)
+	script := enginescript.JoinParts(prefix, inputs)
+	if err = this.Blocklist.Check(script); err != nil {
+		return nil, nil, err
 	}
 	env := NewScriptEnv(ctx, this.Logger.With("script", prefix), this.Tokens, this.Iot, userId, variables, inputs, outputs)
 	env.InstanceVariables = instanceVariables
-	vm := goja.New()
+	vm := enginescript.NewRuntime()
 	timer := time.AfterFunc(2*time.Second, func() {
 		vm.Interrupt("script execution timeout")
 	})
@@ -160,7 +153,11 @@ func (this Scripts) Run(ctx context.Context, userId string, prefix string, input
 			return nil, nil, err
 		}
 	}
-	if _, err = vm.RunString(script.String()); err != nil {
+	program, err := enginescript.Compile(script)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err = vm.RunProgram(program); err != nil {
 		return nil, nil, err
 	}
 	return env.VariablesUpdates, env.Outputs, nil

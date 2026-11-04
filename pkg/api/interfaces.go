@@ -137,6 +137,11 @@ type Controller interface {
 	// ImportNetwork takes over the deployments of a gateway from its export; admins only (SNRGY-5066)
 	ImportNetwork(ctx context.Context, token string, networkId string, doc model.GatewayExport, options model.NetworkImportOptions) (model.NetworkImport, error)
 
+	// ListBlockedScripts lists the scripts that ended the engine; admins only (EXPR-03)
+	ListBlockedScripts(ctx context.Context, token string) ([]model.BlockedScript, error)
+	// UnblockScript removes a script from the blocklist; admins only (EXPR-03)
+	UnblockScript(ctx context.Context, token string, fingerprint string) error
+
 	// GetUserDependents is the dry run of DeleteUser; admins only (SEC-14)
 	GetUserDependents(ctx context.Context, token string, userId string) (model.UserDependents, error)
 	// DeleteUser removes everything a user owns; admins only (SEC-08, SEC-13)

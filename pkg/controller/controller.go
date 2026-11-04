@@ -166,6 +166,8 @@ func (this *Controller) planSelections(ctx context.Context, user jwt.Token, ns m
 			issues = append(issues, bpmn.CheckTimerMinimum(e, this.engine.Rules(ns).MinTimerDuration)...)
 		}
 	}
+	// a parameter can replace an input with a blocked script
+	issues = append(issues, bpmn.BlockedScripts(process, this.engine.Blocklist())...)
 	if len(issues) > 0 {
 		return plan, model.ValidationFailed(issues)
 	}

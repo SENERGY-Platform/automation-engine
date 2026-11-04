@@ -46,6 +46,12 @@ func NewEvaluator(unmarshaller Unmarshaller) *Evaluator {
 	return &Evaluator{unmarshaller: unmarshaller, sandbox: script.NewSandbox()}
 }
 
+// WithBlocklist refuses to evaluate conditions that ended the engine (EXPR-03).
+func (this *Evaluator) WithBlocklist(blocklist *script.Blocklist) *Evaluator {
+	this.sandbox.Blocklist = blocklist
+	return this
+}
+
 // WithCrashBrake records each condition as running in the brake, so that one that ends the
 // process is suspended at the next start instead of running again (EXPR-03).
 func (this *Evaluator) WithCrashBrake(brake *crashbrake.Brake) *Evaluator {
@@ -87,7 +93,7 @@ func (this *Evaluator) Evaluate(d model.EventDescription, message map[string]any
 		variables[key] = value
 	}
 	run, err := func() (script.Result, error) {
-		defer this.brake.Enter(crashbrake.Unit{Kind: crashbrake.KindEvent, Id: d.Id})()
+		defer this.brake.EnterScript(crashbrake.Unit{Kind: crashbrake.KindEvent, Id: d.Id}, d.Script)()
 		return this.sandbox.Run(d.Script, variables)
 	}()
 	result.Logs = run.Logs

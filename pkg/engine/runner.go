@@ -52,6 +52,8 @@ type runner struct {
 	halted bool
 	// a job or timer has been created; the scheduler is woken after commit
 	scheduled bool
+	// the goroutine of the transaction for the crash brake, zero until the first script
+	goroutine uint64
 }
 
 // incidentError aborts execution and turns into an incident of the run (INC-01)
@@ -246,8 +248,12 @@ func (this *runner) scope(t *store.Token) map[string]any {
 func (this *runner) eval(element *bpmn.Element, t *store.Token, src string) (any, error) {
 	result, err := func() (script.Result, error) {
 		// with the deployment version, which is stopped if the crash rolls back the new instance
-		defer this.e.brake.Enter(crashbrake.Unit{Kind: crashbrake.KindInstance, Id: this.inst.Id, Element: element.Id,
-			Deployment: this.inst.DeploymentId, Version: this.inst.DeploymentVersion})()
+		if this.goroutine == 0 {
+			// once per transaction, which runs on one goroutine
+			this.goroutine = this.e.brake.Goroutine()
+		}
+		defer this.e.brake.EnterScriptOn(this.goroutine, crashbrake.Unit{Kind: crashbrake.KindInstance, Id: this.inst.Id, Element: element.Id,
+			Deployment: this.inst.DeploymentId, Version: this.inst.DeploymentVersion}, src)()
 		return this.e.sandbox.Run(src, this.scope(t))
 	}()
 	var logs []string

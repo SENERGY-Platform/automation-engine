@@ -270,11 +270,14 @@ func (this *Engine) beginRun(tx *store.Tx, inst *store.Instance, version int, st
 // startTimerDue computes the next due time of a timer start event after from; nil if the
 // timer has no further occurrence. Expressions see no variables, there is no instance yet.
 // previous is the due time that fired, nil at activation.
-func (this *Engine) startTimerDue(deploymentId string, version int, start *bpmn.Element, from time.Time, previous *time.Time) (*time.Time, error) {
+func (this *Engine) startTimerDue(deployment model.Deployment, version int, start *bpmn.Element, from time.Time, previous *time.Time) (*time.Time, error) {
 	value := start.Timer.Value
 	if start.Timer.Expression {
 		result, err := func() (script.Result, error) {
-			defer this.brake.Enter(crashbrake.Unit{Kind: crashbrake.KindDeployment, Id: deploymentId, Element: start.Id, Version: version})()
+			// with the smart service that deploys it: a crash at activation rolls the deployment
+			// back, and with it the reference to that smart service
+			unit := crashbrake.Unit{Kind: crashbrake.KindDeployment, Id: deployment.Id, Element: start.Id, Version: version, ManagedBy: deployment.ManagedBy}
+			defer this.brake.EnterScript(unit, start.Timer.Value)()
 			return this.sandbox.Run(start.Timer.Value, nil)
 		}()
 		if err != nil {
@@ -684,7 +687,7 @@ func (this *Engine) ActivateVersion(tx *store.Tx, deploymentId string, version i
 			// one that ended the process; lifting the quarantine activates the version again
 			var due *time.Time
 			if !quarantined {
-				if due, err = this.startTimerDue(deploymentId, version, start, now, nil); err != nil {
+				if due, err = this.startTimerDue(deployment, version, start, now, nil); err != nil {
 					return model.ValidationFailed([]model.Issue{{ElementId: start.Id, Message: err.Error()}})
 				}
 			}

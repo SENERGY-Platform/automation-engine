@@ -99,6 +99,35 @@ func (h *handlers) resetRestarts(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, result, err)
 }
 
+// listBlockedScripts godoc
+//
+//	@Summary		scripts that ended the engine
+//	@Description	Admins only. A script that ended the engine with a fatal error, e.g. a stack overflow in goja, is refused on save and deploy and not run, also in copies that differ only in comments and whitespace; the stored deployments containing it were quarantined and their running instances stopped (EXPR-03).
+//	@Tags			blocklist
+//	@Security		Bearer
+//	@Produce		json
+//	@Success		200	{array}		model.BlockedScript
+//	@Failure		403	{object}	model.Error
+//	@Router			/blocked-scripts [get]
+func (h *handlers) listBlockedScripts(w http.ResponseWriter, r *http.Request) {
+	result, err := h.c.ListBlockedScripts(r.Context(), token(r))
+	respond(w, http.StatusOK, result, err)
+}
+
+// unblockScript godoc
+//
+//	@Summary		remove a script from the blocklist
+//	@Description	Admins only. The script may be saved, deployed and run again; quarantined deployments and stopped instances stay as they are, their owners reset or restart them.
+//	@Tags			blocklist
+//	@Security		Bearer
+//	@Param			fingerprint	path	string	true	"fingerprint of the script"
+//	@Success		204
+//	@Failure		403,404	{object}	model.Error
+//	@Router			/blocked-scripts/{fingerprint} [delete]
+func (h *handlers) unblockScript(w http.ResponseWriter, r *http.Request) {
+	respondEmpty(w, h.c.UnblockScript(r.Context(), token(r), r.PathValue("fingerprint")))
+}
+
 // getUserDependents godoc
 //
 //	@Summary		dry run of a user deletion

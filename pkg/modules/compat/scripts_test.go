@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules/compat"
+	enginescript "github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/device-repository/v3/lib/client"
 	devicemodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
@@ -221,5 +222,17 @@ func TestValuesComeWithoutJsonText(t *testing.T) {
 		if changes[name] != want {
 			t.Errorf("%v: %#v, want %#v", name, changes[name], want)
 		}
+	}
+}
+
+// Module scripts on the blocklist do not run (EXPR-03).
+func TestBlockedModuleScriptsDoNotRun(t *testing.T) {
+	s := scripts(nil, nil)
+	s.Blocklist = enginescript.NewBlocklist()
+	s.Blocklist.Add(enginescript.Fingerprint(`variables.write("x", 1);`), "fatal error: stack overflow")
+	changes, _, err := s.Run(context.Background(), "user", compat.PreScriptPrefix,
+		map[string]any{"prescript_1": "variables.write(", "prescript_2": `"x", 1);`}, nil, map[string]any{}, nil)
+	if !errors.Is(err, enginescript.ErrBlocked) || len(changes) != 0 {
+		t.Fatalf("%v %v", changes, err)
 	}
 }

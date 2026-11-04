@@ -178,6 +178,9 @@ type Config struct {
 	// instead of running it again after the restart (EXPR-03); it has to survive a container
 	// restart, e.g. an emptyDir or the volume of a gateway. Empty disables the brake.
 	ScriptCrashDir string `json:"script_crash_dir" env_var:"SCRIPT_CRASH_DIR"`
+	// how the blocklist compares scripts (EXPR-03): text, the text without // comments, or tree,
+	// the syntax tree, which matches any formatting at the cost of a parse per script
+	ScriptFingerprint string `json:"script_fingerprint" env_var:"SCRIPT_FINGERPRINT"`
 
 	// cloud or fog; selects the http policy of the namespaces (NS-04) and, in fog, the services
 	// of the gateway (FOG-01)
@@ -254,6 +257,7 @@ func Default() Config {
 		MaxActivities:              10000,
 		MaxRuns:                    100,
 		ScriptTimeout:              "2s",
+		ScriptFingerprint:          "text",
 		MinTimerDuration:           "5s",
 		TaskTimeout:                "2m",
 		TaskRetries:                0,
@@ -388,6 +392,9 @@ func (this Config) validate() error {
 	}
 	if this.Mode != "cloud" && this.Mode != "fog" {
 		return fmt.Errorf("mode must be cloud or fog")
+	}
+	if this.ScriptFingerprint != "text" && this.ScriptFingerprint != "tree" {
+		return fmt.Errorf("script_fingerprint must be text or tree, got %q", this.ScriptFingerprint)
 	}
 	switch this.GroupScheduler {
 	case "parallel", "sequential", "round_robin":

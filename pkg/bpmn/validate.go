@@ -41,6 +41,8 @@ type Rules struct {
 	// shortest timer duration; 0 allows every duration. process-deployment rejected durations
 	// below 5 s, which keeps loops with a timer from flooding instances and history.
 	MinTimerDuration time.Duration
+	// scripts that ended the engine (EXPR-03); nil blocks nothing
+	Blocklist *script.Blocklist
 }
 
 // ParseAndValidate combines Parse and Validate; issues block a deploy and are hints on a model save.
@@ -207,6 +209,18 @@ func Validate(p *Process, rules Rules) (issues []model.Issue) {
 	if rules.ForbidCycles {
 		for _, flow := range Cycles(p) {
 			add(flow.Id, "sequence flow %v closes a loop back to %v; loops are not allowed in this namespace", flow.Id, flow.Target.Id)
+		}
+	}
+	return append(issues, BlockedScripts(p, rules.Blocklist)...)
+}
+
+// BlockedScripts returns an issue for each element with a copy of a script that ended the engine,
+// also with other comments and whitespace (EXPR-03). A deploy checks it again after its parameters
+// replaced inputs.
+func BlockedScripts(p *Process, blocklist *script.Blocklist) (issues []model.Issue) {
+	for _, s := range p.Scripts() {
+		if reason, blocked := blocklist.Blocked(s.Source); blocked {
+			issues = append(issues, model.Issue{ElementId: s.ElementId, Message: fmt.Sprintf("a script of this element is blocked, because it ended the engine with %v", reason)})
 		}
 	}
 	return issues

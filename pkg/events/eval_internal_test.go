@@ -17,6 +17,7 @@
 package events
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,7 +79,17 @@ func TestConditionThatEndsTheProcessIsNamed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer brake.Close()
-	if len(decisions) != 1 || decisions[0].Unit != (crashbrake.Unit{Kind: crashbrake.KindEvent, Id: "e1"}) {
+	if len(decisions) != 1 || decisions[0].Unit != (crashbrake.Unit{Kind: crashbrake.KindEvent, Id: "e1", Script: script.Fingerprint(`var o = {}; o.toString = String.prototype.trim; String(o)`)}) {
 		t.Fatalf("%+v", decisions)
+	}
+}
+
+// A condition on the blocklist is not evaluated (EXPR-03).
+func TestBlockedConditionIsNotEvaluated(t *testing.T) {
+	blocklist := script.NewBlocklist()
+	blocklist.Add(script.Fingerprint("x > 20"), "fatal error: stack overflow")
+	e := NewEvaluator(valueUnmarshaller{}).WithBlocklist(blocklist)
+	if _, err := e.Evaluate(model.EventDescription{Id: "e1", Script: "// copy\nx > 20 // copy", ValueVariable: "x"}, map[string]any{"value": 25.0}); !errors.Is(err, script.ErrBlocked) {
+		t.Fatalf("%v", err)
 	}
 }

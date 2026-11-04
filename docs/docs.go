@@ -19,6 +19,80 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/blocked-scripts": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Admins only. A script that ended the engine with a fatal error, e.g. a stack overflow in goja, is refused on save and deploy and not run, also in copies that differ only in comments and whitespace; the stored deployments containing it were quarantined and their running instances stopped (EXPR-03).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "blocklist"
+                ],
+                "summary": "scripts that ended the engine",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.BlockedScript"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/blocked-scripts/{fingerprint}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Admins only. The script may be saved, deployed and run again; quarantined deployments and stopped instances stay as they are, their owners reset or restart them.",
+                "tags": [
+                    "blocklist"
+                ],
+                "summary": "remove a script from the blocklist",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "fingerprint of the script",
+                        "name": "fingerprint",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/deprecated/deployment/dependencies": {
             "get": {
                 "security": [
@@ -11662,6 +11736,33 @@ const docTemplate = `{
                 "truncated": {
                     "description": "older entries have been evicted by the per-instance limit (LONG-03)",
                     "type": "boolean"
+                }
+            }
+        },
+        "model.BlockedScript": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "fingerprint": {
+                    "description": "SHA-256 of the token sequence of the script",
+                    "type": "string"
+                },
+                "origin": {
+                    "description": "where it ran, e.g. the element of a deployment",
+                    "type": "string"
+                },
+                "reason": {
+                    "description": "the error the script ended the engine with",
+                    "type": "string"
+                },
+                "scanned_at": {
+                    "description": "when the stored deployments were searched for it; empty until then",
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
                 }
             }
         },

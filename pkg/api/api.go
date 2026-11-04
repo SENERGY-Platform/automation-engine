@@ -212,6 +212,8 @@ func (h *handlers) routes() []route {
 		{"GET /networks/{id}", h.getNetwork},
 		{"PUT /networks/{id}/import", h.importNetwork},
 
+		{"GET /blocked-scripts", h.listBlockedScripts},
+		{"DELETE /blocked-scripts/{fingerprint}", h.unblockScript},
 		{"GET /users/{id}/dependents", h.getUserDependents},
 		{"DELETE /users/{id}", h.deleteUser},
 		{"GET /users/{id}/settings", h.getUserSettings},

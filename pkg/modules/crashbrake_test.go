@@ -18,6 +18,7 @@ package modules
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
+	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 )
 
@@ -74,8 +76,26 @@ func TestPrescriptThatEndsTheProcessIsNamed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer brake.Close()
-	expected := crashbrake.Unit{Kind: crashbrake.KindInstance, Id: string(instance), Element: "task1", Deployment: "d-smart-services"}
+	expected := crashbrake.Unit{Kind: crashbrake.KindInstance, Id: string(instance), Element: "task1", Deployment: "d-smart-services",
+		Script: script.Fingerprint(`var o = {}; o.toString = String.prototype.trim; String(o)`)}
 	if len(decisions) != 1 || decisions[0].Unit != expected {
 		t.Fatalf("%+v", decisions)
+	}
+}
+
+// A prescript on the blocklist does not run, and the task fails (EXPR-03).
+func TestBlockedPrescriptDoesNotRun(t *testing.T) {
+	s := storetest.OpenSQLite(t)
+	instance := instanceWith(t, s, "smart-services")
+	rt := NewRuntime(s, Settings{}, func(user string) (string, error) { return "Bearer token-of-" + user, nil }, logger)
+	blocklist := script.NewBlocklist()
+	blocklist.Add(script.Fingerprint(`variables.write("x", 1)`), "fatal error: stack overflow")
+	rt.SetBlocklist(blocklist)
+	handler := &recordingHandler{}
+	rt.add("recording", handler)
+	_, err := rt.types["recording"].Execute(context.Background(), engine.Task{JobId: "task1", InstanceId: instance, RootInstanceId: instance, Namespace: "smart-services",
+		DeploymentId: "d-smart-services", ElementId: "task1", TaskType: "recording", Owner: "alice", Input: map[string]any{"prescript": `variables.write("x", 1) // copy`}})
+	if !errors.Is(err, script.ErrBlocked) || handler.task.Id != "" {
+		t.Fatalf("%v %+v", err, handler.task)
 	}
 }

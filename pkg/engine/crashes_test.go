@@ -31,6 +31,7 @@ import (
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
 
@@ -418,7 +419,7 @@ func TestScriptThatEndsTheEngineRunsOnlyOnce(t *testing.T) {
 	})
 	t.Run("a start timer expression", func(t *testing.T) {
 		h, _, decisions := crashEngine(t, "timer expression")
-		if len(decisions) != 1 || decisions[0].Unit != (crashbrake.Unit{Kind: crashbrake.KindDeployment, Id: "d1", Element: "start", Version: 1}) {
+		if len(decisions) != 1 || decisions[0].Unit != (crashbrake.Unit{Kind: crashbrake.KindDeployment, Id: "d1", Element: "start", Version: 1, Script: script.Fingerprint(crashingScript)}) {
 			t.Fatalf("the deployment version is named: %+v", decisions)
 		}
 		if err := h.deployAs("d1", 1, timerModel(crashingScript)); err != nil {

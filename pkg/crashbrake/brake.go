@@ -37,14 +37,17 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+
+	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 )
 
 // SlotCount is how many evaluations can be protected at once, far more than run concurrently;
 // one beyond runs unprotected.
 const SlotCount = 1024
 
-// payloadCapacity is the most a unit may take in a slot as JSON; a larger one runs unprotected
-// rather than truncated, so that a slot always names exactly one unit.
+// payloadCapacity is the most a unit may take in a slot as JSON; a larger one goes without its
+// element or else runs unprotected, rather than truncated, so that a slot always names exactly one
+// unit.
 const payloadCapacity = 500
 
 // MaxStack caps the stack of every goroutine once the brake is on: with the default of 1 GB the
@@ -73,6 +76,11 @@ type Unit struct {
 	Element    string `json:"element,omitempty"`
 	Deployment string `json:"deployment,omitempty"`
 	Version    int    `json:"version,omitempty"`
+	// fingerprint of the running script, which goes on the blocklist (script.Fingerprint)
+	Script string `json:"script,omitempty"`
+	// the smart service instance that deploys a unit of a deployment, which a crash at its
+	// activation rolls back together with the deployment
+	ManagedBy string `json:"managed_by,omitempty"`
 }
 
 // Decision is a unit the start check found to have crashed the previous process, with the error
@@ -160,28 +168,92 @@ func (this *Brake) Enter(unit Unit) func() {
 	if this == nil {
 		return func() {}
 	}
-	payload, err := json.Marshal(unit)
-	if err != nil || len(payload) > payloadCapacity {
+	return this.enter(goroutineId(), unit)
+}
+
+// EnterScript is Enter with the fingerprint of the script in the unit; it computes nothing while
+// the brake is off.
+func (this *Brake) EnterScript(unit Unit, src string) func() {
+	return this.EnterScriptOn(this.Goroutine(), unit, src)
+}
+
+// EnterScriptOn is EnterScript on a goroutine whose id the caller determined before with
+// Goroutine, e.g. once for all scripts of a transaction: the id costs a few microseconds.
+func (this *Brake) EnterScriptOn(goroutine uint64, unit Unit, src string) func() {
+	if this == nil {
+		return func() {}
+	}
+	if fingerprint, ok := script.CachedFingerprint(src); ok {
+		unit.Script = fingerprint
+		return this.release(this.claim(goroutine, unit))
+	}
+	// the slot names the unit before its fingerprint is computed, which parses the script: a
+	// crash in there stops the unit, if without blocking the script
+	slot := this.claim(goroutine, unit)
+	unit.Script = script.Fingerprint(src)
+	if slot >= 0 {
+		if payload, ok := this.payload(unit); ok {
+			this.reg.mark(slot, goroutine, payload)
+		}
+	}
+	return this.release(slot)
+}
+
+// Goroutine returns the id of the current goroutine, zero while the brake is off.
+func (this *Brake) Goroutine() uint64 {
+	if this == nil {
+		return 0
+	}
+	return goroutineId()
+}
+
+func (this *Brake) enter(goroutine uint64, unit Unit) func() {
+	return this.release(this.claim(goroutine, unit))
+}
+
+// claim marks unit in a free slot and returns the slot, or -1 when it runs unprotected
+func (this *Brake) claim(goroutine uint64, unit Unit) int {
+	payload, ok := this.payload(unit)
+	if !ok {
 		this.tooLong.Do(func() {
 			this.logger.Warn("the crash brake cannot record a unit this long, its scripts run unprotected", "kind", unit.Kind, "id", unit.Id)
 		})
-		return func() {}
+		return -1
 	}
 	start := int(this.nextHit.Add(1))
 	for probe := 0; probe < SlotCount; probe++ {
 		i := (start + probe) % SlotCount
 		if atomic.CompareAndSwapInt32(&this.taken[i], 0, 1) {
-			this.reg.mark(i, goroutineId(), payload)
-			return func() {
-				this.reg.clear(i)
-				atomic.StoreInt32(&this.taken[i], 0)
-			}
+			this.reg.mark(i, goroutine, payload)
+			return i
 		}
 	}
 	this.noSlot.Do(func() {
 		this.logger.Warn("the crash brake ran out of slots, some scripts run unprotected", "slots", SlotCount)
 	})
-	return func() {}
+	return -1
+}
+
+func (this *Brake) release(slot int) func() {
+	if slot < 0 {
+		return func() {}
+	}
+	return func() {
+		this.reg.clear(slot)
+		atomic.StoreInt32(&this.taken[slot], 0)
+	}
+}
+
+// payload returns the unit as JSON for a slot. The element id comes from the model and has no
+// limit; a unit too long with it goes without, which leaves its incident without an element but
+// stops it, rather than letting a long id switch the brake off.
+func (this *Brake) payload(unit Unit) ([]byte, bool) {
+	payload, err := json.Marshal(unit)
+	if err == nil && len(payload) > payloadCapacity && unit.Element != "" {
+		unit.Element = ""
+		payload, err = json.Marshal(unit)
+	}
+	return payload, err == nil && len(payload) <= payloadCapacity
 }
 
 // Applied records which decisions are still to apply; the next start retries those.

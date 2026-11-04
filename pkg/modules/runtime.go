@@ -35,6 +35,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules/compat"
+	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 	devicerepository "github.com/SENERGY-Platform/device-repository/v3/lib/client"
@@ -140,6 +141,11 @@ type Runtime struct {
 // SetCrashBrake records the pre- and postscripts of module tasks as running in the brake (EXPR-03).
 func (this *Runtime) SetCrashBrake(brake *crashbrake.Brake) {
 	this.brake = brake
+}
+
+// SetBlocklist refuses to run pre- and postscripts that ended the engine (EXPR-03).
+func (this *Runtime) SetBlocklist(blocklist *script.Blocklist) {
+	this.scripts.Blocklist = blocklist
 }
 
 // SetAdminToken sets the token of the engine for the check of used resources.
@@ -258,7 +264,7 @@ func (this *moduleType) Execute(ctx context.Context, task engine.Task) (engine.T
 	// a script can panic out of goja, so the release is deferred
 	unit := crashbrake.Unit{Kind: crashbrake.KindInstance, Id: task.InstanceId, Element: task.ElementId, Deployment: task.DeploymentId}
 	runScripts := func(prefix string, outputs map[string]any) (map[string]any, map[string]any, error) {
-		defer rt.brake.Enter(unit)()
+		defer rt.brake.EnterScript(unit, script.JoinParts(prefix, task.Input))()
 		return rt.scripts.Run(ctx, task.Owner, prefix, task.Input, outputs, variables, instanceVariables)
 	}
 	changes, outputs, err := runScripts(compat.PreScriptPrefix, nil)

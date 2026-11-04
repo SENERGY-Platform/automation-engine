@@ -537,6 +537,15 @@ func (this *ClientImpl) ImportNetwork(ctx context.Context, token string, network
 	return result, err
 }
 
+func (this *ClientImpl) ListBlockedScripts(ctx context.Context, token string) (result []model.BlockedScript, err error) {
+	err = this.do(ctx, token, http.MethodGet, path("blocked-scripts"), nil, nil, &result)
+	return result, err
+}
+
+func (this *ClientImpl) UnblockScript(ctx context.Context, token string, fingerprint string) error {
+	return this.do(ctx, token, http.MethodDelete, path("blocked-scripts", fingerprint), nil, nil, nil)
+}
+
 func (this *ClientImpl) GetUserDependents(ctx context.Context, token string, userId string) (result model.UserDependents, err error) {
 	err = this.do(ctx, token, http.MethodGet, path("users", userId, "dependents"), nil, nil, &result)
 	return result, err

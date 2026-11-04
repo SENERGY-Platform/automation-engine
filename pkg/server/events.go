@@ -123,7 +123,7 @@ func NewEventServer(ctx context.Context, config configuration.Config, logger *sl
 		consumer = result.kafkaConsumer
 	}
 	worker := events.DefaultWorkerConfig()
-	result.Worker = events.NewWorker(worker, s, events.NewEvaluator(unmarshaller).WithCrashBrake(brake), e, consumer, logger)
+	result.Worker = events.NewWorker(worker, s, events.NewEvaluator(unmarshaller).WithCrashBrake(brake).WithBlocklist(e.Blocklist()), e, consumer, logger)
 	started = true
 	return result, nil
 }
@@ -159,6 +159,7 @@ func (this *EventServer) Run(ctx context.Context) error {
 		}
 	}
 	go this.Worker.Run(ctx)
+	go this.Engine.WatchBlocklist(ctx, blocklistInterval)
 	go servePprof(ctx, this.config.PprofPort, this.logger)
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", this.Metrics.Handler())

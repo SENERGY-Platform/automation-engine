@@ -143,6 +143,7 @@ type Engine struct {
 	config     Config
 	sandbox    *script.Sandbox
 	brake      *crashbrake.Brake // nil while off; see SetCrashBrake
+	blocklist  *script.Blocklist // scripts that ended the engine (EXPR-03)
 	namespaces Namespaces
 	logger     *slog.Logger
 	metrics    Metrics
@@ -180,10 +181,12 @@ func New(s *store.Store, config Config, namespaces Namespaces, logger *slog.Logg
 	sandbox := script.NewSandbox()
 	sandbox.Timeout = config.ScriptTimeout
 	sandbox.MaxResultBytes = config.MaxVariableBytes
+	sandbox.Blocklist = script.NewBlocklist()
 	return &Engine{
 		store:      s,
 		config:     config,
 		sandbox:    sandbox,
+		blocklist:  sandbox.Blocklist,
 		namespaces: namespaces,
 		logger:     logger,
 		metrics:    NoMetrics{},
@@ -278,6 +281,7 @@ func (this *Engine) Rules(namespace model.Namespace) bpmn.Rules {
 		TaskTypeAvailable: this.TaskTypeAvailable,
 		ForbidCycles:      namespace.ForbidCycles,
 		MinTimerDuration:  this.config.MinTimerDuration,
+		Blocklist:         this.blocklist,
 	}
 }
 

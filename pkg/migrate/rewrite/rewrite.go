@@ -32,8 +32,8 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/beevik/etree"
-	"github.com/dop251/goja"
 )
 
 // Finding names an element and what happened to it.
@@ -299,7 +299,7 @@ func (this *rewriter) condition(e *etree.Element, id string) {
 	case language == "":
 		this.unsupported(id, "condition %q is neither JUEL nor has a language; in Camunda it was a constant text", body)
 	case language == "javascript" || language == "js":
-		if _, err := goja.Compile("", body, false); err != nil && strings.Contains(err.Error(), "Illegal return") {
+		if _, err := script.Compile(body); err != nil && strings.Contains(err.Error(), "Illegal return") {
 			e.SetText("(function () {\n" + body + "\n})()")
 			this.rewritten(id, "condition: wrapped in a function because of return statements")
 		}

@@ -19,6 +19,7 @@ package client_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	enginescript "github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/automation-engine/pkg/server"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
@@ -225,4 +227,57 @@ func TestFailedStartFreesTheCrashDirectory(t *testing.T) {
 		t.Fatalf("the directory is free: %v", err)
 	}
 	brake.Close()
+}
+
+// Admins read the blocklist and remove an entry; a deployment with a copy of a blocked script is
+// refused until then (EXPR-03).
+func TestBlocklistThroughTheApi(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv, err := client.NewTestServer(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := srv.Controller
+	crashing := `var o = {}; o.toString = String.prototype.trim; String(o)`
+	fingerprint := enginescript.Fingerprint(crashing)
+	err = srv.Store.Tx(ctx, func(tx *store.Tx) error {
+		_, err := tx.BlockScript(model.BlockedScript{Fingerprint: fingerprint, Source: crashing, Reason: "fatal error: stack overflow", Origin: "test", CreatedAt: time.Now()})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = srv.Engine.LoadBlocklist(ctx); err != nil {
+		t.Fatal(err)
+	}
+	xml := b.Process(b.Start("start"), b.Script("boom", "x", "// copy\nvar o = {}; o.toString = String.prototype.trim; String(o) // copy"), b.End("end"), b.Flow("start", "boom"), b.Flow("boom", "end"))
+	if _, err = c.CreateDeployment(ctx, alice, ns, model.DeploymentInput{Xml: xml}); !errors.Is(err, model.ErrValidation) || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("a copy is refused: %v", err)
+	}
+	// a parameter replaces the harmless prescript of a module task with a copy
+	withPrescript := b.Process(b.Start("start"), b.Task("module", b.InText("prescript", "1;")), b.End("end"), b.Flow("start", "module"), b.Flow("module", "end"))
+	parameters := map[string]model.ElementParameters{"module": {Inputs: map[string]string{"prescript": crashing + " // copy"}}}
+	if _, err = c.CreateDeployment(ctx, alice, ns, model.DeploymentInput{Xml: withPrescript, Parameters: parameters}); !errors.Is(err, model.ErrValidation) || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("a copy given as parameter is refused: %v", err)
+	}
+	if _, err = c.ListBlockedScripts(ctx, alice); !errors.Is(err, model.ErrForbidden) {
+		t.Fatalf("admins only: %v", err)
+	}
+	list, err := c.ListBlockedScripts(ctx, admin)
+	if err != nil || len(list) != 1 || list[0].Fingerprint != fingerprint || list[0].Source != crashing {
+		t.Fatalf("%+v %v", list, err)
+	}
+	if err = c.UnblockScript(ctx, alice, fingerprint); !errors.Is(err, model.ErrForbidden) {
+		t.Fatalf("admins only: %v", err)
+	}
+	if err = c.UnblockScript(ctx, admin, fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.UnblockScript(ctx, admin, fingerprint); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("gone: %v", err)
+	}
+	if _, err = c.CreateDeployment(ctx, alice, ns, model.DeploymentInput{Xml: xml}); err != nil {
+		t.Fatalf("unblocked, it deploys: %v", err)
+	}
 }

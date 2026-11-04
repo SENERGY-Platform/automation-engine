@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/dop251/goja/parser"
 )
 
 // Sandbox evaluates JavaScript, the only expression and script language of the engine (EXPR-01).
@@ -40,6 +41,8 @@ type Sandbox struct {
 	MaxResultBytes int
 	MaxLogEntries  int
 	MaxCallStack   int
+	// scripts that ended the engine; nil blocks nothing (EXPR-03)
+	Blocklist *Blocklist
 }
 
 func NewSandbox() *Sandbox {
@@ -94,13 +97,23 @@ func LenientJsonParse(vm *goja.Runtime) error {
 
 // Check compiles the source without running it.
 func Check(src string) error {
-	_, err := goja.Compile("", src, false)
+	_, err := Compile(src)
 	return err
+}
+
+// NewRuntime returns a goja runtime that compiles, also for eval and new Function, as Compile.
+func NewRuntime() *goja.Runtime {
+	vm := goja.New()
+	vm.SetParserOptions(parser.WithDisableSourceMaps)
+	return vm
 }
 
 // Run evaluates src; the value of the last expression statement is the result.
 func (this *Sandbox) Run(src string, variables map[string]any) (result Result, err error) {
-	vm := goja.New()
+	if err = this.Blocklist.Check(src); err != nil {
+		return Result{}, &Error{Err: err}
+	}
+	vm := NewRuntime()
 	vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
 	if this.MaxCallStack > 0 {
 		vm.SetMaxCallStackSize(this.MaxCallStack)
@@ -153,7 +166,11 @@ func (this *Sandbox) Run(src string, variables map[string]any) (result Result, e
 	})
 	defer timer.Stop()
 
-	value, err := vm.RunString(src)
+	program, err := Compile(src)
+	if err != nil {
+		return fail(err)
+	}
+	value, err := vm.RunProgram(program)
 	if err != nil {
 		var interrupted *goja.InterruptedError
 		if errors.As(err, &interrupted) {

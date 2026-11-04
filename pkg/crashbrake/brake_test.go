@@ -63,6 +63,12 @@ func TestChild(t *testing.T) {
 		// a native as own toString recurses on the Go stack until the fatal stack overflow
 		_, _ = script.NewSandbox().Run(`var o = {}; o.toString = String.prototype.trim; String(o)`, nil)
 		t.Fatal("goja returned instead of crashing")
+	case "long element":
+		// with the element id of a model, unlimited, the unit still names the crash
+		src := `var o = {}; o.toString = String.prototype.trim; String(o)`
+		defer brake.EnterScript(Unit{Kind: KindInstance, Id: crashing.Id, Element: strings.Repeat("e", 2*payloadCapacity)}, src)()
+		_, _ = script.NewSandbox().Run(src, nil)
+		t.Fatal("goja returned instead of crashing")
 	case "kill":
 		defer brake.Enter(crashing)()
 		_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
@@ -114,6 +120,25 @@ func TestFatalCrashNamesTheCrashingUnit(t *testing.T) {
 	brake.Close()
 	if _, after, err := Open(dir, nil); err != nil || len(after) != 0 {
 		t.Fatalf("an applied decision is gone: %+v %v", after, err)
+	}
+}
+
+// A unit with an element id too long for a slot is recorded without it, rather than running
+// unprotected, which would let a long id switch the brake off.
+func TestLongElementIdsKeepTheBrake(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the register needs mmap on linux")
+	}
+	dir := t.TempDir()
+	runChild(t, dir, "long element")
+	brake, decisions, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer brake.Close()
+	expected := Unit{Kind: KindInstance, Id: crashing.Id, Script: script.Fingerprint(`var o = {}; o.toString = String.prototype.trim; String(o)`)}
+	if len(decisions) != 1 || decisions[0].Unit != expected {
+		t.Fatalf("%+v", decisions)
 	}
 }
 
@@ -200,15 +225,32 @@ func TestEntriesDecodeExactly(t *testing.T) {
 	if brake.reg.(*countingRegister).marks != 0 {
 		t.Error("a unit too long for a slot was recorded")
 	}
+	// a fingerprint known already is recorded with the unit, as one computed on entry
+	src := "var cached = 1"
+	brake.EnterScriptOn(1, Unit{Kind: KindInstance, Id: "a"}, src)()
+	marks := brake.reg.(*countingRegister).marks
+	brake.EnterScriptOn(1, Unit{Kind: KindInstance, Id: "a"}, src)()
+	if expected := `{"kind":"instance","id":"a","script":"` + script.Fingerprint(src) + `"}`; brake.reg.(*countingRegister).last != expected || brake.reg.(*countingRegister).marks != marks+1 {
+		t.Errorf("%v, %v marks", brake.reg.(*countingRegister).last, brake.reg.(*countingRegister).marks-marks)
+	}
+	brake.reg.(*countingRegister).marks = 0
+	brake.Enter(Unit{Kind: KindInstance, Id: "a", Element: strings.Repeat("x", payloadCapacity)})()
+	if brake.reg.(*countingRegister).marks != 1 || brake.reg.(*countingRegister).last != `{"kind":"instance","id":"a"}` {
+		t.Errorf("a unit with a long element is not recorded without it: %v", brake.reg.(*countingRegister).last)
+	}
 }
 
 type countingRegister struct {
 	marks int
+	last  string
 }
 
 func (this *countingRegister) recover() ([]inFlight, bool) { return nil, true }
 func (this *countingRegister) reset()                      {}
-func (this *countingRegister) mark(int, uint64, []byte)    { this.marks++ }
-func (this *countingRegister) clear(int)                   {}
-func (this *countingRegister) markClean()                  {}
-func (this *countingRegister) close()                      {}
+func (this *countingRegister) mark(_ int, _ uint64, payload []byte) {
+	this.marks++
+	this.last = string(payload)
+}
+func (this *countingRegister) clear(int)  {}
+func (this *countingRegister) markClean() {}
+func (this *countingRegister) close()     {}

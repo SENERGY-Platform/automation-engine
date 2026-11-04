@@ -271,6 +271,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	moduleSettings := moduleSettings(config, configuredIot, selection)
 	runtime := modules.NewRuntime(s, moduleSettings, userToken, logger)
 	runtime.SetCrashBrake(brake)
+	runtime.SetBlocklist(e.Blocklist())
 
 	// device-repository for device commands and event descriptions; nil if neither configured
 	// nor given
@@ -349,7 +350,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		}
 	}
 	if series != nil && unmarshaller != nil {
-		c.SetEventDebugging(series, events.NewEvaluator(unmarshaller).WithCrashBrake(brake), userToken)
+		c.SetEventDebugging(series, events.NewEvaluator(unmarshaller).WithCrashBrake(brake).WithBlocklist(e.Blocklist()), userToken)
 	}
 	var worker *events.Worker
 	if fog && repo != nil {
@@ -362,7 +363,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		}
 		workerConfig := events.DefaultWorkerConfig()
 		workerConfig.Local = true
-		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller).WithCrashBrake(brake), e, events.LocalConsumer(broker, 1, logger), logger)
+		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller).WithCrashBrake(brake).WithBlocklist(e.Blocklist()), e, events.LocalConsumer(broker, 1, logger), logger)
 	}
 	var networks *fogsync.Cloud
 	syncBroker := deps.SyncBroker
@@ -689,6 +690,7 @@ func (this *Server) internalHandler() http.Handler {
 // Start runs the background loops of engine, namespaces, permissions and metrics until ctx is done.
 func (this *Server) Start(ctx context.Context) {
 	go this.Engine.Run(ctx)
+	go this.Engine.WatchBlocklist(ctx, blocklistInterval)
 	go this.Namespaces.Run(ctx, 10*time.Second)
 	if this.Permissions != nil {
 		go this.Permissions.Run(ctx, time.Second)

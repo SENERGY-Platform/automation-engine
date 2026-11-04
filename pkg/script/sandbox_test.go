@@ -153,3 +153,29 @@ func TestJsonParseReturnsAValueThatIsNoStringAsItIs(t *testing.T) {
 		t.Error("invalid JSON text still fails")
 	}
 }
+
+// A blocked script does not run, also when formatted differently; others do.
+func TestRunRefusesBlockedScripts(t *testing.T) {
+	// a copy each mode recognises; the test process ends if it runs
+	for mode, copied := range map[string]string{
+		FingerprintText: "// again\n" + crashing + " // again",
+		FingerprintTree: "var o={};o.toString=String.prototype.trim;\nString(o) // again",
+	} {
+		t.Run(mode, func(t *testing.T) {
+			inMode(t, mode)
+			s := NewSandbox()
+			s.Blocklist = NewBlocklist()
+			s.Blocklist.Add(Fingerprint(crashing), "fatal error: stack overflow")
+			if _, err := s.Run(copied, nil); !errors.Is(err, ErrBlocked) || !strings.Contains(err.Error(), "stack overflow") {
+				t.Fatalf("%v", err)
+			}
+			if got, err := s.Run("1 + 1", nil); err != nil || got.Value != float64(2) {
+				t.Fatalf("%v %v", got.Value, err)
+			}
+			s.Blocklist.Replace(nil)
+			if _, err := s.Run("1 + 1", nil); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

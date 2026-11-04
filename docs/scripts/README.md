@@ -20,6 +20,9 @@ Applies to script tasks, conditions on sequence flows, input and output mappings
 - Values are JSON: numbers are doubles, missing values `null`.
 - `JSON.parse` returns a value that is no string as it is, in module scripts as well. Camunda handed some values over as JSON text that the engine keeps as objects, e.g. the value of a device event, and models parse them.
 - Limits per evaluation: run time `SCRIPT_TIMEOUT` (default 2 s, fixed 2 s for event conditions), result up to `MAX_VARIABLE_BYTES` (default 1 MiB), 100 log entries, call depth 1000. No access to the network, the file system or engine internals.
+- A script that ended the engine with a fatal error, e.g. a stack overflow, is blocked: deploying and running it is refused, and saving a model with it gives a hint, also for a copy that differs only in `//` comments, or in any formatting where the engine runs with `SCRIPT_FINGERPRINT=tree`, in BPMN scripts and in module scripts.
+- A script nested more than 5000 levels deep, e.g. a chain `a + a + ... + a` of that length, is refused.
+- A `//# sourceMappingURL=` comment is not followed: goja would read the file it names before the script runs.
 
 ### `log(...args: any[]): void`
 
