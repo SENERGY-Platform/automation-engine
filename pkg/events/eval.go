@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/script"
@@ -61,6 +62,10 @@ func (this *Evaluator) Evaluate(d model.EventDescription, message map[string]any
 	if err != nil {
 		return result, fmt.Errorf("unable to read the value: %w", err)
 	}
+	if triggered, constant := constantCondition(d.Script); constant {
+		result.Triggered = triggered
+		return result, nil
+	}
 	variables := map[string]any{d.ValueVariable: result.Value}
 	for key, raw := range d.Variables {
 		var value any
@@ -76,6 +81,19 @@ func (this *Evaluator) Evaluate(d model.EventDescription, message map[string]any
 	}
 	result.Triggered, err = triggers(run.Value)
 	return result, err
+}
+
+// constantCondition reports the result of a condition that is a boolean literal. Such a condition
+// needs no script runtime: describe makes one of every empty condition, which most device events
+// have, and evaluating it would create a runtime for each message.
+func constantCondition(src string) (triggered bool, constant bool) {
+	switch strings.TrimSpace(src) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	}
+	return false, false
 }
 
 // triggers reads the result of a condition as the event-worker did: true, "true" or a number >= 1
