@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash/maphash"
+	"io"
 	"reflect"
 	"sort"
 	"strconv"
@@ -243,21 +244,34 @@ func lastLineEnd(s string) int {
 // still counts. A script goja cannot parse, or nested deeper than MaxDepth, cannot run either; it
 // is identified by its exact source.
 func treeFingerprint(src string) string {
-	sum := sha256.New()
-	out := bufio.NewWriter(sum)
 	// without the option, a sourceMappingURL comment makes the parser read a file
 	program, err := parser.ParseFile(nil, "", src, 0, parser.WithDisableSourceMaps)
-	if err == nil {
-		_, _ = out.WriteString("tree\n")
-		err = walkTree(program, out)
-	}
 	if err != nil {
-		sum.Reset()
-		out.Reset(sum)
-		_, _ = out.WriteString("source\n")
-		_, _ = out.WriteString(src)
+		return sourceFingerprint(src)
+	}
+	fingerprint, tooDeep := fingerprintTree(src, program)
+	// Compile, which parses the script again to run it, needs the depth only
+	depths.put(maphash.String(seed, src), tooDeep)
+	return fingerprint
+}
+
+// fingerprintTree hashes a parsed script and reports whether it is deeper than MaxDepth; a script
+// too deep is identified by its source
+func fingerprintTree(src string, program *ast.Program) (fingerprint string, tooDeep bool) {
+	sum := sha256.New()
+	out := bufio.NewWriter(sum)
+	_, _ = out.WriteString("tree\n")
+	if walkTree(program, out) != nil {
+		return sourceFingerprint(src), true
 	}
 	_ = out.Flush()
+	return hex.EncodeToString(sum.Sum(nil)), false
+}
+
+func sourceFingerprint(src string) string {
+	sum := sha256.New()
+	_, _ = io.WriteString(sum, "source\n")
+	_, _ = io.WriteString(sum, src)
 	return hex.EncodeToString(sum.Sum(nil))
 }
 
@@ -273,23 +287,92 @@ var ErrTooDeep = fmt.Errorf("the script is nested more than %v levels deep", Max
 // Compile compiles a script as goja.Compile, but without following a sourceMappingURL comment:
 // goja would read the file it names before the script runs, without a limit, which makes
 // file:///dev/zero end the process when its memory runs out, and before the crash brake knows.
-// A script deeper than MaxDepth is refused before goja's compiler recurses over it; the depth is
-// cached per script.
+// A script deeper than MaxDepth is refused before goja's compiler recurses over it.
+//
+// The result is cached: a program is bound to no runtime and runs in several at once, so that a
+// script is parsed and compiled once, not at every run. With tree fingerprints, the walk over the
+// parsed script that measures the depth computes the fingerprint as well, which the blocklist
+// then finds cached.
 func Compile(src string) (*goja.Program, error) {
-	program, err := goja.Parse("", src, parser.WithDisableSourceMaps)
+	key := maphash.String(seed, src)
+	if cached, ok := programs.get(key, src); ok {
+		return cached.program, cached.err
+	}
+	program, err := compileUncached(key, src)
+	programs.put(key, compiled{src: src, program: program, err: err})
+	return program, err
+}
+
+func compileUncached(key uint64, src string) (*goja.Program, error) {
+	parsed, err := goja.Parse("", src, parser.WithDisableSourceMaps)
 	if err != nil {
 		return nil, err
 	}
-	key := maphash.String(seed, src)
 	tooDeep, ok := depths.get(key)
 	if !ok {
-		tooDeep = walkTree(program, nil) != nil
+		if treeFingerprints.Load() {
+			var fingerprint string
+			fingerprint, tooDeep = fingerprintTree(src, parsed)
+			fingerprints.put(key, fingerprint)
+		} else {
+			tooDeep = walkTree(parsed, nil) != nil
+		}
 		depths.put(key, tooDeep)
 	}
 	if tooDeep {
 		return nil, ErrTooDeep
 	}
-	return goja.CompileAST(program, false)
+	return goja.CompileAST(parsed, false)
+}
+
+// compiled is a script with its program, or the error compiling it gave
+type compiled struct {
+	src     string
+	program *goja.Program
+	err     error
+}
+
+// programCache holds compiled scripts up to a sum of their sources; then it starts over. A
+// program takes 12 to 20 times the memory of its source.
+type programCache struct {
+	mux     sync.RWMutex
+	entries map[uint64]compiled
+	size    int
+}
+
+const (
+	maxProgramSources = 2 << 20
+	// a larger script is compiled at every run, rather than taking much of the cache
+	maxProgramSource = 64 << 10
+)
+
+var programs = &programCache{entries: map[uint64]compiled{}}
+
+// get returns the cached program of src. The source is compared, not only its 64-bit hash: on a
+// collision, another script would run.
+func (this *programCache) get(key uint64, src string) (compiled, bool) {
+	this.mux.RLock()
+	entry, ok := this.entries[key]
+	this.mux.RUnlock()
+	return entry, ok && entry.src == src
+}
+
+func (this *programCache) put(key uint64, entry compiled) {
+	if len(entry.src) > maxProgramSource {
+		return
+	}
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	if old, ok := this.entries[key]; ok {
+		this.size -= len(old.src)
+		delete(this.entries, key)
+	}
+	if this.size+len(entry.src) > maxProgramSources || len(this.entries) >= maxCached {
+		this.entries = map[uint64]compiled{}
+		this.size = 0
+	}
+	this.entries[key] = entry
+	this.size += len(entry.src)
 }
 
 var (

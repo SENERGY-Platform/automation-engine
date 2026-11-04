@@ -86,14 +86,17 @@ func (this *Error) Unwrap() error {
 // some variables over as JSON text that the engine keeps as objects, e.g. the value of a device
 // event, and models parse them; parsing an object would read "[object Object]".
 func LenientJsonParse(vm *goja.Runtime) error {
-	_, err := vm.RunString(`(function () {
+	_, err := vm.RunProgram(lenientJsonParse)
+	return err
+}
+
+// lenientJsonParse is compiled once, not for every run
+var lenientJsonParse = goja.MustCompile("lenient-json-parse", `(function () {
 	var parse = JSON.parse;
 	JSON.parse = function (text, reviver) {
 		return typeof text === "string" ? parse.call(JSON, text, reviver) : text;
 	};
-})()`)
-	return err
-}
+})()`, false)
 
 // Check compiles the source without running it.
 func Check(src string) error {
@@ -110,6 +113,12 @@ func NewRuntime() *goja.Runtime {
 
 // Run evaluates src; the value of the last expression statement is the result.
 func (this *Sandbox) Run(src string, variables map[string]any) (result Result, err error) {
+	// compiled before the blocklist is checked: with tree fingerprints, the one parse gives both;
+	// compiling a blocked script runs nothing of it
+	program, err := Compile(src)
+	if err != nil {
+		return Result{}, &Error{Err: err}
+	}
 	if err = this.Blocklist.Check(src); err != nil {
 		return Result{}, &Error{Err: err}
 	}
@@ -166,10 +175,6 @@ func (this *Sandbox) Run(src string, variables map[string]any) (result Result, e
 	})
 	defer timer.Stop()
 
-	program, err := Compile(src)
-	if err != nil {
-		return fail(err)
-	}
 	value, err := vm.RunProgram(program)
 	if err != nil {
 		var interrupted *goja.InterruptedError

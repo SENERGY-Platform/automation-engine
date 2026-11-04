@@ -21,9 +21,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"math/rand/v2"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -258,5 +260,91 @@ func TestDeepScriptsAreRefused(t *testing.T) {
 	within := "var level = 1; level" + strings.Repeat(" + 1", MaxDepth/2)
 	if result, err := NewSandbox().Run(within, nil); err != nil || fmt.Sprint(result.Value) != fmt.Sprint(MaxDepth/2+1) {
 		t.Fatalf("%v %v", result.Value, err)
+	}
+}
+
+// A script is parsed and compiled once: the program, or the error, is cached by its source, up to
+// a sum of sources; a large script is compiled at every run.
+func TestCompiledProgramsAreCached(t *testing.T) {
+	first, err := Compile("value > 20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := Compile("value > 20"); again != first {
+		t.Error("compiled again")
+	}
+	if other, _ := Compile("value > 21"); other == first {
+		t.Error("another script has the same program")
+	}
+	_, failed := Compile("value >")
+	if _, again := Compile("value >"); failed == nil || again != failed {
+		t.Errorf("the error is cached: %v %v", failed, again)
+	}
+	large := "var x = 1;" + strings.Repeat(" ", maxProgramSource)
+	if a, _ := Compile(large); a == nil {
+		t.Fatal("not compiled")
+	} else if b, _ := Compile(large); a == b {
+		t.Error("a large script is cached")
+	}
+	for i := 0; i < 2*maxProgramSources/(maxProgramSource/2); i++ {
+		if _, err = Compile(fmt.Sprintf("var x%v = 1;", i) + strings.Repeat(" ", maxProgramSource/2)); err != nil {
+			t.Fatal(err)
+		}
+		if programs.size > maxProgramSources {
+			t.Fatalf("%v bytes of source cached", programs.size)
+		}
+	}
+}
+
+// A cached program is found by the hash of its source and the source: on a collision of the hash,
+// the other script does not run.
+func TestCachedProgramsCompareTheSource(t *testing.T) {
+	other, err := Compile("'other'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := "'mine'"
+	programs.put(maphash.String(seed, src), compiled{src: "'other'", program: other})
+	result, err := NewSandbox().Run(src, nil)
+	if err != nil || result.Value != "mine" {
+		t.Fatalf("%v %v", result.Value, err)
+	}
+}
+
+// With tree fingerprints, compiling a script computes its fingerprint in the same parse.
+func TestCompilingComputesTheTreeFingerprint(t *testing.T) {
+	inMode(t, FingerprintTree)
+	src := "var compiledOnce = 1; compiledOnce + 1"
+	if _, err := Compile(src); err != nil {
+		t.Fatal(err)
+	}
+	if cached, ok := CachedFingerprint(src); !ok || cached != treeFingerprint(src) {
+		t.Fatalf("%v %v", cached, ok)
+	}
+}
+
+// A cached program runs in several runtimes at once, each with its own variables.
+func TestCachedProgramsRunConcurrently(t *testing.T) {
+	src := "var doubled = JSON.parse(input).map(function (v) { return v * factor }); doubled[2]"
+	var wait sync.WaitGroup
+	failures := make(chan string, 64)
+	for g := 0; g < 8; g++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for i := 0; i < 50; i++ {
+				factor := g*100 + i
+				result, err := NewSandbox().Run(src, map[string]any{"input": "[1, 2, 3]", "factor": factor})
+				if err != nil || fmt.Sprint(result.Value) != fmt.Sprint(3*factor) {
+					failures <- fmt.Sprintf("%v: %v %v", factor, result.Value, err)
+					return
+				}
+			}
+		}()
+	}
+	wait.Wait()
+	close(failures)
+	for failure := range failures {
+		t.Error(failure)
 	}
 }
