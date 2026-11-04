@@ -168,9 +168,15 @@ func (this *Engine) countRestart(tx *store.Tx, deployment model.Deployment, now 
 	return true, tx.SetRestartStats(deployment.Id, stats)
 }
 
-// ResetRestarts clears the faulty mark and the restart count of a deployment.
+// ResetRestarts clears the faulty mark and the restart count of a deployment, and evaluates its
+// event conditions again that the crash brake suspended (ApplyCrashDecisions). It does not lift a
+// quarantine: an update calls it too, also a gateway applying again the very version that ended
+// the process. The explicit reset lifts it (LiftQuarantine).
 func (this *Engine) ResetRestarts(tx *store.Tx, deploymentId string) error {
-	return tx.SetRestartStats(deploymentId, store.RestartStats{})
+	if err := tx.SetRestartStats(deploymentId, store.RestartStats{}); err != nil {
+		return err
+	}
+	return tx.ResumeEventDescriptions(deploymentId)
 }
 
 // ProcessNotifications sends queued notifications; failures are retried with backoff and

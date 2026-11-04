@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
@@ -269,10 +270,13 @@ func (this *Engine) beginRun(tx *store.Tx, inst *store.Instance, version int, st
 // startTimerDue computes the next due time of a timer start event after from; nil if the
 // timer has no further occurrence. Expressions see no variables, there is no instance yet.
 // previous is the due time that fired, nil at activation.
-func (this *Engine) startTimerDue(start *bpmn.Element, from time.Time, previous *time.Time) (*time.Time, error) {
+func (this *Engine) startTimerDue(deploymentId string, version int, start *bpmn.Element, from time.Time, previous *time.Time) (*time.Time, error) {
 	value := start.Timer.Value
 	if start.Timer.Expression {
-		result, err := this.sandbox.Run(start.Timer.Value, nil)
+		result, err := func() (script.Result, error) {
+			defer this.brake.Enter(crashbrake.Unit{Kind: crashbrake.KindDeployment, Id: deploymentId, Element: start.Id, Version: version})()
+			return this.sandbox.Run(start.Timer.Value, nil)
+		}()
 		if err != nil {
 			return nil, fmt.Errorf("timer expression: %w", err)
 		}
@@ -660,6 +664,10 @@ func (this *Engine) ActivateVersion(tx *store.Tx, deploymentId string, version i
 	if err != nil {
 		return err
 	}
+	quarantined, err := this.applyQuarantine(tx, deployment, version)
+	if err != nil {
+		return err
+	}
 	ns, _ := this.namespaces.Get(deployment.Namespace)
 	now := this.now()
 	var events []store.StartEvent
@@ -672,9 +680,13 @@ func (this *Engine) ActivateVersion(tx *store.Tx, deploymentId string, version i
 			}
 			events = append(events, store.StartEvent{Version: version, ElementId: start.Id, Kind: string(bpmn.EventMessage), MessageName: messageName(deploymentId, start)})
 		case bpmn.EventTimer:
-			due, err := this.startTimerDue(start, now, nil)
-			if err != nil {
-				return model.ValidationFailed([]model.Issue{{ElementId: start.Id, Message: err.Error()}})
+			// a quarantined deployment does not evaluate its timer expressions, which may be the
+			// one that ended the process; lifting the quarantine activates the version again
+			var due *time.Time
+			if !quarantined {
+				if due, err = this.startTimerDue(deploymentId, version, start, now, nil); err != nil {
+					return model.ValidationFailed([]model.Issue{{ElementId: start.Id, Message: err.Error()}})
+				}
 			}
 			events = append(events, store.StartEvent{Version: version, ElementId: start.Id, Kind: string(bpmn.EventTimer), DueAt: due})
 			this.signal()

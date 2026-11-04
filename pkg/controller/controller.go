@@ -489,8 +489,18 @@ func (this *Controller) ResetRestarts(ctx context.Context, token string, namespa
 		if err := this.engine.ResetRestarts(tx, id); err != nil {
 			return err
 		}
-		result, err = tx.GetDeployment(id, false)
-		return err
+		lifted, err := this.engine.LiftQuarantine(tx, id)
+		if err != nil {
+			return err
+		}
+		if result, err = tx.GetDeployment(id, false); err != nil {
+			return err
+		}
+		if lifted {
+			// the crash brake had disabled it without start timers; they are computed again
+			return this.engine.ActivateVersion(tx, id, result.Version)
+		}
+		return nil
 	})
 	return result, err
 }

@@ -1300,6 +1300,11 @@ definitions:
         type: array
       service_id:
         type: string
+      suspended:
+        description: |-
+          why the condition is no longer evaluated: it ended the process with a fatal error (EXPR-03);
+          empty while it is evaluated
+        type: string
       topic:
         description: the Kafka topic with the data
         type: string

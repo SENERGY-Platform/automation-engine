@@ -12304,6 +12304,10 @@ const docTemplate = `{
                 "service_id": {
                     "type": "string"
                 },
+                "suspended": {
+                    "description": "why the condition is no longer evaluated: it ended the process with a fatal error (EXPR-03);\nempty while it is evaluated",
+                    "type": "string"
+                },
                 "topic": {
                     "description": "the Kafka topic with the data",
                     "type": "string"

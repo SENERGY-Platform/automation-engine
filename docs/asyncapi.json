@@ -1861,6 +1861,9 @@
                     "service_id": {
                         "type": "string"
                     },
+                    "suspended": {
+                        "type": "string"
+                    },
                     "topic": {
                         "type": "string"
                     },

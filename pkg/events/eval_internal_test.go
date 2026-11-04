@@ -17,9 +17,16 @@
 package events
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 )
 
 type valueUnmarshaller struct{}
@@ -37,5 +44,41 @@ func TestConstantConditionsNeedNoScript(t *testing.T) {
 		if err != nil || result.Triggered != expected || result.Value != 42.0 {
 			t.Errorf("%q: %+v %v", script, result, err)
 		}
+	}
+}
+
+// TestConditionCrashChild is the worker that dies; it runs only when started by the test below.
+func TestConditionCrashChild(t *testing.T) {
+	dir := os.Getenv("EVENTS_CRASH_DIR")
+	if dir == "" {
+		t.Skip("started by TestConditionThatEndsTheProcessIsNamed")
+	}
+	brake, _, err := crashbrake.Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := (&Evaluator{unmarshaller: valueUnmarshaller{}, sandbox: script.NewSandbox()}).WithCrashBrake(brake)
+	_, _ = e.Evaluate(model.EventDescription{Id: "e1", MessageName: "d_wait", Script: `var o = {}; o.toString = String.prototype.trim; String(o)`, ValueVariable: "x"}, map[string]any{"value": 1.0})
+	t.Fatal("goja returned instead of ending the process")
+}
+
+// A condition that ends the process is named by its description at the next start.
+func TestConditionThatEndsTheProcessIsNamed(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the crash brake needs mmap on linux")
+	}
+	dir := filepath.Join(t.TempDir(), "brake")
+	cmd := exec.Command(os.Args[0], "-test.run", "^TestConditionCrashChild$", "-test.v")
+	cmd.Env = append(os.Environ(), "EVENTS_CRASH_DIR="+dir)
+	if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "stack overflow") {
+		t.Fatalf("the child did not end with a stack overflow: %v\n%s", err, out)
+	}
+	brake, decisions, err := crashbrake.Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer brake.Close()
+	if len(decisions) != 1 || decisions[0].Unit != (crashbrake.Unit{Kind: crashbrake.KindEvent, Id: "e1"}) {
+		t.Fatalf("%+v", decisions)
 	}
 }

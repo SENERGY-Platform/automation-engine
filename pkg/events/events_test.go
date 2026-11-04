@@ -560,3 +560,54 @@ func TestReconstructionShowsEvaluationsNextToCorrelations(t *testing.T) {
 		t.Fatalf("the current value is evaluated on request (DBG-18): %+v", current)
 	}
 }
+
+// A condition the crash brake suspended is not evaluated, neither by the worker nor by debugging
+// (EXPR-03).
+func TestSuspendedConditionIsNotEvaluated(t *testing.T) {
+	e := newEnv(t)
+	c := e.srv.Controller
+	d, err := c.CreateDeployment(ctx, alice, "processes", model.DeploymentInput{Xml: eventProcess(), Selections: map[string]model.Selection{"reading": {DeviceId: "d1", ServiceId: "urn:infai:ses:service:event"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := c.StartInstance(ctx, alice, "processes", model.StartInstanceInput{DeploymentId: d.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.sync()
+	now := time.Now()
+	e.send(1, "d1", 25.0, now)
+	var suspended model.EventDescription
+	err = e.srv.Store.Tx(ctx, func(tx *store.Tx) error {
+		list, err := tx.ListEventDescriptions(d.Id, 0)
+		if err != nil || len(list) != 1 {
+			return fmt.Errorf("%v %v", list, err)
+		}
+		suspended, _, err = tx.SuspendEventDescription(list[0].Id, "fatal error: stack overflow")
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.sync()
+	e.send(2, "d1", 26.0, now)
+	if e.count(inst.Id) != 1.0 {
+		t.Fatalf("a suspended condition triggers nothing: %v", e.count(inst.Id))
+	}
+	// skipped, not failed: the owner knows of the suspension already and gets no error per message
+	err = e.srv.Store.Tx(ctx, func(tx *store.Tx) error {
+		due, err := tx.DueNotifications(now.Add(time.Hour), 100)
+		for _, n := range due {
+			if n.Title == "Event evaluation failed" {
+				return fmt.Errorf("an error per message: %+v", n)
+			}
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = events.NewEvaluator(fakeUnmarshaller{}).Evaluate(suspended, map[string]any{"value": 26.0}); err == nil || !strings.Contains(err.Error(), "suspended") {
+		t.Fatalf("debugging reports the suspension: %v", err)
+	}
+}

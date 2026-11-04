@@ -174,6 +174,10 @@ type Config struct {
 	// permissions-v2 publishes rights changes of the engine topics here; the engine restores
 	// the owner's administrate right (SEC-10); empty disables
 	PermissionsKafkaTopic string `json:"permissions_kafka_topic" env_var:"PERMISSIONS_KAFKA_TOPIC"`
+	// directory of the crash brake, which stops a script that ended the process with a fatal error
+	// instead of running it again after the restart (EXPR-03); it has to survive a container
+	// restart, e.g. an emptyDir or the volume of a gateway. Empty disables the brake.
+	ScriptCrashDir string `json:"script_crash_dir" env_var:"SCRIPT_CRASH_DIR"`
 
 	// cloud or fog; selects the http policy of the namespaces (NS-04) and, in fog, the services
 	// of the gateway (FOG-01)

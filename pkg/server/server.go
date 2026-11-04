@@ -36,6 +36,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
 	"github.com/SENERGY-Platform/automation-engine/pkg/controller"
+	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/deprecated"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
@@ -87,6 +88,7 @@ type Server struct {
 	Networks *fogsync.Cloud
 	config   configuration.Config
 	logger   *slog.Logger
+	brake    *crashbrake.Brake
 }
 
 // Dependencies replace connections to other services, e.g. in tests.
@@ -235,6 +237,14 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	e.SetNotifier(notifier)
 	m := NewMetrics(configuration.Duration(config.StalledAfter))
 	e.SetMetrics(m)
+	brake := openCrashBrake(ctx, config, e, logger)
+	started := false
+	defer func() {
+		// a failed start frees the directory for the next attempt
+		if !started {
+			closeCrashBrake(brake)
+		}
+	}()
 
 	io := processio.New(s, processio.Limits{MaxValuesPerUser: config.MaxIoValuesPerUser, MaxValueBytes: config.MaxIoValueBytes})
 	e.RegisterTaskType(processio.TaskType, processio.NewType(io))
@@ -260,6 +270,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	}
 	moduleSettings := moduleSettings(config, configuredIot, selection)
 	runtime := modules.NewRuntime(s, moduleSettings, userToken, logger)
+	runtime.SetCrashBrake(brake)
 
 	// device-repository for device commands and event descriptions; nil if neither configured
 	// nor given
@@ -338,7 +349,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		}
 	}
 	if series != nil && unmarshaller != nil {
-		c.SetEventDebugging(series, events.NewEvaluator(unmarshaller), userToken)
+		c.SetEventDebugging(series, events.NewEvaluator(unmarshaller).WithCrashBrake(brake), userToken)
 	}
 	var worker *events.Worker
 	if fog && repo != nil {
@@ -351,7 +362,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		}
 		workerConfig := events.DefaultWorkerConfig()
 		workerConfig.Local = true
-		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller), e, events.LocalConsumer(broker, 1, logger), logger)
+		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller).WithCrashBrake(brake), e, events.LocalConsumer(broker, 1, logger), logger)
 	}
 	var networks *fogsync.Cloud
 	syncBroker := deps.SyncBroker
@@ -419,9 +430,10 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	remover := modules.NewRemover(s, userToken, logger)
 	remover.SetResources(c)
 	remover.SetImportDeployUrl(config.ImportDeployUrl)
+	started = true
 	return &Server{
 		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, apiSettings), Namespaces: registry, Permissions: service, Metrics: m,
-		Live: hub, ModuleRemover: remover, Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, Sync: agent, Networks: networks, config: config, logger: logger,
+		Live: hub, ModuleRemover: remover, Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, Sync: agent, Networks: networks, config: config, logger: logger, brake: brake,
 	}, nil
 }
 
@@ -753,6 +765,7 @@ func (this *Server) Run(ctx context.Context) error {
 }
 
 func (this *Server) Close() error {
+	closeCrashBrake(this.brake)
 	return this.Store.Close()
 }
 

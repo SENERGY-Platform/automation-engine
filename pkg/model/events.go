@@ -53,6 +53,9 @@ type EventDescription struct {
 	// the service to unmarshal with; artificial for imports
 	Service  json.RawMessage `json:"service,omitempty"`
 	Revision int64           `json:"revision"`
+	// why the condition is no longer evaluated: it ended the process with a fatal error (EXPR-03);
+	// empty while it is evaluated
+	Suspended string `json:"suspended,omitempty"`
 	// when the deployment version of the description was created; the event worker of the cloud
 	// ignores messages from before, which Kafka can deliver again (SNRGY-5037). Only filled for
 	// the worker, not part of the API.

@@ -131,6 +131,11 @@ func StartTimer(id string, kind string, value string) string {
 	return fmt.Sprintf(`<bpmn:startEvent id="%v"><bpmn:timerEventDefinition><bpmn:%v xsi:type="bpmn:tFormalExpression">%v</bpmn:%v></bpmn:timerEventDefinition></bpmn:startEvent>`, id, kind, value, kind)
 }
 
+// StartTimerExpression is a timer start event whose value is a JavaScript expression.
+func StartTimerExpression(id string, kind string, src string) string {
+	return fmt.Sprintf(`<bpmn:startEvent id="%v"><bpmn:timerEventDefinition><bpmn:%v xsi:type="bpmn:tFormalExpression" language="javascript">%v</bpmn:%v></bpmn:timerEventDefinition></bpmn:startEvent>`, id, kind, html.EscapeString(src), kind)
+}
+
 // StartWithForm is a start event with form fields given as id=default pairs.
 func StartWithForm(id string, fields ...string) string {
 	var b strings.Builder

@@ -18,6 +18,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -77,8 +78,54 @@ func (this *Tx) DeleteDeployment(id string) error {
 	if err := this.queueRemovals("deployments", "id = ?", id); err != nil {
 		return err
 	}
+	if _, err := this.exec("DELETE FROM quarantined_deployments WHERE deployment_id = ?", id); err != nil {
+		return err
+	}
 	_, err := this.exec("DELETE FROM deployments WHERE id = ?", id)
 	return err
+}
+
+// Quarantine is a deployment version the crash brake stopped (EXPR-03).
+type Quarantine struct {
+	DeploymentId string
+	Version      int
+	ElementId    string
+	Error        string
+	Since        time.Time
+}
+
+// QuarantineDeployment records the quarantine of a deployment version, which may not exist yet; it
+// reports false if the deployment was quarantined already.
+func (this *Tx) QuarantineDeployment(q Quarantine) (bool, error) {
+	n, err := this.count("SELECT COUNT(*) FROM quarantined_deployments WHERE deployment_id = ?", q.DeploymentId)
+	if err != nil || n > 0 {
+		return false, err
+	}
+	_, err = this.exec("INSERT INTO quarantined_deployments (deployment_id, version, element_id, error, since) VALUES (?, ?, ?, ?, ?)",
+		q.DeploymentId, q.Version, q.ElementId, q.Error, millis(q.Since))
+	return err == nil, err
+}
+
+// GetQuarantine returns the quarantine of a deployment, nil if there is none.
+func (this *Tx) GetQuarantine(deploymentId string) (*Quarantine, error) {
+	q := Quarantine{DeploymentId: deploymentId}
+	var since int64
+	err := this.queryRow("SELECT version, element_id, error, since FROM quarantined_deployments WHERE deployment_id = ?", deploymentId).Scan(&q.Version, &q.ElementId, &q.Error, &since)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	q.Since = fromMillis(since)
+	return &q, err
+}
+
+// LiftQuarantine removes the quarantine of a deployment and reports whether there was one.
+func (this *Tx) LiftQuarantine(deploymentId string) (bool, error) {
+	result, err := this.exec("DELETE FROM quarantined_deployments WHERE deployment_id = ?", deploymentId)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n > 0, err
 }
 
 func (this *Tx) ListDeployments(namespace string, options model.DeploymentListOptions, access Access) (result model.Page[model.Deployment], err error) {

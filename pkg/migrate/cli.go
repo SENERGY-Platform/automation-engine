@@ -102,6 +102,8 @@ func run(configPath string, options Options, databases MongoDatabases, camundaUr
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	logger := config.Logger()
+	// the crash brake belongs to the engine process; the migration would reset its register
+	config.ScriptCrashDir = ""
 	srv, err := server.New(ctx, config, logger, server.Dependencies{})
 	if err != nil {
 		return nil, err

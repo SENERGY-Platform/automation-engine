@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/script"
 	"github.com/SENERGY-Platform/models/go/models"
@@ -38,10 +39,18 @@ type Unmarshaller interface {
 type Evaluator struct {
 	unmarshaller Unmarshaller
 	sandbox      *script.Sandbox
+	brake        *crashbrake.Brake
 }
 
 func NewEvaluator(unmarshaller Unmarshaller) *Evaluator {
 	return &Evaluator{unmarshaller: unmarshaller, sandbox: script.NewSandbox()}
+}
+
+// WithCrashBrake records each condition as running in the brake, so that one that ends the
+// process is suspended at the next start instead of running again (EXPR-03).
+func (this *Evaluator) WithCrashBrake(brake *crashbrake.Brake) *Evaluator {
+	this.brake = brake
+	return this
 }
 
 type Evaluation struct {
@@ -51,6 +60,9 @@ type Evaluation struct {
 }
 
 func (this *Evaluator) Evaluate(d model.EventDescription, message map[string]any) (result Evaluation, err error) {
+	if d.Suspended != "" {
+		return result, fmt.Errorf("the condition is suspended: %v", d.Suspended)
+	}
 	var service models.Service
 	if len(d.Service) > 0 {
 		if err = json.Unmarshal(d.Service, &service); err != nil {
@@ -74,7 +86,10 @@ func (this *Evaluator) Evaluate(d model.EventDescription, message map[string]any
 		}
 		variables[key] = value
 	}
-	run, err := this.sandbox.Run(d.Script, variables)
+	run, err := func() (script.Result, error) {
+		defer this.brake.Enter(crashbrake.Unit{Kind: crashbrake.KindEvent, Id: d.Id})()
+		return this.sandbox.Run(d.Script, variables)
+	}()
 	result.Logs = run.Logs
 	if err != nil {
 		return result, fmt.Errorf("condition script: %w", err)

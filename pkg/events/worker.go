@@ -281,6 +281,11 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 		if !this.config.Local && !m.Time.IsZero() && m.Time.Before(d.ActiveSince) {
 			continue
 		}
+		// a condition that ended the process is not evaluated again until the deployment is
+		// updated or reset; its waiting instances have an incident already (EXPR-03)
+		if d.Suspended != "" {
+			continue
+		}
 		payload := payload
 		if this.config.Local {
 			decoded, err := decodeFor(d, m.Value)

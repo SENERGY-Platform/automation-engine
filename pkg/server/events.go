@@ -29,6 +29,7 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/configuration"
+	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/events"
 	"github.com/SENERGY-Platform/automation-engine/pkg/namespaces"
@@ -54,6 +55,7 @@ type EventServer struct {
 	config  configuration.Config
 	logger  *slog.Logger
 	wg      sync.WaitGroup
+	brake   *crashbrake.Brake
 }
 
 // newUnmarshaller builds the unmarshalling of events, shared by the event role and the event
@@ -95,7 +97,15 @@ func NewEventServer(ctx context.Context, config configuration.Config, logger *sl
 	e := engine.New(s, settings, registry, logger)
 	m := NewMetrics(configuration.Duration(config.StalledAfter))
 	e.SetMetrics(m)
-	result := &EventServer{Store: s, Engine: e, Metrics: m, config: config, logger: logger}
+	brake := openCrashBrake(ctx, config, e, logger)
+	started := false
+	defer func() {
+		// a failed start frees the directory for the next attempt
+		if !started {
+			closeCrashBrake(brake)
+		}
+	}()
+	result := &EventServer{Store: s, Engine: e, Metrics: m, config: config, logger: logger, brake: brake}
 
 	unmarshaller := deps.Unmarshaller
 	if unmarshaller == nil {
@@ -113,7 +123,8 @@ func NewEventServer(ctx context.Context, config configuration.Config, logger *sl
 		consumer = result.kafkaConsumer
 	}
 	worker := events.DefaultWorkerConfig()
-	result.Worker = events.NewWorker(worker, s, events.NewEvaluator(unmarshaller), e, consumer, logger)
+	result.Worker = events.NewWorker(worker, s, events.NewEvaluator(unmarshaller).WithCrashBrake(brake), e, consumer, logger)
+	started = true
 	return result, nil
 }
 
@@ -172,5 +183,6 @@ func (this *EventServer) Run(ctx context.Context) error {
 }
 
 func (this *EventServer) Close() error {
+	closeCrashBrake(this.brake)
 	return this.Store.Close()
 }

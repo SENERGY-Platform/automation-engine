@@ -17,18 +17,20 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 )
 
-const eventColumns = "id, deployment_id, version, element_id, namespace, owner, message_name, device_id, service_id, device_group_id, import_id, topic, script, value_variable, variables, qos, characteristic_id, function_id, aspect_ids, path, service, revision"
+const eventColumns = "id, deployment_id, version, element_id, namespace, owner, message_name, device_id, service_id, device_group_id, import_id, topic, script, value_variable, variables, qos, characteristic_id, function_id, aspect_ids, path, service, revision, suspended"
 
 func scanEventDescription(row interface{ Scan(...any) error }, extra ...any) (d model.EventDescription, err error) {
 	var variables, aspects, service string
 	err = row.Scan(append([]any{&d.Id, &d.DeploymentId, &d.Version, &d.ElementId, &d.Namespace, &d.Owner, &d.MessageName, &d.DeviceId, &d.ServiceId, &d.DeviceGroupId, &d.ImportId,
-		&d.Topic, &d.Script, &d.ValueVariable, &variables, &d.Qos, &d.CharacteristicId, &d.FunctionId, &aspects, &d.Path, &service, &d.Revision}, extra...)...)
+		&d.Topic, &d.Script, &d.ValueVariable, &variables, &d.Qos, &d.CharacteristicId, &d.FunctionId, &aspects, &d.Path, &service, &d.Revision, &d.Suspended}, extra...)...)
 	d.Variables = fromJson[map[string]string](variables)
 	d.AspectIds = fromJson[[]string](aspects)
 	if service != "" {
@@ -52,10 +54,19 @@ func (this *Tx) ReplaceEventDescriptions(deploymentId string, version int, descr
 	if err != nil {
 		return err
 	}
+	// a condition suspended after it ended the process stays suspended when the same version is
+	// described again, e.g. after a change of a device group (EXPR-03); a reset lifts it
+	suspended, err := this.suspendedElements(deploymentId, version)
+	if err != nil {
+		return err
+	}
 	if err = this.tombstoneEventDescriptions(deploymentId, version, revision, now); err != nil {
 		return err
 	}
 	for _, d := range descriptions {
+		if d.Suspended == "" {
+			d.Suspended = suspended[d.ElementId]
+		}
 		var variables, aspects string
 		if len(d.Variables) > 0 {
 			variables = toJson(d.Variables)
@@ -63,9 +74,9 @@ func (this *Tx) ReplaceEventDescriptions(deploymentId string, version int, descr
 		if len(d.AspectIds) > 0 {
 			aspects = toJson(d.AspectIds)
 		}
-		_, err = this.exec("INSERT INTO event_descriptions ("+eventColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		_, err = this.exec("INSERT INTO event_descriptions ("+eventColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			d.Id, deploymentId, d.Version, d.ElementId, d.Namespace, d.Owner, d.MessageName, d.DeviceId, d.ServiceId, d.DeviceGroupId, d.ImportId,
-			d.Topic, d.Script, d.ValueVariable, variables, d.Qos, d.CharacteristicId, d.FunctionId, aspects, d.Path, string(d.Service), revision)
+			d.Topic, d.Script, d.ValueVariable, variables, d.Qos, d.CharacteristicId, d.FunctionId, aspects, d.Path, string(d.Service), revision, d.Suspended)
 		if err != nil {
 			return err
 		}
@@ -79,6 +90,23 @@ func (this *Tx) ReplaceEventDescriptions(deploymentId string, version int, descr
 		}
 	}
 	return nil
+}
+
+func (this *Tx) suspendedElements(deploymentId string, version int) (map[string]string, error) {
+	rows, err := this.query("SELECT element_id, suspended FROM event_descriptions WHERE deployment_id = ? AND version = ? AND suspended <> ''", deploymentId, version)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[string]string{}
+	for rows.Next() {
+		var element, reason string
+		if err = rows.Scan(&element, &reason); err != nil {
+			return nil, err
+		}
+		result[element] = reason
+	}
+	return result, rows.Err()
 }
 
 // tombstoneEventDescriptions removes the descriptions of a version of a deployment, of all its
@@ -166,6 +194,51 @@ func (this *Tx) RemoveUnusedVersions(deploymentId string, keep []string, now tim
 		return err
 	}
 	_, err = this.exec("DELETE FROM deployment_versions WHERE EXISTS (SELECT 1 FROM deployment_versions v WHERE v.deployment_id = deployment_versions.deployment_id AND v.version = deployment_versions.version AND "+unusedVersion+")", args...)
+	return err
+}
+
+// SuspendEventDescription stops the evaluation of a condition, with the reason; the new revision
+// brings the change to every event worker. It returns the description, ErrNotFound if it is gone,
+// and whether it was evaluated until now.
+func (this *Tx) SuspendEventDescription(id string, reason string) (d model.EventDescription, suspended bool, err error) {
+	d, err = scanEventDescription(this.queryRow("SELECT "+eventColumns+" FROM event_descriptions WHERE id = ?"+this.forUpdate(true), id))
+	if err != nil || d.Suspended != "" {
+		return d, false, notFound(err, "event description %v not found", id)
+	}
+	revision, err := this.nextRevision()
+	if err != nil {
+		return d, false, err
+	}
+	if _, err = this.exec("UPDATE event_descriptions SET suspended = ?, revision = ? WHERE id = ?", reason, revision, id); err != nil {
+		return d, false, err
+	}
+	d.Suspended, d.Revision = reason, revision
+	return d, true, nil
+}
+
+// SuspendedCondition returns why the condition of an event of a deployment version is suspended,
+// empty if it is evaluated.
+func (this *Tx) SuspendedCondition(deploymentId string, version int, elementId string) (string, error) {
+	var reason string
+	err := this.queryRow("SELECT suspended FROM event_descriptions WHERE deployment_id = ? AND version = ? AND element_id = ? AND suspended <> '' LIMIT 1",
+		deploymentId, version, elementId).Scan(&reason)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return reason, err
+}
+
+// ResumeEventDescriptions evaluates the suspended conditions of a deployment again.
+func (this *Tx) ResumeEventDescriptions(deploymentId string) error {
+	n, err := this.count("SELECT COUNT(*) FROM event_descriptions WHERE deployment_id = ? AND suspended <> ''", deploymentId)
+	if err != nil || n == 0 {
+		return err
+	}
+	revision, err := this.nextRevision()
+	if err != nil {
+		return err
+	}
+	_, err = this.exec("UPDATE event_descriptions SET suspended = '', revision = ? WHERE deployment_id = ? AND suspended <> ''", revision, deploymentId)
 	return err
 }
 

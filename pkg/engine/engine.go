@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/script"
@@ -141,6 +142,7 @@ type Engine struct {
 	store      *store.Store
 	config     Config
 	sandbox    *script.Sandbox
+	brake      *crashbrake.Brake // nil while off; see SetCrashBrake
 	namespaces Namespaces
 	logger     *slog.Logger
 	metrics    Metrics
@@ -198,6 +200,12 @@ func (this *Engine) SetMetrics(metrics Metrics) {
 
 func (this *Engine) SetNotifier(notifier Notifier) {
 	this.notifier = notifier
+}
+
+// SetCrashBrake records each script of an instance or a start timer as running in the brake, so
+// that one that ends the process is stopped at the next start (EXPR-03, ApplyCrashDecisions).
+func (this *Engine) SetCrashBrake(brake *crashbrake.Brake) {
+	this.brake = brake
 }
 
 // limits of a namespace, falling back to the engine configuration (NS-07)

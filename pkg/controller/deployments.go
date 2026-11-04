@@ -672,7 +672,13 @@ func (this *Controller) SetDeploymentDisabled(ctx context.Context, token string,
 		}
 		result.Disabled = input.Disabled
 		if !input.Disabled {
-			return nil
+			// enabled by its user, also out of a quarantine of the crash brake (EXPR-03), which kept
+			// no due start timers; they are computed again then
+			lifted, err := this.engine.LiftQuarantine(tx, id)
+			if err != nil || !lifted {
+				return err
+			}
+			return this.engine.ActivateVersion(tx, id, result.Version)
 		}
 		instances, err := tx.ListInstances(namespace, model.InstanceListOptions{DeploymentId: id, State: "running", PageOptions: model.PageOptions{Limit: 100000}}, store.Access{Admin: true})
 		for _, inst := range instances.Items {

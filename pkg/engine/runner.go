@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/debug"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/script"
@@ -243,7 +244,12 @@ func (this *runner) scope(t *store.Token) map[string]any {
 }
 
 func (this *runner) eval(element *bpmn.Element, t *store.Token, src string) (any, error) {
-	result, err := this.e.sandbox.Run(src, this.scope(t))
+	result, err := func() (script.Result, error) {
+		// with the deployment version, which is stopped if the crash rolls back the new instance
+		defer this.e.brake.Enter(crashbrake.Unit{Kind: crashbrake.KindInstance, Id: this.inst.Id, Element: element.Id,
+			Deployment: this.inst.DeploymentId, Version: this.inst.DeploymentVersion})()
+		return this.e.sandbox.Run(src, this.scope(t))
+	}()
 	var logs []string
 	var scriptErr *script.Error
 	if errors.As(err, &scriptErr) {
@@ -522,6 +528,16 @@ func (this *runner) subscribe(element *bpmn.Element, t *store.Token, group strin
 	}
 	switch element.Kind {
 	case bpmn.EventMessage:
+		if element.IsDeviceEvent() {
+			// the crash brake suspended the condition, so the event would never come (EXPR-03)
+			reason, err := this.tx.SuspendedCondition(this.inst.DeploymentId, this.inst.DeploymentVersion, element.Id)
+			if err != nil {
+				return err
+			}
+			if reason != "" {
+				return incidentf(element.Id, "the condition of this event is not evaluated since it ended the engine with %v; reset the restarts of the deployment or update it", reason)
+			}
+		}
 		s.Kind = store.SubscriptionMessage
 		name, err := this.messageName(element, t)
 		if err != nil {

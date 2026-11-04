@@ -31,6 +31,7 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/auth"
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
+	"github.com/SENERGY-Platform/automation-engine/pkg/crashbrake"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/modules/compat"
@@ -132,6 +133,13 @@ type Runtime struct {
 	engine *engine.Engine
 	// the controller once AddProcessModules is called
 	resources Resources
+	// nil while off; see SetCrashBrake
+	brake *crashbrake.Brake
+}
+
+// SetCrashBrake records the pre- and postscripts of module tasks as running in the brake (EXPR-03).
+func (this *Runtime) SetCrashBrake(brake *crashbrake.Brake) {
+	this.brake = brake
 }
 
 // SetAdminToken sets the token of the engine for the check of used resources.
@@ -246,7 +254,14 @@ func (this *moduleType) Execute(ctx context.Context, task engine.Task) (engine.T
 	}
 	// the order of the worker library: prescripts on the raw inputs, templates against the
 	// variables they changed, the handler, postscripts with all outputs
-	changes, outputs, err := rt.scripts.Run(ctx, task.Owner, compat.PreScriptPrefix, task.Input, nil, variables, instanceVariables)
+	// a script that ends the process stops the instance at the next start instead of running again;
+	// a script can panic out of goja, so the release is deferred
+	unit := crashbrake.Unit{Kind: crashbrake.KindInstance, Id: task.InstanceId, Element: task.ElementId, Deployment: task.DeploymentId}
+	runScripts := func(prefix string, outputs map[string]any) (map[string]any, map[string]any, error) {
+		defer rt.brake.Enter(unit)()
+		return rt.scripts.Run(ctx, task.Owner, prefix, task.Input, outputs, variables, instanceVariables)
+	}
+	changes, outputs, err := runScripts(compat.PreScriptPrefix, nil)
 	if err != nil {
 		return engine.TaskResult{}, err
 	}
@@ -263,7 +278,7 @@ func (this *moduleType) Execute(ctx context.Context, task engine.Task) (engine.T
 		return engine.TaskResult{}, err
 	}
 	maps.Copy(outputs, handlerOutputs)
-	postChanges, outputs, err := rt.scripts.Run(ctx, task.Owner, compat.PostScriptPrefix, task.Input, outputs, variables, instanceVariables)
+	postChanges, outputs, err := runScripts(compat.PostScriptPrefix, outputs)
 	if err != nil {
 		return engine.TaskResult{}, err
 	}
