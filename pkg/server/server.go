@@ -684,7 +684,7 @@ func (this *Server) Start(ctx context.Context) {
 	go this.Metrics.Run(ctx, this.Store, time.Minute, this.logger)
 	go this.Live.Run(ctx)
 	go this.ModuleRemover.Run(ctx, 10*time.Second)
-	go this.Modules.RunHealthChecks(ctx, configuration.Duration(this.config.ModuleHealthCheckInterval))
+	go this.Modules.RunHealthChecks(ctx, configuration.Duration(this.config.ModuleHealthCheckInterval), configuration.Duration(this.config.ModuleHealthRecheckInterval))
 	go this.Modules.RunWatches(ctx, 5*time.Second)
 	go this.Modules.RunResourceChecks(ctx, configuration.Duration(this.config.ResourceCheckCycle))
 	if err := this.startKafka(ctx); err != nil {

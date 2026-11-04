@@ -90,10 +90,10 @@ func deleteInfoJson(info *model.ModuleDeleteInfo) string {
 // UpsertModule writes a module; an existing one with the same id is replaced, created_at stays.
 // A written module counts as checked when it was written: its resource may still be starting, a
 // pipeline for instance, and the workers checked a new module only at their next pass (SMS-11).
-// The error of a replaced resource goes with it.
+// The error and a suspected finding of a replaced resource go with it.
 func (this *Tx) UpsertModule(m model.Module) error {
 	_, err := this.exec("INSERT INTO modules (id, namespace, instance_id, created_by, element_id, owner, module_type, data, delete_info, error, checked_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?) "+
-		"ON CONFLICT (id) DO UPDATE SET instance_id = excluded.instance_id, created_by = excluded.created_by, element_id = excluded.element_id, owner = excluded.owner, module_type = excluded.module_type, data = excluded.data, delete_info = excluded.delete_info, error = '', checked_at = excluded.checked_at, updated_at = excluded.updated_at",
+		"ON CONFLICT (id) DO UPDATE SET instance_id = excluded.instance_id, created_by = excluded.created_by, element_id = excluded.element_id, owner = excluded.owner, module_type = excluded.module_type, data = excluded.data, delete_info = excluded.delete_info, error = '', suspected_at = 0, checked_at = excluded.checked_at, updated_at = excluded.updated_at",
 		m.Id, m.Namespace, m.InstanceId, m.CreatedBy, m.ElementId, m.Owner, m.ModuleType, toJson(m.Data), deleteInfoJson(m.DeleteInfo), millis(m.UpdatedAt), millis(m.CreatedAt), millis(m.UpdatedAt))
 	if err != nil {
 		return err
@@ -227,18 +227,44 @@ func (this *Tx) RetryModuleRemoval(moduleId string, next time.Time, message stri
 	return err
 }
 
-// ModulesToCheck lists modules of a type whose last health check is older than before (SMS-11).
-func (this *Tx) ModulesToCheck(moduleType string, before time.Time, limit int) ([]model.Module, error) {
-	rows, err := this.query("SELECT "+moduleColumns+" FROM modules m WHERE m.module_type = ? AND m.checked_at <= ? ORDER BY m.checked_at LIMIT ?", moduleType, millis(before), limit)
+// ModulesToCheck lists modules of a type whose last health check is older than before, or older
+// than recheckBefore when the module has an error or a suspected finding (SMS-11).
+func (this *Tx) ModulesToCheck(moduleType string, before time.Time, recheckBefore time.Time, limit int) ([]model.Module, error) {
+	rows, err := this.query("SELECT "+moduleColumns+" FROM modules m WHERE m.module_type = ? AND (m.checked_at <= ? OR ((m.error <> '' OR m.suspected_at > 0) AND m.checked_at <= ?)) ORDER BY m.checked_at LIMIT ?",
+		moduleType, millis(before), millis(recheckBefore), limit)
 	if err != nil {
 		return nil, err
 	}
 	return this.scanModules(rows)
 }
 
-// SetModuleCheck stores the result of a health check; an empty message clears the error.
-func (this *Tx) SetModuleCheck(id string, message string, at time.Time) error {
-	_, err := this.exec("UPDATE modules SET error = ?, checked_at = ? WHERE id = ?", message, millis(at), id)
+// SetModuleCheck stores the result of a health check; an empty finding clears error and suspicion.
+// A finding becomes the error when the module has one or was suspected at or before confirmBefore,
+// otherwise it is suspected from at. A suspicion younger than confirmBefore stays as it is, so a
+// second replica checking at the same time does not confirm it.
+func (this *Tx) SetModuleCheck(id string, finding string, at time.Time, confirmBefore time.Time) error {
+	if finding == "" {
+		_, err := this.exec("UPDATE modules SET error = '', suspected_at = 0, checked_at = ? WHERE id = ?", millis(at), id)
+		return err
+	}
+	// every expression reads the row as it was before the update, in Postgres and SQLite
+	_, err := this.exec("UPDATE modules SET "+
+		"error = CASE WHEN error <> '' OR (suspected_at > 0 AND suspected_at <= ?) THEN ? ELSE error END, "+
+		"suspected_at = CASE WHEN error <> '' OR (suspected_at > 0 AND suspected_at <= ?) THEN 0 WHEN suspected_at > 0 THEN suspected_at ELSE ? END, "+
+		"checked_at = ? WHERE id = ?",
+		millis(confirmBefore), finding, millis(confirmBefore), millis(at), millis(at), id)
+	return err
+}
+
+// SetModuleError sets an error that needs no confirmation, one taken over from the old workers.
+func (this *Tx) SetModuleError(id string, message string, at time.Time) error {
+	_, err := this.exec("UPDATE modules SET error = ?, suspected_at = 0, checked_at = ? WHERE id = ?", message, millis(at), id)
+	return err
+}
+
+// SetModuleChecked records a health check that could not decide, leaving error and suspicion.
+func (this *Tx) SetModuleChecked(id string, at time.Time) error {
+	_, err := this.exec("UPDATE modules SET checked_at = ? WHERE id = ?", millis(at), id)
 	return err
 }
 

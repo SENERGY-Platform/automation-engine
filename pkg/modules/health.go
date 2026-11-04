@@ -30,8 +30,8 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
 )
 
-// Check examines the resource of a module. A non-empty problem becomes the module error; an
-// error means the check itself failed and leaves the module as it is.
+// Check examines the resource of a module. A non-empty problem becomes the module error once
+// confirmed; an error means the check itself failed and leaves the module as it is.
 type Check func(ctx context.Context, m model.Module) (problem string, err error)
 
 // AddCheck registers the health check of a module type.
@@ -39,12 +39,13 @@ func (this *Runtime) AddCheck(moduleType string, check Check) {
 	this.checks[moduleType] = check
 }
 
-// RunHealthChecks checks every module once per interval, like the module workers did (SMS-11).
-func (this *Runtime) RunHealthChecks(ctx context.Context, interval time.Duration) {
+// RunHealthChecks checks every module once per interval, like the module workers did (SMS-11), and
+// a module with an error or a suspected finding once per recheck.
+func (this *Runtime) RunHealthChecks(ctx context.Context, interval time.Duration, recheck time.Duration) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
-		if err := this.CheckModules(ctx, interval); err != nil && ctx.Err() == nil {
+		if err := this.CheckModules(ctx, interval, recheck); err != nil && ctx.Err() == nil {
 			this.logger.WarnContext(ctx, "module health checks incomplete", "error", err)
 		}
 		select {
@@ -55,17 +56,21 @@ func (this *Runtime) RunHealthChecks(ctx context.Context, interval time.Duration
 	}
 }
 
-// CheckModules checks the modules whose last check is older than interval.
-func (this *Runtime) CheckModules(ctx context.Context, interval time.Duration) error {
+// CheckModules checks the modules whose last check is older than interval, and those with an
+// error or a suspected finding whose last check is older than recheck. A finding becomes the module
+// error only when a check at least recheck later still has it, so a pipeline whose pod is replaced
+// does not show as an error.
+func (this *Runtime) CheckModules(ctx context.Context, interval time.Duration, recheck time.Duration) error {
 	// fixed for the pass; a module checked in the same millisecond as the cutoff is due again
 	// by its time, so the pass also remembers what it checked
-	cutoff := this.now().Add(-interval)
+	now := this.now()
+	cutoff, recheckCutoff := now.Add(-interval), now.Add(-recheck)
 	checked := map[string]bool{}
 	for moduleType, check := range this.checks {
 		for {
 			var due []model.Module
 			err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
-				due, err = tx.ModulesToCheck(moduleType, cutoff, 50)
+				due, err = tx.ModulesToCheck(moduleType, cutoff, recheckCutoff, 50)
 				return err
 			})
 			if err != nil {
@@ -78,14 +83,18 @@ func (this *Runtime) CheckModules(ctx context.Context, interval time.Duration) e
 			for _, m := range due {
 				checked[m.Id] = true
 				problem, err := check(ctx, m)
-				if err != nil {
+				undecided := err != nil
+				if undecided {
 					this.logger.WarnContext(ctx, "unable to check module", "module_id", m.Id, "module_type", m.ModuleType, "error", err)
-					problem = m.Error
 				} else if problem != "" {
 					problem = moduleType + ": " + problem
 				}
+				at := this.now()
 				err = this.store.Tx(ctx, func(tx *store.Tx) error {
-					return tx.SetModuleCheck(m.Id, problem, this.now())
+					if undecided {
+						return tx.SetModuleChecked(m.Id, at)
+					}
+					return tx.SetModuleCheck(m.Id, problem, at, at.Add(-recheck))
 				})
 				if err != nil {
 					return err

@@ -120,8 +120,10 @@ type Config struct {
 	AllowGenericWatchRequests bool   `json:"allow_generic_watch_requests" env_var:"ALLOW_GENERIC_WATCH_REQUESTS"`
 	WatcherMinInterval        string `json:"watcher_min_interval" env_var:"WATCHER_MIN_INTERVAL"`
 	WatcherDefaultInterval    string `json:"watcher_default_interval" env_var:"WATCHER_DEFAULT_INTERVAL"`
-	// interval of the health checks of modules (SMS-11)
-	ModuleHealthCheckInterval string `json:"module_health_check_interval" env_var:"MODULE_HEALTH_CHECK_INTERVAL"`
+	// interval of the health checks of modules (SMS-11), and of the check that confirms or clears
+	// a finding
+	ModuleHealthCheckInterval   string `json:"module_health_check_interval" env_var:"MODULE_HEALTH_CHECK_INTERVAL"`
+	ModuleHealthRecheckInterval string `json:"module_health_recheck_interval" env_var:"MODULE_HEALTH_RECHECK_INTERVAL"`
 
 	// live debug streams per user and replica (DBG-10)
 	MaxLiveConnectionsPerUser int `json:"max_live_connections_per_user" env_var:"MAX_LIVE_CONNECTIONS_PER_USER"`
@@ -291,6 +293,7 @@ func Default() Config {
 		DeviceGroupAttributeOrigin:     "smart-service",
 		InfoAdditionalModuleDataFields: true,
 		ModuleHealthCheckInterval:      "1h",
+		ModuleHealthRecheckInterval:    "5m",
 		ResourceCheckCycle:             "1h",
 		WatcherMinInterval:             "1m",
 		WatcherDefaultInterval:         "1h",

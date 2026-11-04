@@ -299,7 +299,7 @@ func (this *migration) insertModule(tx *store.Tx, m Module, owner string) error 
 	if m.Error == "" {
 		return nil
 	}
-	return tx.SetModuleCheck(m.Id, m.Error, updated)
+	return tx.SetModuleError(m.Id, m.Error, updated)
 }
 
 // delete info of the old workers that points at services the engine replaces

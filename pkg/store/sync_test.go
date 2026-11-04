@@ -159,10 +159,10 @@ func TestModuleCheckedAtTheCutoffIsDue(t *testing.T) {
 			if err := tx.UpsertModule(model.Module{Id: "m1", Namespace: "processes", InstanceId: "i1", Owner: "alice", ModuleType: "analytics", CreatedAt: t0, UpdatedAt: t0}); err != nil {
 				return err
 			}
-			if err := tx.SetModuleCheck("m1", "not running", t0); err != nil {
+			if err := tx.SetModuleCheck("m1", "not running", t0, t0); err != nil {
 				return err
 			}
-			due, err := tx.ModulesToCheck("analytics", t0, 10)
+			due, err := tx.ModulesToCheck("analytics", t0, t0, 10)
 			if err != nil {
 				return err
 			}
@@ -186,22 +186,97 @@ func TestWrittenModuleIsDueOnlyAfterTheInterval(t *testing.T) {
 			if err := tx.UpsertModule(m); err != nil {
 				return err
 			}
-			if due, err := tx.ModulesToCheck("analytics", t0.Add(-time.Minute), 10); err != nil || len(due) != 0 {
+			if due, err := tx.ModulesToCheck("analytics", t0.Add(-time.Minute), t0.Add(-time.Minute), 10); err != nil || len(due) != 0 {
 				return fmt.Errorf("a new module is not due before the interval: %v %v", due, err)
 			}
-			if due, err := tx.ModulesToCheck("analytics", t0, 10); err != nil || len(due) != 1 {
+			if due, err := tx.ModulesToCheck("analytics", t0, t0, 10); err != nil || len(due) != 1 {
 				return fmt.Errorf("a new module is due after the interval: %v %v", due, err)
 			}
-			if err := tx.SetModuleCheck("m1", "not running", t0.Add(time.Hour)); err != nil {
+			if err := tx.SetModuleError("m1", "not running", t0.Add(time.Hour)); err != nil {
 				return err
 			}
 			m.UpdatedAt = t0.Add(2 * time.Hour)
 			if err := tx.UpsertModule(m); err != nil {
 				return err
 			}
-			due, err := tx.ModulesToCheck("analytics", t0.Add(2*time.Hour), 10)
+			due, err := tx.ModulesToCheck("analytics", t0.Add(2*time.Hour), t0.Add(2*time.Hour), 10)
 			if err != nil || len(due) != 1 || due[0].Error != "" {
 				return fmt.Errorf("a replaced resource drops the error and counts as checked when written: %+v %v", due, err)
+			}
+			return nil
+		})
+	})
+}
+
+// A finding becomes the error only at a check at least the recheck interval after the first, and
+// a module with a finding is due again after that interval instead of the hourly one (SMS-11).
+func TestModuleFindingIsConfirmedByALaterCheck(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		tx(t, s, func(tx *store.Tx) error {
+			if err := seedInstance(tx, "d1", "i1"); err != nil {
+				return err
+			}
+			if err := tx.UpsertModule(model.Module{Id: "m1", Namespace: "processes", InstanceId: "i1", Owner: "alice", ModuleType: "analytics", CreatedAt: t0, UpdatedAt: t0}); err != nil {
+				return err
+			}
+			recheck := 5 * time.Minute
+			hourly := t0.Add(-time.Hour) // the regular interval makes nothing due below
+			check := func(finding string, at time.Time) error {
+				return tx.SetModuleCheck("m1", finding, at, at.Add(-recheck))
+			}
+			shown := func() string {
+				errs, err := tx.ModuleErrors([]string{"i1"})
+				if err != nil {
+					return "read failed: " + err.Error()
+				}
+				return errs["i1"].Error
+			}
+			first := t0.Add(time.Hour)
+			if err := check("not running", first); err != nil {
+				return err
+			}
+			if shown() != "" {
+				return fmt.Errorf("a first finding is only suspected: %q", shown())
+			}
+			if due, err := tx.ModulesToCheck("analytics", hourly, first.Add(-time.Second), 10); err != nil || len(due) != 0 {
+				return fmt.Errorf("a suspected module is not due before the recheck: %v %v", due, err)
+			}
+			if due, err := tx.ModulesToCheck("analytics", hourly, first, 10); err != nil || len(due) != 1 {
+				return fmt.Errorf("a suspected module is due at the recheck: %v %v", due, err)
+			}
+			// a second replica checking at the same time
+			if err := check("not running", first.Add(10*time.Second)); err != nil {
+				return err
+			}
+			if shown() != "" {
+				return fmt.Errorf("a finding within the recheck interval does not confirm: %q", shown())
+			}
+			if err := tx.SetModuleChecked("m1", first.Add(time.Minute)); err != nil {
+				return err
+			}
+			if err := check("not running", first.Add(recheck)); err != nil {
+				return err
+			}
+			if shown() != "not running" {
+				return fmt.Errorf("a finding at the recheck confirms the first one, also past an undecided check: %q", shown())
+			}
+			if due, err := tx.ModulesToCheck("analytics", hourly, first.Add(recheck), 10); err != nil || len(due) != 1 {
+				return fmt.Errorf("a module with an error is due at the recheck: %v %v", due, err)
+			}
+			if err := check("", first.Add(2*recheck)); err != nil {
+				return err
+			}
+			if shown() != "" {
+				return fmt.Errorf("a check without finding clears the error: %q", shown())
+			}
+			if due, err := tx.ModulesToCheck("analytics", hourly, first.Add(time.Hour), 10); err != nil || len(due) != 0 {
+				return fmt.Errorf("a healthy module is due only at the regular interval: %v %v", due, err)
+			}
+			if err := check("not running", first.Add(3*recheck)); err != nil {
+				return err
+			}
+			if shown() != "" {
+				return fmt.Errorf("a finding after a recovery is suspected anew: %q", shown())
 			}
 			return nil
 		})

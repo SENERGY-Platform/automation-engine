@@ -191,7 +191,7 @@ The basis are the analyses of the eight workers, of `smart-service-module-worker
 
 **Maintenance procedures (SMS-13, decided: shared variables).** Message start events with their own form fields. A start creates an instance with `parent_id`. Module inputs, templates and script variables read and write the variables of the parent instance, modules attach to it. The message name is the name of the message, without renaming (SMS-02).
 
-**Health check of the modules (decided: keep).** Hourly per module type as today (pipeline running, import and export exist, deployment exists, started instance running); a finding becomes a module error and appears in the instance status, not an incident.
+**Health check of the modules (decided: keep).** Hourly per module type as today (pipeline running, import and export exist, deployment exists, started instance running); a finding becomes a module error and appears in the instance status, not an incident. Changed on 2026-11-04: a finding is first only suspected and becomes the error when a check `MODULE_HEALTH_RECHECK_INTERVAL` (5 min) later still has it, and a module with an error is checked again at that interval. Reason: a pipeline whose pod the VPA replaced kept `not running` in its status for an hour, from a check that fell into the minute without a pod.
 
 **Status (SMS-11).** `status` on every instance: `running`, `ready` (run completed), `error` with a message from the end of the run, an incident or a module error.
 

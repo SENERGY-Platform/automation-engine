@@ -223,17 +223,26 @@ func TestHealthChecksMarkStoppedPipelinesInTheStatus(t *testing.T) {
 	waitFor(t, "the smart service", func() bool { return status().Status == model.StatusReady })
 	before := len(flowEngine.all())
 	running.Store(false)
-	if err = srv.Modules.CheckModules(ctx, 0); err != nil {
+	// the first finding and one of a second replica right after it are only suspected
+	for range 2 {
+		if err = srv.Modules.CheckModules(ctx, 0, time.Hour); err != nil {
+			t.Fatal(err)
+		}
+		if current := status(); current.Status != model.StatusReady {
+			t.Fatalf("a pipeline stopped only shortly, a pod being replaced, is no error yet: %+v", current)
+		}
+	}
+	if err = srv.Modules.CheckModules(ctx, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	if current := status(); current.Status != model.StatusError || !strings.Contains(current.StatusMessage, "analytics: pipeline p1 is not running") {
-		t.Fatalf("a stopped pipeline shows as module error in the status (SMS-11): %+v", current)
+		t.Fatalf("a pipeline still stopped at the recheck shows as module error in the status (SMS-11): %+v", current)
 	}
 	if requests := flowEngine.all()[before:]; len(requests) == 0 || slices.ContainsFunc(requests, func(r string) bool { return r != "GET /pipeline/p1 "+"token of alice" }) {
 		t.Fatalf("the check asks with the owner's token: %v", requests)
 	}
 	running.Store(true)
-	if err = srv.Modules.CheckModules(ctx, 0); err != nil {
+	if err = srv.Modules.CheckModules(ctx, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	if current := status(); current.Status != model.StatusReady {
@@ -304,7 +313,7 @@ func TestSmartServicesDeployAndStartManagedProcesses(t *testing.T) {
 			t.Fatalf("process modules refer to resources of the engine: %+v", m)
 		}
 	}
-	if err = srv.Modules.CheckModules(ctx, 0); err != nil {
+	if err = srv.Modules.CheckModules(ctx, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	if current, _ = c.GetInstance(ctx, alice, "smart-services", inst.Id); current.Status != model.StatusReady {
