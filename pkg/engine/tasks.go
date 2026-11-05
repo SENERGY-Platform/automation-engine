@@ -73,7 +73,9 @@ type TaskResult struct {
 	Output map[string]any
 	Async  bool
 	// with Async from TimeoutHandler.OnTimeout: the task keeps waiting for its answer until
-	// then; zero executes it again at once
+	// then; zero executes it again at once. With Async from Execute, a time before the end of
+	// Task.Timeout lets the timeout happen then instead, e.g. at the end of the first of several
+	// answer windows of a device group (SNRGY-5093).
 	WaitUntil time.Time
 	// changes besides the output, applied in the transaction that completes the task
 	Effects *Effects

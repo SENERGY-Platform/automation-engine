@@ -294,3 +294,30 @@ func TestForbiddenCyclesNameTheFlowClosingTheLoop(t *testing.T) {
 	)
 	parseValid(t, parallel, Rules{ForbidCycles: true})
 }
+
+// senergy:groupConcurrency stays an attribute for the device command and must be positive
+// (SNRGY-5093)
+func TestParseChecksTheGroupConcurrency(t *testing.T) {
+	xml := b.Process(
+		b.Start("start"),
+		`<bpmn:serviceTask id="two" senergy:taskType="device_command" senergy:groupConcurrency="2"/>`,
+		`<bpmn:serviceTask id="zero" senergy:taskType="device_command" senergy:groupConcurrency="0"/>`,
+		`<bpmn:serviceTask id="text" senergy:taskType="device_command" senergy:groupConcurrency="many"/>`,
+		b.End("end"), b.Flow("start", "two"), b.Flow("two", "zero"), b.Flow("zero", "text"), b.Flow("text", "end"),
+	)
+	p, issues, err := ParseAndValidate(xml, Rules{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"zero", "text"} {
+		if !hasIssue(issues, id, "senergy:groupConcurrency must be a positive integer") {
+			t.Errorf("missing issue for %v in %v", id, issues)
+		}
+	}
+	if hasIssue(issues, "two", "groupConcurrency") {
+		t.Errorf("2 is valid: %v", issues)
+	}
+	if got := p.Element("two").Attributes["groupConcurrency"]; got != "2" {
+		t.Errorf("the attribute is kept for the task type, got %q", got)
+	}
+}

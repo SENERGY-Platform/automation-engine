@@ -279,6 +279,12 @@ func (this *parser) element(e *etree.Element, elementType ElementType) *Element 
 			}
 			result.Timeout = v
 		}
+		// stays an attribute, which the task type "device_command" reads (SNRGY-5093)
+		if v, ok := attr(e, NsSenergy, "groupConcurrency"); ok {
+			if concurrency, err := strconv.Atoi(v); err != nil || concurrency < 1 {
+				this.issue(result.Id, "senergy:groupConcurrency must be a positive integer")
+			}
+		}
 	}
 	if elementType == ScriptTask {
 		result.ResultVariable = attrValue(e, NsCamunda, "resultVariable")

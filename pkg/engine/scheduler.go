@@ -357,6 +357,9 @@ func (this *Engine) execute(ctx context.Context, c claimed) (err error) {
 				return err
 			}
 			job.State = store.JobWaiting
+			if !result.WaitUntil.IsZero() && result.WaitUntil.Before(job.LockUntil) {
+				job.LockUntil = result.WaitUntil
+			}
 			return tx.SaveJob(*job)
 		})
 	}

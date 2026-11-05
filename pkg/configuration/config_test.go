@@ -42,6 +42,26 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	}
 }
 
+// the process module of the gateway sets both (SNRGY-5093)
+func TestGroupSchedulerAndConcurrencyFromEnvironment(t *testing.T) {
+	if config := Default(); config.GroupConcurrency != 1 {
+		t.Fatalf("one place by default, as before the setting: %v", config.GroupConcurrency)
+	}
+	t.Setenv("GROUP_SCHEDULER", "round_robin")
+	t.Setenv("GROUP_CONCURRENCY", "3")
+	config, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.GroupScheduler != "round_robin" || config.GroupConcurrency != 3 {
+		t.Fatalf("unexpected %v, %v", config.GroupScheduler, config.GroupConcurrency)
+	}
+	t.Setenv("GROUP_CONCURRENCY", "0")
+	if _, err = Load(""); err == nil {
+		t.Fatal("expected an error for 0")
+	}
+}
+
 func TestValidateRejectsUnknownRole(t *testing.T) {
 	config := Default()
 	config.Role = "worker"

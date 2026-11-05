@@ -163,6 +163,9 @@ type Config struct {
 	// parallel, sequential or round_robin for device groups (TASK-06)
 	GroupScheduler     string `json:"group_scheduler" env_var:"GROUP_SCHEDULER"`
 	DeviceCacheTimeout string `json:"device_cache_timeout" env_var:"DEVICE_CACHE_TIMEOUT"`
+	// sub-tasks of a sequential or round robin group with an open try at the same time; the
+	// element overrides it with senergy:groupConcurrency (SNRGY-5093)
+	GroupConcurrency int `json:"group_concurrency" env_var:"GROUP_CONCURRENCY"`
 
 	// engine or event: the event role evaluates device data and correlates events (section 10)
 	Role string `json:"role" env_var:"ROLE"`
@@ -274,6 +277,7 @@ func Default() Config {
 		DeviceTopic:                "devices",
 		DeviceGroupTopic:           "device-groups",
 		GroupScheduler:             "sequential",
+		GroupConcurrency:           1,
 		DeviceCacheTimeout:         "1m",
 		StalledAfter:               "24h",
 		ModifiedDevices:            true,
@@ -400,6 +404,9 @@ func (this Config) validate() error {
 	case "parallel", "sequential", "round_robin":
 	default:
 		return fmt.Errorf("group_scheduler must be parallel, sequential or round_robin")
+	}
+	if this.GroupConcurrency < 1 {
+		return fmt.Errorf("group_concurrency must be at least 1")
 	}
 	if this.Mode == "fog" && this.SyncMqttBroker != "" {
 		return fmt.Errorf("sync_mqtt_broker is for the cloud; a gateway reaches the cloud through its own broker")

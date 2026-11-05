@@ -473,7 +473,7 @@ func deviceCommands(ctx context.Context, config configuration.Config, deps Depen
 	}
 	return devicecommand.New(devicecommand.Config{
 		GroupScheduler: config.GroupScheduler, ResponseTo: config.MetadataResponseTo, ErrorTo: config.MetadataErrorTo, LocalCommandPrefix: prefix,
-		DeviceCacheTimeout: cacheTimeout,
+		DeviceCacheTimeout: cacheTimeout, GroupConcurrency: config.GroupConcurrency,
 	}, s, repo, userToken, mar, ts, producer, m, logger), nil
 }
 
