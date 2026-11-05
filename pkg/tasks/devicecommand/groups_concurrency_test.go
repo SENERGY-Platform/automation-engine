@@ -288,3 +288,23 @@ func TestGroupConcurrencyRoundRobinAsksTheOthersBeforeARetry(t *testing.T) {
 		})
 	}
 }
+
+// a window that ends during the call, here behind a slow send, does not hold up the free
+// places: the sub-task waits for the next call and the others are sent
+func TestGroupConcurrencyAWindowEndingDuringTheCallSkipsOnlyThatSubTask(t *testing.T) {
+	e := newEnv(t, Sequential)
+	fiveDevicesWithConcurrency(e, Sequential, 2)
+	slow := false
+	withHook(e, func(n int) {
+		if n == 2 && !slow {
+			slow = true
+			e.mux.Lock()
+			e.clock = e.clock.Add(2*time.Minute + time.Second)
+			e.mux.Unlock()
+		}
+	})
+	e.start(e.deploy(process(Pessimistic, payload(measuring, map[string]any{"device_group_id": "g", "retries": 1}), ""), nil))
+	if got := sentDevices(e.producer.messages()); !reflect.DeepEqual(got, []string{"d0", "d1", "d2", "d3"}) {
+		t.Fatalf("d0 and d1 wait for the next call, d2 and d3 take the places: %v", got)
+	}
+}

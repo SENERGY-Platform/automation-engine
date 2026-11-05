@@ -304,8 +304,9 @@ func (this *Type) advance(ctx context.Context, jobId string, version int64, toke
 // (SNRGY-5093). Choosing a sub-task and counting its try are one step under the lock of the
 // instance, and the command goes out after it: answers that arrive together and an execution
 // then see each other's tries, so that no sub-task is sent twice and no more than concurrency
-// tries are open. A sub-task goes out at most once per call, also when its window is over at
-// once, and nothing goes out for a job that is gone.
+// tries are open. A sub-task goes out at most once per call: one whose window ends during the
+// call, e.g. behind a slow send, waits for the next call, and the others take the free places.
+// Nothing goes out for a job that is gone.
 func (this *Type) advanceInTurn(ctx context.Context, jobId string, version int64, token string, retries int, timeout time.Duration, concurrency int) (done bool, out map[string]any, err error) {
 	sent := map[string]bool{}
 	for {
@@ -320,12 +321,8 @@ func (this *Type) advanceInTurn(ctx context.Context, jobId string, version int64
 			if subtasks, err = tx.ListSubtasks(jobId); err != nil {
 				return err
 			}
-			next, waiting = this.next(pendingOf(subtasks), retries, timeout, concurrency)
+			next, waiting = this.next(pendingOf(subtasks), retries, timeout, concurrency, sent)
 			if len(next) == 0 {
-				return nil
-			}
-			if sent[next[0].SubId] {
-				stop = true
 				return nil
 			}
 			return tx.CountSubtaskTry(jobId, next[0].SubId, this.now())
@@ -400,20 +397,26 @@ func (this *Type) sendSubtask(ctx context.Context, jobId string, token string, s
 // lib/devicegroups does, with up to concurrency open tries at once (SNRGY-5093): a sent command
 // waits for its answer while it is not older than timeout, a sub-task is given up after
 // retries + 1 tries, sequential takes the sub-tasks in their order and round robin those with
-// the fewest tries first. waiting reports that open tries leave no place or nothing else to
-// send; nothing without waiting means that every pending sub-task is given up.
-func (this *Type) next(pending []store.Subtask, retries int, timeout time.Duration, concurrency int) (next []store.Subtask, waiting bool) {
+// the fewest tries first. Sub-tasks in skip are not sent, but keep the task waiting. waiting
+// reports that open tries leave no place or nothing else to send; nothing without waiting means
+// that every pending sub-task is given up.
+func (this *Type) next(pending []store.Subtask, retries int, timeout time.Duration, concurrency int, skip map[string]bool) (next []store.Subtask, waiting bool) {
 	now := this.now()
 	open := running(pending, now, timeout)
 	candidates := []store.Subtask{}
+	skipped := false
 	for _, s := range pending {
 		if s.Tries <= retries && !waitsForAnswer(s, now, timeout) {
-			candidates = append(candidates, s)
+			if skip[s.SubId] {
+				skipped = true
+			} else {
+				candidates = append(candidates, s)
+			}
 		}
 	}
 	free := concurrency - len(open)
 	if free <= 0 || len(candidates) == 0 {
-		return nil, len(open) > 0
+		return nil, len(open) > 0 || skipped
 	}
 	if this.config.GroupScheduler == RoundRobin {
 		slices.SortStableFunc(candidates, func(a, b store.Subtask) int { return a.Tries - b.Tries })
@@ -615,7 +618,7 @@ func (this *Type) OnTimeout(ctx context.Context, tx *store.Tx, task engine.Task)
 	if this.config.GroupScheduler != Parallel {
 		pending := pendingOf(subtasks)
 		result := &engine.TaskResult{Async: true}
-		if _, waiting := this.next(pending, task.Retries, task.Timeout, this.concurrency(task.Attributes)); waiting {
+		if _, waiting := this.next(pending, task.Retries, task.Timeout, this.concurrency(task.Attributes), nil); waiting {
 			result.WaitUntil = windowEnd(running(pending, this.now(), task.Timeout), task.Timeout)
 		}
 		return result, nil
