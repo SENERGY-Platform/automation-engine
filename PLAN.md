@@ -441,6 +441,73 @@ Some recursions of goja over data a script builds can only be stopped inside goj
 - **regexp-timeout** (patch 3): goja dropped every regexp2 error and reported no match; a timeout now ends the run with a `RegExpTimeoutError`, another regexp2 error with a `RegExpMatchError`, both uncatchable. The timeout is global (`goja.SetRegExpMatchTimeout`), because compiled patterns end up in programs that several runtimes share, and regexp2 reads it per pattern; the engine sets one second before any script runs. regexp2 still does not see the interrupt, so a run ends at most a second after its timeout. This closes the slots of the crash brake that hanging matches through event debugging could hold.
 - **Rejected, tried in a throwaway module:** `-overlay` on the downloaded files, which Go refuses (`Files beneath GOMODCACHE ... must not be replaced`); `go mod vendor` with `-overlay`, which works but needs the flag on every build, test and vet and builds unpatched without it; editing `vendor/`, which the next `go mod vendor` drops silently; patching the module cache at build time, which `go mod verify` reports (`dir has been modified`) and the repository does not show; patching machine code at runtime (gomonkey), which needs inlining off everywhere, depends on the architecture and cannot reach the unexported methods that recurse; `go generate` writing the copy, which cannot run while the replace target is missing.
 
+## Performance in the cluster (2026-11-05)
+
+Basis: the logs of all four pods of `v0.33.1` in the cluster `senergy`, about 45 minutes after the rollout (10:32 to 11:17 UTC). Load was low: about 30m CPU and 60 MiB per engine pod, about 10m and 50 MiB per event pod (`kubectl top`). Nothing is changed yet; both findings are proposals.
+
+**pprof in the cluster is not reachable with a developer account.** `PPROF_PORT=6060` is set and the pods log `pprof listening` on `127.0.0.1:6060`, but the account has no `create` on `pods/portforward` or `pods/exec` in the namespace, and the API server proxy is refused as well. Whether `kubectl port-forward` reaches the loopback binding (see `v0.18.0` in the project note) therefore remains unchecked; it failed on RBAC, not on the binding. Someone with the right: `kubectl -n automation-engine port-forward pod/<pod> 6060`, then `curl -o cpu.pb.gz 'http://127.0.0.1:6060/debug/pprof/profile?seconds=60'`.
+
+### 1. The event role restarts its Kafka consumer four times a minute
+
+Both event pods log `event worker topics` 181 times in 45 minutes, the count alternating between 16 and 17 every 8 to 20 seconds, each followed by `close kafka-go consumer`. The changes coincide to the second with `POST` and `DELETE /namespaces/processes/deployments` of the users `canary` and `snowflake-canary` (90 deploys and 90 deletes each in the window): their deployments carry event descriptions on a topic nobody else reads, so the topic set changes whenever the last of them comes or goes.
+
+`Worker.Run` (`pkg/events/worker.go`) replaces the consumer whenever the sorted topic list differs. Both pods share one consumer group over all device topics (`pkg/server/events.go`, `kafkaConsumer`), so every change makes both pods leave and rejoin: a rebalance of the whole group, during which no event of any user is evaluated, and uncommitted messages are delivered again (dropped as duplicates by their message id).
+
+Measured in the log of the group coordinator (`kafka-strimzi-cluster-broker-0`, readable with a developer account), 10:30 to 11:40 UTC: the group `automation-engine-events` went from generation 13768 to 14079, 312 rebalances in 70 minutes. Duration from `Preparing to rebalance` to `Stabilized` at the one-second resolution of the log: p50 0 s, p90 3 s, sum 418 s, about a tenth of the window without evaluation. Six of them took 30 s, the rebalance timeout: when a pod replaces its consumer while the group is still completing the previous rebalance, the old member sends no `LeaveGroup`, the coordinator waits for it until `Member ... has failed, removing it from the group` (13 times in the window), and meanwhile further restarts join, up to 8 members. The 3 s are probably `group.initial.rebalance.delay.ms` at its Kafka default, which applies when both pods leave at the same time and the group is empty for a moment; the broker configuration itself was not readable (no access to the Strimzi resource).
+
+Locally (see "Local profiling" below) the same churn costs almost nothing: two event roles, the listener topic plus a second topic whose deployment is created and deleted every 7.5 s, 40 consumer restarts in 150 s, the rebalances took about 40 ms, and a looping listener on one event per second correlated 149 times in 149 s with two gaps of 1.6 and 1.8 s (baseline: 60 in 59 s, no gap above 1.02 s). The local Kafka sets `KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0` and has one broker and one partition per topic, so the local setup does not show the cost; the broker log in the cluster does.
+
+- **Implemented (2026-11-05, not yet released):** `WorkerConfig.TopicGrace` (default 10 minutes, no environment variable); `Worker.Run` reads the needed topics plus those needed within the grace, so a new topic replaces the consumer at once and a topic no longer needed only after the grace. It applies on gateways as well, where it only keeps an MQTT subscription longer. Test: `TestATopicStaysSubscribedForTheGraceAfterItsLastDeployment`. Locally, with the same churn as above, six cycles caused no replacement after the first appearance of the topic, and the listener correlated 74 times in 74 s without a gap above 1.02 s. Originally proposed as: add a new topic at once, but drop a topic that is no longer needed only at the next full reload (`FullReloadInterval`, 10 minutes). A message on a topic without descriptions finds nothing in the index and is only read, decoded and dropped. Deploy/delete churn on a known topic then causes no restart; a description on a new topic still takes effect within the sync interval. This also removes most of the 30 s stalls, which come from restarts that overlap a running rebalance.
+- **Rejected:** keeping every topic ever seen, which grows without bound; a fixed delay before every restart, which also delays new topics.
+
+### 2. N+1 queries in the lists of the `deprecated/` layer
+
+No request took longer than 630 ms; the only 5xx was one `503` on `POST /namespaces/processes/prepared-deployments` (canary). The slowest routes all come from the test accounts `shared-resources-test*`:
+
+| Route | n | p50 | max |
+|---|---|---|---|
+| `GET /deprecated/smart-services/releases` | 35 | 298 ms | 630 ms |
+| `GET /deprecated/smart-services/releases/{id}/parameters` | 2 | 533 ms | 533 ms |
+| `GET /deprecated/repository/v2/processes` | 18 | 261 ms | 331 ms |
+| `GET /deprecated/smart-services/designs` | 11 | 163 ms | 240 ms |
+
+The native lists under `/namespaces/...` take 11 to 14 ms at p50.
+
+- `releases()` in `pkg/deprecated/smartservices.go`: without `latest` and `ids` it loads all deployments and calls `GetDeploymentVersion` for every version from `d.Version` down to 1, also for trimmed versions, which return `ErrNotFound` only after the full call; `limit` and `offset` are applied in memory afterwards.
+- `process()` in `pkg/deprecated/repository.go` and `listDesigns`: one `GetModelVersion` per model.
+
+Each of these calls opens its own transaction and checks the right again through `readDeployment` or `readModel`. For a user who is not the owner that is an HTTP call to permissions-v2 (`Service.Check` in `pkg/permissions/permissions.go`), made while the transaction holds one of the eight connections of the pool (`POSTGRES_MAX_CONNS=8`). The list before it is already restricted to readable ids by `Access`, so the check per element repeats it. Under more load this turns into waiting for the pool, not only latency.
+
+- **Proposed:** a store method per kind that returns the versions of a list of ids in one query, called inside the transaction of the list without a second check; for releases, page before loading versions where the order allows it.
+- **Measured locally** (see "Local profiling"): 40 smart-services deployments of alice with 8 versions each, shared with bob through permissions-v2. `GET /deprecated/smart-services/releases` takes 165 ms for alice and 606 ms for bob (median of five); `limit=10` changes nothing (150 and 635 ms), because the versions are loaded before paging; `latest=true` takes 29 and 99 ms; the native `GET /namespaces/smart-services/deployments` 3 to 6 ms. In an execution trace over five requests of bob (3.2 s wall time) the engine waited 1.86 s in `net/http.(*Client).Do` of the permissions-v2 client, reached through `Store.Tx` → `GetDeploymentVersion` → `readDeployment` → `checkResource`, so with the transaction and its connection held, and 0.67 s for Postgres. In the CPU profile `GetDeploymentVersion` accounts for 54 % of the samples; the process used about a third of a core, so the request is bound by waiting, not by CPU.
+
+### Smaller observations
+
+- The request log writes the path without the query, so `latest`, `limit` or `add-usable-flag` of a slow request cannot be told from the log.
+- `copyToDevelopers` can still hang without a timeout (developer-notifications client `v0.0.6`); it did not happen in the window.
+
+### Local profiling
+
+pprof works in Docker Compose through `docker compose exec`, since the image is Alpine with busybox `wget`. An override sets `PPROF_PORT` without touching the compose files of the repository:
+
+```yaml
+services:
+  engine:
+    environment: {PPROF_PORT: "6060", POSTGRES_MAX_CONNS: "8"}
+  engine-events:
+    environment: {PPROF_PORT: "6060", POSTGRES_MAX_CONNS: "4"}
+```
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.platform.yml -f pprof.override.yml up --build -d --scale engine-events=2
+docker compose exec -T engine wget -q -O- 'http://127.0.0.1:6060/debug/pprof/profile?seconds=20' > cpu.pb.gz
+docker compose exec -T engine wget -q -O- 'http://127.0.0.1:6060/debug/pprof/trace?seconds=5' > out.trace
+go tool trace -pprof=sync out.trace > sync.pb   # also net, syscall: where requests wait
+go tool pprof -top -cum sync.pb
+```
+
+A CPU profile alone misleads for the `deprecated/` lists: their time is spent waiting on permissions-v2 and Postgres, which only the profiles derived from the execution trace show.
+
 ## Audit against the requirements (2026-10-20)
 
 Every requirement id of `docs/requirements.md` (242) was checked against code and tests, together with the gaps of the milestones above and the engine items of `OPEN-ITEMS.md`. None is missing entirely: 186 are implemented, 47 partly, 3 differ by a decision recorded above, 6 are tasks of other repos or of operations. Defects 1, 2, 5, 6 and 7 were reproduced with tests in a copy of the repository, the others read from the code.
