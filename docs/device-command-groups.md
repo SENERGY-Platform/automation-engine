@@ -1,6 +1,6 @@
 # Device commands to several devices
 
-How a `device_command` task proceeds when it addresses more than one device service: a device group, or a device selected without a service. Each matching combination of device and service (function plus every aspect of the task, TASK-06) is a sub-task, stored with the job in `command_subtasks`, together with its number of tries and the time of its last try. `GROUP_SCHEDULER` (`parallel`, `sequential` or `round_robin`, default `sequential`) decides the order, `GROUP_CONCURRENCY` how many sub-tasks of `sequential` and `round_robin` wait for an answer at the same time.
+How a `device_command` task proceeds when it addresses more than one device service: a device group, or a device selected without a service. Each matching combination of device and service (function plus every aspect of the task, TASK-06) is a sub-task, stored with the job in `command_subtasks`, together with its number of tries and the time of its last try. `GROUP_SCHEDULER` (`parallel`, `sequential` or `round_robin`, default `round_robin` from SNRGY-5093 on, `sequential` before) decides the order, `GROUP_CONCURRENCY` how many sub-tasks of `sequential` and `round_robin` wait for an answer at the same time.
 
 ## Scope
 
@@ -29,5 +29,7 @@ Up to the concurrency of sub-tasks at a time, one with the default `1`:
 With concurrency `1` a group therefore takes at most `sub-tasks × (retries + 1)` windows, and with `sequential` a device without radio contact holds up all devices after it for `retries + 1` windows, with `round_robin` for one window per round of tries. With concurrency `n` that device takes one place and the others go on in the remaining ones; with `sequential` its next try comes right after its window, with `round_robin` after the devices with fewer tries.
 
 Measured on a gateway with nine Homematic IP shutters behind one CCU (2026-11-05): all commands at once (`parallel`) are worked off by the CCU one after the other, the acknowledgements spread over 5 s and some arrive only after 17 s; `sequential` with concurrency `1` and a real acknowledgement takes 1.8 s for all nine, about 130 ms each. A concurrency above `1` has not been measured there yet. An error answer of a device (`errors` topic or `POST /errors`) and an error while sending count as a failed attempt of the task, with backoff, as for every task type.
+
+`round_robin` is the default since SNRGY-5093: with retries it asks every device once before the retries of silent ones, at the same total duration and with the answers in the same order; only the order in which the devices are switched differs from `sequential` once a try fails. The cloud has run `round_robin` since the external-task-worker (rancher-2-defs), gateways ran the default `sequential` until then.
 
 This follows `lib/devicegroups` of external-task-worker, where a Camunda lock expiry was not a retry and each sub-task counted its own tries. Until `f4a4189` the engine counted timeouts per task, so a silent device used up the attempts of the whole group and the remaining devices were never asked; `pkg/tasks/devicecommand/groups_order_test.go` holds the cases.

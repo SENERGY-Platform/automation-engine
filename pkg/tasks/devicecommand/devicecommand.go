@@ -107,7 +107,7 @@ type Type struct {
 
 func New(config Config, s *store.Store, iot devicerepository.Interface, tokens auth.UserTokenSource, m Marshaller, ts Timescale, producer Producer, metrics Metrics, logger *slog.Logger) *Type {
 	if config.GroupScheduler == "" {
-		config.GroupScheduler = Sequential
+		config.GroupScheduler = RoundRobin
 	}
 	if config.GroupConcurrency < 1 {
 		config.GroupConcurrency = 1

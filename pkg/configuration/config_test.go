@@ -42,10 +42,11 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	}
 }
 
-// the process module of the gateway sets both (SNRGY-5093)
+// the process module of the gateway sets both (SNRGY-5093); round robin, as the cloud has run
+// it since the external-task-worker, and one place, as before the setting
 func TestGroupSchedulerAndConcurrencyFromEnvironment(t *testing.T) {
-	if config := Default(); config.GroupConcurrency != 1 {
-		t.Fatalf("one place by default, as before the setting: %v", config.GroupConcurrency)
+	if config := Default(); config.GroupScheduler != "round_robin" || config.GroupConcurrency != 1 {
+		t.Fatalf("unexpected defaults %v, %v", config.GroupScheduler, config.GroupConcurrency)
 	}
 	t.Setenv("GROUP_SCHEDULER", "round_robin")
 	t.Setenv("GROUP_CONCURRENCY", "3")

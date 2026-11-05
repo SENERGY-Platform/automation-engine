@@ -276,7 +276,7 @@ func Default() Config {
 		CacheInvalidationAllTopics: []string{"device-types", "protocols"},
 		DeviceTopic:                "devices",
 		DeviceGroupTopic:           "device-groups",
-		GroupScheduler:             "sequential",
+		GroupScheduler:             "round_robin",
 		GroupConcurrency:           1,
 		DeviceCacheTimeout:         "1m",
 		StalledAfter:               "24h",
