@@ -42,6 +42,10 @@ type WorkerConfig struct {
 	// how often changed descriptions are read, and how often all of them
 	SyncInterval       time.Duration
 	FullReloadInterval time.Duration
+	// a topic no description names any more stays subscribed this long, so that deployments
+	// created and deleted on the same topic do not replace the consumer every time: each
+	// replacement is a rebalance of the whole consumer group
+	TopicGrace time.Duration
 	// at most one notification per description in this window (EVT-07)
 	ErrorNotificationWindow time.Duration
 	// concurrent evaluations of qos 0 descriptions
@@ -52,7 +56,7 @@ type WorkerConfig struct {
 }
 
 func DefaultWorkerConfig() WorkerConfig {
-	return WorkerConfig{MaxMessageAge: time.Hour, SyncInterval: time.Second, FullReloadInterval: 10 * time.Minute, ErrorNotificationWindow: time.Hour, AsyncWorkers: 20}
+	return WorkerConfig{MaxMessageAge: time.Hour, SyncInterval: time.Second, FullReloadInterval: 10 * time.Minute, TopicGrace: 10 * time.Minute, ErrorNotificationWindow: time.Hour, AsyncWorkers: 20}
 }
 
 // Message is a record of a device or import data topic.
@@ -178,11 +182,14 @@ func (this *Worker) Sync(ctx context.Context) ([]string, error) {
 	return result, nil
 }
 
-// Run syncs the descriptions and restarts the consumer when the set of topics changes.
+// Run syncs the descriptions and restarts the consumer when the set of topics to read changes:
+// at once for a new topic, for a topic no longer named only after TopicGrace.
 func (this *Worker) Run(ctx context.Context) {
 	ticker := time.NewTicker(this.config.SyncInterval)
 	defer ticker.Stop()
 	var current []string
+	// when each topic of current or of the descriptions was last named by a description
+	lastNeeded := map[string]time.Time{}
 	var stop context.CancelFunc
 	defer func() {
 		if stop != nil {
@@ -190,12 +197,12 @@ func (this *Worker) Run(ctx context.Context) {
 		}
 	}()
 	for {
-		topics, err := this.Sync(ctx)
+		needed, err := this.Sync(ctx)
 		if err != nil {
 			if ctx.Err() == nil {
 				this.logger.Warn("unable to read event descriptions", "error", err)
 			}
-		} else if !slices.Equal(topics, current) {
+		} else if topics := this.topicsToRead(current, needed, lastNeeded); !slices.Equal(topics, current) {
 			if stop != nil {
 				stop()
 			}
@@ -205,7 +212,7 @@ func (this *Worker) Run(ctx context.Context) {
 				this.logger.Error("unable to start event consumer", "error", err)
 				current = nil
 			}
-			this.logger.Info("event worker topics", "count", len(topics))
+			this.logger.Info("event worker topics", "count", len(topics), "needed", len(needed))
 		}
 		select {
 		case <-ctx.Done():
@@ -213,6 +220,29 @@ func (this *Worker) Run(ctx context.Context) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// topicsToRead is the sorted set of the needed topics and of the current ones that were needed
+// within TopicGrace; it records the needed topics in lastNeeded and forgets the dropped ones.
+// A message on a topic kept this way finds no description and is dropped by Handle.
+func (this *Worker) topicsToRead(current []string, needed []string, lastNeeded map[string]time.Time) []string {
+	now := this.now()
+	for _, topic := range needed {
+		lastNeeded[topic] = now
+	}
+	result := slices.Clone(needed)
+	for _, topic := range current {
+		if !slices.Contains(needed, topic) && now.Sub(lastNeeded[topic]) < this.config.TopicGrace {
+			result = append(result, topic)
+		}
+	}
+	sort.Strings(result)
+	for topic := range lastNeeded {
+		if !slices.Contains(result, topic) {
+			delete(lastNeeded, topic)
+		}
+	}
+	return result
 }
 
 // startConsumer reads the topics until the returned function is called. A message is handled

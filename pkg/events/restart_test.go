@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -139,5 +140,82 @@ func TestADeploymentIgnoresEventsFromBeforeItWasDeployed(t *testing.T) {
 	e.send(4, "d1", 25.0, time.Now())
 	if e.count(next.Id) != 1.0 {
 		t.Fatalf("an event after the new deployment is correlated: %v", e.count(next.Id))
+	}
+}
+
+// Deployments created and deleted on the same topic, as the canaries of the platform do every
+// few seconds, do not replace the consumer: a topic no description names any more stays
+// subscribed for TopicGrace, and is dropped with one replacement afterwards. Every replacement
+// is a rebalance of the whole consumer group, which stopped the evaluation of all events for up
+// to 30 s in the cluster (PLAN.md, "Performance in the cluster").
+func TestATopicStaysSubscribedForTheGraceAfterItsLastDeployment(t *testing.T) {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	e := newEnv(t)
+	c := e.srv.Controller
+	starts := make(chan consumerStart, 10)
+	consume := func(consumerCtx context.Context, topics []string, handle func(events.Message) error) error {
+		starts <- consumerStart{ctx: consumerCtx, topics: topics, handle: handle}
+		return nil
+	}
+	config := events.DefaultWorkerConfig()
+	config.SyncInterval = 10 * time.Millisecond
+	config.TopicGrace = time.Second
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	worker := events.NewWorker(config, e.srv.Store, events.NewEvaluator(fakeUnmarshaller{}), e.srv.Engine, consume, logger)
+	next := func(within time.Duration) (consumerStart, bool) {
+		t.Helper()
+		select {
+		case s := <-starts:
+			return s, true
+		case <-time.After(within):
+			return consumerStart{}, false
+		}
+	}
+	deploy := func(serviceId string) string {
+		t.Helper()
+		d, err := c.CreateDeployment(ctx, alice, "processes", model.DeploymentInput{Xml: eventProcess(), Selections: map[string]model.Selection{"reading": {DeviceId: "d1", ServiceId: serviceId}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d.Id
+	}
+	remove := func(id string) {
+		t.Helper()
+		if err := c.DeleteDeployment(ctx, alice, "processes", id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deploy("urn:infai:ses:service:event")
+	go worker.Run(runCtx)
+	if s, ok := next(10 * time.Second); !ok || !slices.Equal(s.topics, []string{"urn_infai_ses_service_event"}) {
+		t.Fatalf("the consumer starts with the topic of the deployment: %v %v", ok, s.topics)
+	}
+	churn := deploy("s-other")
+	second, ok := next(10 * time.Second)
+	if !ok || !slices.Equal(second.topics, []string{"s-other", "urn_infai_ses_service_event"}) {
+		t.Fatalf("a new topic replaces the consumer at once: %v %v", ok, second.topics)
+	}
+
+	remove(churn)
+	if s, ok := next(300 * time.Millisecond); ok {
+		t.Fatalf("deleting the last deployment of a topic does not replace the consumer: %v", s.topics)
+	}
+	churn = deploy("s-other")
+	if s, ok := next(300 * time.Millisecond); ok {
+		t.Fatalf("nor does deploying on it again within the grace: %v", s.topics)
+	}
+	if second.ctx.Err() != nil {
+		t.Fatal("the consumer for both topics still runs")
+	}
+
+	remove(churn)
+	third, ok := next(10 * time.Second)
+	if !ok || !slices.Equal(third.topics, []string{"urn_infai_ses_service_event"}) {
+		t.Fatalf("after the grace the consumer is replaced by one without the topic: %v %v", ok, third.topics)
+	}
+	if second.ctx.Err() == nil {
+		t.Error("and the previous consumer is stopped")
 	}
 }
