@@ -18,7 +18,9 @@ package script
 
 import (
 	"errors"
+	"github.com/dop251/goja"
 	"reflect"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"testing"
@@ -183,7 +185,38 @@ func TestRunRefusesBlockedScripts(t *testing.T) {
 
 // The engine runs on goja with its patches (third_party/goja.sh).
 func TestGojaIsPatched(t *testing.T) {
-	if !slices.Contains(GojaPatches, "engine-patches") {
+	if !slices.Contains(GojaPatches, "engine-patches") || !slices.Contains(GojaPatches, "native-depth") || !slices.Contains(GojaPatches, "regexp-timeout") {
 		t.Fatalf("%v", GojaPatches)
+	}
+}
+
+// Values that made goja recurse past the stack and end the process end the run with an error
+// now (third_party/goja-patches, native-depth), also a deep result exported after the run.
+func TestNativeRecursionEndsTheRun(t *testing.T) {
+	defer debug.SetMaxStack(debug.SetMaxStack(64 << 20))
+	for _, src := range []string{
+		crashing,
+		`var a = []; for (var i = 0; i < 300000; i++) a = [a]; String(a)`,
+		`var o = {}; for (var i = 0; i < 300000; i++) o = Object.create(o); o.x`,
+		`var o = {}; for (var i = 0; i < 300000; i++) o = {o: o}; o`,
+		`var o = {}; for (var i = 0; i < 300000; i++) o = {o: o}; log(o)`,
+		`var o = {}; for (var i = 0; i < 300000; i++) o = {o: o}; setVariable("x", o)`,
+	} {
+		// setVariable reports the exported value as too deep with a TypeError of its own
+		var overflow *goja.StackOverflowError
+		if _, err := (&Sandbox{Timeout: 10 * time.Second}).Run(src, nil); !errors.As(err, &overflow) && (err == nil || !strings.Contains(err.Error(), "nested too deeply")) {
+			t.Errorf("%.60v: %v", src, err)
+		}
+	}
+}
+
+// A regular expression that backtracks catastrophically ends the run after a second, instead of
+// running past the script timeout, which does not interrupt a match.
+func TestBacktrackingEndsTheRun(t *testing.T) {
+	start := time.Now()
+	_, err := (&Sandbox{Timeout: time.Minute}).Run(`/^(a+)+(?!x)$/.test("a".repeat(32) + "b")`, nil)
+	var timeout *goja.RegExpTimeoutError
+	if !errors.As(err, &timeout) || time.Since(start) > 5*time.Second {
+		t.Fatalf("%v after %v", err, time.Since(start))
 	}
 }

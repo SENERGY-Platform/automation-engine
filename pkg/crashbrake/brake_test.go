@@ -19,6 +19,7 @@ package crashbrake
 import (
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"reflect"
@@ -44,6 +45,8 @@ func TestChild(t *testing.T) {
 	if mode == "" {
 		t.Skip("started by the tests of this package")
 	}
+	// without goja's bound on native recursion, the script ends the process as it is meant to
+	script.MaxNativeDepth = math.MaxInt32
 	brake, _, err := Open(os.Getenv("CRASHBRAKE_DIR"), nil)
 	if err != nil {
 		t.Fatal(err)

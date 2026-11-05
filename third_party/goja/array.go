@@ -144,9 +144,9 @@ func (a *arrayObject) getIdx(idx valueInt, receiver Value) Value {
 	if prop == nil {
 		if a.prototype != nil {
 			if receiver == nil {
-				return a.prototype.self.getIdx(idx, a.val)
+				return protoGetIdx(a.prototype, idx, a.val)
 			}
-			return a.prototype.self.getIdx(idx, receiver)
+			return protoGetIdx(a.prototype, idx, receiver)
 		}
 	}
 	if prop, ok := prop.(*valueProperty); ok {
@@ -225,7 +225,7 @@ func (a *arrayObject) _setOwnIdx(idx uint32, val Value, throw bool) bool {
 	if prop == nil {
 		if proto := a.prototype; proto != nil {
 			// we know it's foreign because prototype loops are not allowed
-			if res, ok := proto.self.setForeignIdx(valueInt(idx), val, a.val, throw); ok {
+			if res, ok := protoSetForeignIdx(proto, valueInt(idx), val, a.val, throw); ok {
 				return res
 			}
 		}
@@ -343,7 +343,7 @@ func (a *arrayObject) hasPropertyIdx(idx valueInt) bool {
 	}
 
 	if a.prototype != nil {
-		return a.prototype.self.hasPropertyIdx(idx)
+		return protoHasPropertyIdx(a.prototype, idx)
 	}
 
 	return false

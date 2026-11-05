@@ -193,7 +193,7 @@ func (o *templatedObject) hasPropertyStr(name unistring.String) bool {
 	}
 	o.materialiseProto()
 	if o.prototype != nil {
-		return o.prototype.self.hasPropertyStr(name)
+		return protoHasPropertyStr(o.prototype, name)
 	}
 	return false
 }
@@ -204,7 +204,7 @@ func (o *templatedObject) hasPropertySym(s *Symbol) bool {
 	}
 	o.materialiseProto()
 	if o.prototype != nil {
-		return o.prototype.self.hasPropertySym(s)
+		return protoHasPropertySym(o.prototype, s)
 	}
 	return false
 }

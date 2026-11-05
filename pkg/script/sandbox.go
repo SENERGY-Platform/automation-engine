@@ -108,10 +108,27 @@ func Check(src string) error {
 // them keeps the engine from building with goja unpatched, e.g. without the replace in go.mod.
 var GojaPatches = goja.EnginePatches()
 
-// NewRuntime returns a goja runtime that compiles, also for eval and new Function, as Compile.
+// regExpMatchTimeout bounds one match of a regular expression that backtracks, which ignores the
+// interrupt of the script timeout (goja.SetRegExpMatchTimeout): a match that long is
+// catastrophic backtracking, not work, and the run ends with a *goja.RegExpTimeoutError
+const regExpMatchTimeout = time.Second
+
+func init() {
+	// before any script compiles a pattern
+	goja.SetRegExpMatchTimeout(regExpMatchTimeout)
+}
+
+// MaxNativeDepth bounds the recursion of goja's own Go code over values a script builds
+// (goja.SetMaxNativeDepth); zero is goja's default. Past it, the run ends with an error instead of
+// a stack overflow that ends the process. Tests that need such a crash raise it.
+var MaxNativeDepth int
+
+// NewRuntime returns a goja runtime that compiles, also for eval and new Function, as Compile,
+// and bounds its native recursion by MaxNativeDepth.
 func NewRuntime() *goja.Runtime {
 	vm := goja.New()
 	vm.SetParserOptions(parser.WithDisableSourceMaps)
+	vm.SetMaxNativeDepth(MaxNativeDepth)
 	return vm
 }
 
@@ -200,11 +217,29 @@ func (this *Sandbox) normalize(value goja.Value) (any, error) {
 	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
 		return nil, nil
 	}
-	exported := value.Export()
+	exported, err := export(value)
+	if err != nil {
+		return nil, err
+	}
 	if _, isFunc := goja.AssertFunction(value); isFunc {
 		return nil, errors.New("a function is not a valid value")
 	}
 	return Normalize(exported, this.MaxResultBytes)
+}
+
+// export is value.Export outside of a run, where goja panics with a *goja.StackOverflowError for
+// a value nested deeper than its native depth bound
+func export(value goja.Value) (exported any, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			overflow, ok := p.(*goja.StackOverflowError)
+			if !ok {
+				panic(p)
+			}
+			err = fmt.Errorf("value is nested too deeply: %w", overflow)
+		}
+	}()
+	return value.Export(), nil
 }
 
 // Normalize converts a Go value into its JSON form and enforces maxBytes if positive.

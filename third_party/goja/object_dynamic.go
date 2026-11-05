@@ -183,9 +183,9 @@ func (*dynamicObject) className() string {
 func (o *baseDynamicObject) getParentStr(p unistring.String, receiver Value) Value {
 	if proto := o.prototype; proto != nil {
 		if receiver == nil {
-			return proto.self.getStr(p, o.val)
+			return protoGetStr(proto, p, o.val)
 		}
-		return proto.self.getStr(p, receiver)
+		return protoGetStr(proto, p, receiver)
 	}
 	return nil
 }
@@ -201,9 +201,9 @@ func (o *dynamicObject) getStr(p unistring.String, receiver Value) Value {
 func (o *baseDynamicObject) getParentIdx(p valueInt, receiver Value) Value {
 	if proto := o.prototype; proto != nil {
 		if receiver == nil {
-			return proto.self.getIdx(p, o.val)
+			return protoGetIdx(proto, p, o.val)
 		}
-		return proto.self.getIdx(p, receiver)
+		return protoGetIdx(proto, p, receiver)
 	}
 	return nil
 }
@@ -219,9 +219,9 @@ func (o *dynamicObject) getIdx(p valueInt, receiver Value) Value {
 func (o *baseDynamicObject) getSym(p *Symbol, receiver Value) Value {
 	if proto := o.prototype; proto != nil {
 		if receiver == nil {
-			return proto.self.getSym(p, o.val)
+			return protoGetSym(proto, p, o.val)
 		}
-		return proto.self.getSym(p, receiver)
+		return protoGetSym(proto, p, receiver)
 	}
 	return nil
 }
@@ -255,7 +255,7 @@ func (o *dynamicObject) setOwnStr(p unistring.String, v Value, throw bool) bool 
 	if !o.d.Has(prop) {
 		if proto := o.prototype; proto != nil {
 			// we know it's foreign because prototype loops are not allowed
-			if res, handled := proto.self.setForeignStr(p, v, o.val, throw); handled {
+			if res, handled := protoSetForeignStr(proto, p, v, o.val, throw); handled {
 				return res
 			}
 		}
@@ -268,7 +268,7 @@ func (o *dynamicObject) setOwnIdx(p valueInt, v Value, throw bool) bool {
 	if !o.d.Has(prop) {
 		if proto := o.prototype; proto != nil {
 			// we know it's foreign because prototype loops are not allowed
-			if res, handled := proto.self.setForeignIdx(p, v, o.val, throw); handled {
+			if res, handled := protoSetForeignIdx(proto, p, v, o.val, throw); handled {
 				return res
 			}
 		}
@@ -279,7 +279,7 @@ func (o *dynamicObject) setOwnIdx(p valueInt, v Value, throw bool) bool {
 func (o *baseDynamicObject) setOwnSym(s *Symbol, v Value, throw bool) bool {
 	if proto := o.prototype; proto != nil {
 		// we know it's foreign because prototype loops are not allowed
-		if res, handled := proto.self.setForeignSym(s, v, o.val, throw); handled {
+		if res, handled := protoSetForeignSym(proto, s, v, o.val, throw); handled {
 			return res
 		}
 	}
@@ -290,7 +290,7 @@ func (o *baseDynamicObject) setOwnSym(s *Symbol, v Value, throw bool) bool {
 func (o *baseDynamicObject) setParentForeignStr(p unistring.String, v, receiver Value, throw bool) (res bool, handled bool) {
 	if proto := o.prototype; proto != nil {
 		if receiver != proto {
-			return proto.self.setForeignStr(p, v, receiver, throw)
+			return protoSetForeignStr(proto, p, v, receiver, throw)
 		}
 		return proto.self.setOwnStr(p, v, throw), true
 	}
@@ -308,7 +308,7 @@ func (o *dynamicObject) setForeignStr(p unistring.String, v, receiver Value, thr
 func (o *baseDynamicObject) setParentForeignIdx(p valueInt, v, receiver Value, throw bool) (res bool, handled bool) {
 	if proto := o.prototype; proto != nil {
 		if receiver != proto {
-			return proto.self.setForeignIdx(p, v, receiver, throw)
+			return protoSetForeignIdx(proto, p, v, receiver, throw)
 		}
 		return proto.self.setOwnIdx(p, v, throw), true
 	}
@@ -326,7 +326,7 @@ func (o *dynamicObject) setForeignIdx(p valueInt, v, receiver Value, throw bool)
 func (o *baseDynamicObject) setForeignSym(p *Symbol, v, receiver Value, throw bool) (res bool, handled bool) {
 	if proto := o.prototype; proto != nil {
 		if receiver != proto {
-			return proto.self.setForeignSym(p, v, receiver, throw)
+			return protoSetForeignSym(proto, p, v, receiver, throw)
 		}
 		return proto.self.setOwnSym(p, v, throw), true
 	}
@@ -338,7 +338,7 @@ func (o *dynamicObject) hasPropertyStr(u unistring.String) bool {
 		return true
 	}
 	if proto := o.prototype; proto != nil {
-		return proto.self.hasPropertyStr(u)
+		return protoHasPropertyStr(proto, u)
 	}
 	return false
 }
@@ -348,14 +348,14 @@ func (o *dynamicObject) hasPropertyIdx(idx valueInt) bool {
 		return true
 	}
 	if proto := o.prototype; proto != nil {
-		return proto.self.hasPropertyIdx(idx)
+		return protoHasPropertyIdx(proto, idx)
 	}
 	return false
 }
 
 func (o *baseDynamicObject) hasPropertySym(s *Symbol) bool {
 	if proto := o.prototype; proto != nil {
-		return proto.self.hasPropertySym(s)
+		return protoHasPropertySym(proto, s)
 	}
 	return false
 }
@@ -656,7 +656,7 @@ func (a *dynamicArray) hasPropertyStr(u unistring.String) bool {
 		return true
 	}
 	if proto := a.prototype; proto != nil {
-		return proto.self.hasPropertyStr(u)
+		return protoHasPropertyStr(proto, u)
 	}
 	return false
 }
@@ -666,7 +666,7 @@ func (a *dynamicArray) hasPropertyIdx(idx valueInt) bool {
 		return true
 	}
 	if proto := a.prototype; proto != nil {
-		return proto.self.hasPropertyIdx(idx)
+		return protoHasPropertyIdx(proto, idx)
 	}
 	return false
 }

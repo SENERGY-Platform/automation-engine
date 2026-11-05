@@ -129,7 +129,7 @@ func (o *objectGoMapReflect) setOwnStr(name unistring.String, val Value, throw b
 	if !key.IsValid() || !o.fieldsValue.MapIndex(key).IsValid() {
 		if proto := o.prototype; proto != nil {
 			// we know it's foreign because prototype loops are not allowed
-			if res, ok := proto.self.setForeignStr(name, val, o.val, throw); ok {
+			if res, ok := protoSetForeignStr(proto, name, val, o.val, throw); ok {
 				return res
 			}
 		}
@@ -153,7 +153,7 @@ func (o *objectGoMapReflect) setOwnIdx(idx valueInt, val Value, throw bool) bool
 	if !key.IsValid() || !o.fieldsValue.MapIndex(key).IsValid() {
 		if proto := o.prototype; proto != nil {
 			// we know it's foreign because prototype loops are not allowed
-			if res, ok := proto.self.setForeignIdx(idx, val, o.val, throw); ok {
+			if res, ok := protoSetForeignIdx(proto, idx, val, o.val, throw); ok {
 				return res
 			}
 		}

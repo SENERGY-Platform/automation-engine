@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -507,6 +508,8 @@ func TestAttackChild(t *testing.T) {
 	if dir == "" {
 		t.Skip("started by TestAttackOfASmartServiceEndsTheEngineOnce")
 	}
+	// without goja's bound on native recursion, the script ends the process as it is meant to
+	script.MaxNativeDepth = math.MaxInt32
 	s, err := store.Open(ctx, store.SQLite, "file:"+filepath.Join(dir, "engine.db"))
 	if err != nil {
 		t.Fatal(err)

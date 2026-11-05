@@ -141,6 +141,8 @@ type wrappedFuncObject struct {
 type boundFuncObject struct {
 	nativeFuncObject
 	wrapped *Object
+	// the length of the chain of proxies and bound functions it starts (nextWrapperDepth)
+	wrapperDepth int
 }
 
 type generatorState uint8
@@ -1066,6 +1068,9 @@ func (g *generatorObject) nextResult(v Value) (Value, bool) {
 }
 
 func (g *generatorObject) next(v Value) Value {
+	// a yield* chain resumes natively, one level per delegate
+	g.val.runtime.enterNative()
+	defer g.val.runtime.leaveNative()
 	g.validate()
 	if g.state == genStateCompleted {
 		return g.val.runtime.createIterResultObject(_undefined, true)

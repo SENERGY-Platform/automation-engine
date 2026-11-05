@@ -103,9 +103,9 @@ func (a *sparseArrayObject) getIdx(idx valueInt, receiver Value) Value {
 	if prop == nil {
 		if a.prototype != nil {
 			if receiver == nil {
-				return a.prototype.self.getIdx(idx, a.val)
+				return protoGetIdx(a.prototype, idx, a.val)
 			}
-			return a.prototype.self.getIdx(idx, receiver)
+			return protoGetIdx(a.prototype, idx, receiver)
 		}
 	}
 	if prop, ok := prop.(*valueProperty); ok {
@@ -159,7 +159,7 @@ func (a *sparseArrayObject) _setOwnIdx(idx uint32, val Value, throw bool) bool {
 	if prop == nil {
 		if proto := a.prototype; proto != nil {
 			// we know it's foreign because prototype loops are not allowed
-			if res, ok := proto.self.setForeignIdx(valueInt(idx), val, a.val, throw); ok {
+			if res, ok := protoSetForeignIdx(proto, valueInt(idx), val, a.val, throw); ok {
 				return res
 			}
 		}
@@ -308,7 +308,7 @@ func (a *sparseArrayObject) hasPropertyIdx(idx valueInt) bool {
 	}
 
 	if a.prototype != nil {
-		return a.prototype.self.hasPropertyIdx(idx)
+		return protoHasPropertyIdx(a.prototype, idx)
 	}
 
 	return false
@@ -440,7 +440,7 @@ func (a *sparseArrayObject) export(ctx *objectExportCtx) interface{} {
 		idx := item.idx
 		for i := prevIdx; i < idx; i++ {
 			if a.prototype != nil {
-				if v := a.prototype.self.getIdx(valueInt(i), nil); v != nil {
+				if v := protoGetIdx(a.prototype, valueInt(i), nil); v != nil {
 					arr[i] = exportValue(v, ctx)
 				}
 			}
@@ -456,7 +456,7 @@ func (a *sparseArrayObject) export(ctx *objectExportCtx) interface{} {
 	}
 	for i := prevIdx; i < a.length; i++ {
 		if a.prototype != nil {
-			if v := a.prototype.self.getIdx(valueInt(i), nil); v != nil {
+			if v := protoGetIdx(a.prototype, valueInt(i), nil); v != nil {
 				arr[i] = exportValue(v, ctx)
 			}
 		}

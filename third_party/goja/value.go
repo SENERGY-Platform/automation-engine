@@ -1134,6 +1134,11 @@ func (s *Symbol) hash(*maphash.Hash) uint64 {
 }
 
 func exportValue(v Value, ctx *objectExportCtx) interface{} {
+	if o, ok := v.(*Object); ok {
+		// one level per nested value; Export panics with the StackOverflowError past the bound
+		o.runtime.enterNative()
+		defer o.runtime.leaveNative()
+	}
 	if obj, ok := v.(*Object); ok {
 		return obj.self.export(ctx)
 	}

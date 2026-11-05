@@ -19,6 +19,7 @@ package modules
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,6 +39,8 @@ func TestPrescriptCrashChild(t *testing.T) {
 	if dir == "" {
 		t.Skip("started by TestPrescriptThatEndsTheProcessIsNamed")
 	}
+	// without goja's bound on native recursion, the script ends the process as it is meant to
+	script.MaxNativeDepth = math.MaxInt32
 	s := storetest.OpenSQLite(t)
 	instance := instanceWith(t, s, "smart-services")
 	if err := os.WriteFile(filepath.Join(dir, "instance"), []byte(instance), 0o644); err != nil {

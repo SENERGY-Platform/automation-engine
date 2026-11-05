@@ -1,0 +1,821 @@
+diff --git a/array.go b/array.go
+index c8f5f1d..11462c7 100644
+--- a/array.go
++++ b/array.go
+@@ -144,9 +144,9 @@ func (a *arrayObject) getIdx(idx valueInt, receiver Value) Value {
+ 	if prop == nil {
+ 		if a.prototype != nil {
+ 			if receiver == nil {
+-				return a.prototype.self.getIdx(idx, a.val)
++				return protoGetIdx(a.prototype, idx, a.val)
+ 			}
+-			return a.prototype.self.getIdx(idx, receiver)
++			return protoGetIdx(a.prototype, idx, receiver)
+ 		}
+ 	}
+ 	if prop, ok := prop.(*valueProperty); ok {
+@@ -225,7 +225,7 @@ func (a *arrayObject) _setOwnIdx(idx uint32, val Value, throw bool) bool {
+ 	if prop == nil {
+ 		if proto := a.prototype; proto != nil {
+ 			// we know it's foreign because prototype loops are not allowed
+-			if res, ok := proto.self.setForeignIdx(valueInt(idx), val, a.val, throw); ok {
++			if res, ok := protoSetForeignIdx(proto, valueInt(idx), val, a.val, throw); ok {
+ 				return res
+ 			}
+ 		}
+@@ -343,7 +343,7 @@ func (a *arrayObject) hasPropertyIdx(idx valueInt) bool {
+ 	}
+ 
+ 	if a.prototype != nil {
+-		return a.prototype.self.hasPropertyIdx(idx)
++		return protoHasPropertyIdx(a.prototype, idx)
+ 	}
+ 
+ 	return false
+diff --git a/array_sparse.go b/array_sparse.go
+index 671300e..f88b192 100644
+--- a/array_sparse.go
++++ b/array_sparse.go
+@@ -103,9 +103,9 @@ func (a *sparseArrayObject) getIdx(idx valueInt, receiver Value) Value {
+ 	if prop == nil {
+ 		if a.prototype != nil {
+ 			if receiver == nil {
+-				return a.prototype.self.getIdx(idx, a.val)
++				return protoGetIdx(a.prototype, idx, a.val)
+ 			}
+-			return a.prototype.self.getIdx(idx, receiver)
++			return protoGetIdx(a.prototype, idx, receiver)
+ 		}
+ 	}
+ 	if prop, ok := prop.(*valueProperty); ok {
+@@ -159,7 +159,7 @@ func (a *sparseArrayObject) _setOwnIdx(idx uint32, val Value, throw bool) bool {
+ 	if prop == nil {
+ 		if proto := a.prototype; proto != nil {
+ 			// we know it's foreign because prototype loops are not allowed
+-			if res, ok := proto.self.setForeignIdx(valueInt(idx), val, a.val, throw); ok {
++			if res, ok := protoSetForeignIdx(proto, valueInt(idx), val, a.val, throw); ok {
+ 				return res
+ 			}
+ 		}
+@@ -308,7 +308,7 @@ func (a *sparseArrayObject) hasPropertyIdx(idx valueInt) bool {
+ 	}
+ 
+ 	if a.prototype != nil {
+-		return a.prototype.self.hasPropertyIdx(idx)
++		return protoHasPropertyIdx(a.prototype, idx)
+ 	}
+ 
+ 	return false
+@@ -440,7 +440,7 @@ func (a *sparseArrayObject) export(ctx *objectExportCtx) interface{} {
+ 		idx := item.idx
+ 		for i := prevIdx; i < idx; i++ {
+ 			if a.prototype != nil {
+-				if v := a.prototype.self.getIdx(valueInt(i), nil); v != nil {
++				if v := protoGetIdx(a.prototype, valueInt(i), nil); v != nil {
+ 					arr[i] = exportValue(v, ctx)
+ 				}
+ 			}
+@@ -456,7 +456,7 @@ func (a *sparseArrayObject) export(ctx *objectExportCtx) interface{} {
+ 	}
+ 	for i := prevIdx; i < a.length; i++ {
+ 		if a.prototype != nil {
+-			if v := a.prototype.self.getIdx(valueInt(i), nil); v != nil {
++			if v := protoGetIdx(a.prototype, valueInt(i), nil); v != nil {
+ 				arr[i] = exportValue(v, ctx)
+ 			}
+ 		}
+diff --git a/builtin_array.go b/builtin_array.go
+index 1609eeb..67ffd8c 100644
+--- a/builtin_array.go
++++ b/builtin_array.go
+@@ -266,6 +266,8 @@ func (r *Runtime) writeItemLocaleString(item Value, buf *StringBuilder) {
+ }
+ 
+ func (r *Runtime) arrayproto_toLocaleString(call FunctionCall) Value {
++	r.enterNative()
++	defer r.leaveNative()
+ 	array := call.This.ToObject(r)
+ 
+ 	if r.pushToStringStack(array) {
+@@ -1203,6 +1205,8 @@ func (r *Runtime) arrayproto_flat(call FunctionCall) Value {
+ }
+ 
+ func (r *Runtime) flattenIntoArray(target, source *Object, sourceLen, start, depth int64, mapperFunction func(FunctionCall) Value, thisArg Value) int64 {
++	r.enterNative()
++	defer r.leaveNative()
+ 	targetIndex, sourceIndex := start, int64(0)
+ 	for sourceIndex < sourceLen {
+ 		p := intToValue(sourceIndex)
+diff --git a/builtin_function.go b/builtin_function.go
+index 2dc8228..7f1f2fc 100644
+--- a/builtin_function.go
++++ b/builtin_function.go
+@@ -155,6 +155,7 @@ func (r *Runtime) boundConstruct(f *Object, target func([]Value, *Object) *Objec
+ 
+ func (r *Runtime) functionproto_bind(call FunctionCall) Value {
+ 	obj := r.toObject(call.This)
++	wrapperDepth := r.nextWrapperDepth(obj)
+ 
+ 	fcall := r.toCallable(call.This)
+ 	construct := obj.self.assertConstructor()
+@@ -200,6 +201,7 @@ lenNotInt:
+ 	bf := &boundFuncObject{
+ 		nativeFuncObject: *ff,
+ 		wrapped:          obj,
++		wrapperDepth:     wrapperDepth,
+ 	}
+ 	bf.prototype = obj.self.proto()
+ 	v.self = bf
+diff --git a/builtin_json.go b/builtin_json.go
+index 95fe424..21a833c 100644
+--- a/builtin_json.go
++++ b/builtin_json.go
+@@ -138,6 +138,8 @@ func (r *Runtime) builtinJSON_decodeArray(d *json.Decoder) (*Object, error) {
+ }
+ 
+ func (r *Runtime) builtinJSON_reviveWalk(reviver func(FunctionCall) Value, holder *Object, name Value) Value {
++	r.enterNative()
++	defer r.leaveNative()
+ 	value := nilSafe(holder.get(name, nil))
+ 
+ 	if object, ok := value.(*Object); ok {
+@@ -391,6 +393,8 @@ func (ctx *_builtinJSON_stringifyContext) str(key Value, holder *Object) bool {
+ }
+ 
+ func (ctx *_builtinJSON_stringifyContext) ja(array *Object) {
++	ctx.r.enterNative()
++	defer ctx.r.leaveNative()
+ 	var stepback string
+ 	if ctx.gap != "" {
+ 		stepback = ctx.indent
+@@ -429,6 +433,8 @@ func (ctx *_builtinJSON_stringifyContext) ja(array *Object) {
+ }
+ 
+ func (ctx *_builtinJSON_stringifyContext) jo(object *Object) {
++	ctx.r.enterNative()
++	defer ctx.r.leaveNative()
+ 	var stepback string
+ 	if ctx.gap != "" {
+ 		stepback = ctx.indent
+diff --git b/engine_depth.go b/engine_depth.go
+new file mode 100644
+index 0000000..fc6f095
+--- /dev/null
++++ b/engine_depth.go
+@@ -0,0 +1,141 @@
++package goja
++
++import (
++	"github.com/dop251/goja/unistring"
++)
++
++func init() {
++	enginePatches = append(enginePatches, "native-depth")
++}
++
++// DefaultMaxNativeDepth bounds the recursion of goja's own Go code over values a script builds
++// unless SetMaxNativeDepth sets another bound. A level takes up to a few kilobytes of stack.
++const DefaultMaxNativeDepth = 10000
++
++// SetMaxNativeDepth bounds the recursion of goja's own Go code over values a script builds: a
++// native as an object's own toString, a nested array turned into text or JSON, a long prototype,
++// proxy or bound function chain, a yield* chain, a deep value exported to Go. SetMaxCallStackSize
++// counts JavaScript frames only, so that such a recursion overflowed the goroutine stack, a fatal
++// error that ends the process. Past the bound, the run ends with a *StackOverflowError, which a
++// script cannot catch; Export panics with it. Chains of proxies and bound functions longer than
++// the bound are refused when created, with a RangeError. Zero or less is DefaultMaxNativeDepth.
++func (r *Runtime) SetMaxNativeDepth(depth int) {
++	r.maxNativeDepth = depth
++}
++
++func (r *Runtime) nativeDepthLimit() int {
++	if r.maxNativeDepth <= 0 {
++		return DefaultMaxNativeDepth
++	}
++	return r.maxNativeDepth
++}
++
++// enterNative counts a level of native recursion; the caller defers leaveNative
++func (r *Runtime) enterNative() {
++	r.nativeDepth++
++	if r.nativeDepth > r.nativeDepthLimit() {
++		r.nativeDepth--
++		ex := &StackOverflowError{}
++		ex.stack = r.vm.captureStack(nil, 0)
++		panic(ex)
++	}
++}
++
++func (r *Runtime) leaveNative() {
++	r.nativeDepth--
++}
++
++// wrapperDepth is the length of the chain of proxies and bound functions an object starts, which
++// every operation on it follows natively; their targets cannot change, so that it is exact
++func wrapperDepth(o *Object) int {
++	switch w := o.self.(type) {
++	case *proxyObject:
++		return w.wrapperDepth
++	case *boundFuncObject:
++		return w.wrapperDepth
++	}
++	return 0
++}
++
++// nextWrapperDepth returns the depth of a proxy or bound function around target, and refuses a
++// chain longer than the bound
++func (r *Runtime) nextWrapperDepth(target *Object) int {
++	depth := wrapperDepth(target) + 1
++	if depth > r.nativeDepthLimit() {
++		panic(r.newErrorf(r.getRangeError(), "Maximum chain of %d proxies and bound functions exceeded", r.nativeDepthLimit()))
++	}
++	return depth
++}
++
++// The steps to a prototype, counted: a script can build a chain of millions of prototypes, which
++// every lookup, assignment and in check on it walks recursively.
++
++func protoGet(p *Object, name, receiver Value) Value {
++	r := p.runtime
++	r.enterNative()
++	defer r.leaveNative()
++	return p.get(name, receiver)
++}
++
++func protoGetStr(p *Object, name unistring.String, receiver Value) Value {
++	r := p.runtime
++	r.enterNative()
++	defer r.leaveNative()
++	return p.self.getStr(name, receiver)
++}
++
++func protoGetIdx(p *Object, idx valueInt, receiver Value) Value {
++	r := p.runtime
++	r.enterNative()
++	defer r.leaveNative()
++	return p.self.getIdx(idx, receiver)
++}
++
++func protoGetSym(p *Object, s *Symbol, receiver Value) Value {
++	r := p.runtime
++	r.enterNative()
++	defer r.leaveNative()
++	return p.self.getSym(s, receiver)
++}
++
++func protoSetForeignStr(p *Object, name unistring.String, val, receiver Value, throw bool) (bool, bool) {
++	r := p.runtime
++	r.enterNative()
++	defer r.leaveNative()
++	return p.self.setForeignStr(name, val, receiver, throw)
++}
++
++func protoSetForeignIdx(p *Object, idx valueInt, val, receiver Value, throw bool) (bool, bool) {
++	r := p.runtime
++	r.enterNative()
++	defer r.leaveNative()
++	return p.self.setForeignIdx(idx, val, receiver, throw)
++}
++
++func protoSetForeignSym(p *Object, s *Symbol, val, receiver Value, throw bool) (bool, bool) {
++	r := p.runtime
++	r.enterNative()
++	defer r.leaveNative()
++	return p.self.setForeignSym(s, val, receiver, throw)
++}
++
++func protoHasPropertyStr(p *Object, name unistring.String) bool {
++	r := p.runtime
++	r.enterNative()
++	defer r.leaveNative()
++	return p.self.hasPropertyStr(name)
++}
++
++func protoHasPropertyIdx(p *Object, idx valueInt) bool {
++	r := p.runtime
++	r.enterNative()
++	defer r.leaveNative()
++	return p.self.hasPropertyIdx(idx)
++}
++
++func protoHasPropertySym(p *Object, s *Symbol) bool {
++	r := p.runtime
++	r.enterNative()
++	defer r.leaveNative()
++	return p.self.hasPropertySym(s)
++}
+diff --git b/engine_depth_test.go b/engine_depth_test.go
+new file mode 100644
+index 0000000..a754a97
+--- /dev/null
++++ b/engine_depth_test.go
+@@ -0,0 +1,85 @@
++package goja
++
++import (
++	"errors"
++	"os"
++	"os/exec"
++	"runtime/debug"
++	"strings"
++	"testing"
++)
++
++// shapes a script builds to make goja's own Go code recurse past the goroutine stack; each runs
++// with a stack cap of 64 MB, which they overflow by far without a bound on that recursion
++var nativeDepthShapes = map[string]string{
++	"native as own toString":          `var o = {}; o.toString = String.prototype.trim; String(o)`,
++	"native as own toPrimitive":       `var o = {}; o[Symbol.toPrimitive] = String.prototype.trim; String(o)`,
++	"error named by itself":           `var e = new Error(); e.name = e; String(e)`,
++	"nested array to string":          `var a = []; for (var i = 0; i < 300000; i++) a = [a]; String(a)`,
++	"nested array joined":             `var a = []; for (var i = 0; i < 300000; i++) a = [a]; a.join()`,
++	"nested array in template":        "var a = []; for (var i = 0; i < 300000; i++) a = [a]; `${a}`",
++	"nested array sorted":             `var a = []; for (var i = 0; i < 300000; i++) a = [a]; [a, []].sort()`,
++	"nested array toLocaleString":     `var a = []; for (var i = 0; i < 300000; i++) a = [a]; a.toLocaleString()`,
++	"nested array flat":               `var a = []; for (var i = 0; i < 1000000; i++) a = [a]; a.flat(Infinity)`,
++	"nested array stringified":        `var a = []; for (var i = 0; i < 300000; i++) a = [a]; JSON.stringify(a)`,
++	"yield* chain":                    `var it = (function* () { yield 1 })(); for (var i = 0; i < 300000; i++) it = (function* (inner) { yield* inner })(it); it.next()`,
++	"proxy chain set":                 `var p = {}; for (var i = 0; i < 500000; i++) p = new Proxy(p, {}); p.x = 1`,
++	"prototype chain set":             `var o = {}; for (var i = 0; i < 1500000; i++) o = Object.create(o); o.x = 1`,
++	"reviver injects a deep value":    `JSON.parse('{"a": 1, "b": 2}', function (k, v) { if (k === "a") { var d = {}; for (var i = 0; i < 1000000; i++) d = {d: d}; this.b = d } return v })`,
++	"deep object exported":            `var o = {}; for (var i = 0; i < 1500000; i++) o = {o: o}; o`,
++	"deep array exported":             `var a = []; for (var i = 0; i < 1500000; i++) a = [a]; a`,
++	"prototype chain get":             `var o = {}; for (var i = 0; i < 1500000; i++) o = Object.create(o); o.x`,
++	"prototype chain has":             `var o = {}; for (var i = 0; i < 1500000; i++) o = Object.create(o); "x" in o`,
++	"prototype chain index set":       `var o = {}; for (var i = 0; i < 1500000; i++) o = Object.create(o); o[1] = 1`,
++	"prototype chain symbol get":      `var o = {}; for (var i = 0; i < 1500000; i++) o = Object.create(o); o[Symbol.iterator]`,
++	"proxy chain get":                 `var p = {}; for (var i = 0; i < 500000; i++) p = new Proxy(p, {}); p.x`,
++	"proxy chain has":                 `var p = {}; for (var i = 0; i < 500000; i++) p = new Proxy(p, {}); "x" in p`,
++	"proxy chain delete":              `var p = {}; for (var i = 0; i < 500000; i++) p = new Proxy(p, {}); delete p.x`,
++	"proxy chain keys":                `var p = {}; for (var i = 0; i < 500000; i++) p = new Proxy(p, {}); Object.keys(p)`,
++	"proxy chain call":                `var f = function () {}; for (var i = 0; i < 500000; i++) f = new Proxy(f, {}); f()`,
++	"proxy chain isArray":             `var p = []; for (var i = 0; i < 500000; i++) p = new Proxy(p, {}); Array.isArray(p)`,
++	"proxy chain prototype":           `var p = {}; for (var i = 0; i < 500000; i++) p = new Proxy(p, {}); Object.getPrototypeOf(p)`,
++	"bound function chain call":       `var f = function () {}; for (var i = 0; i < 1000000; i++) f = f.bind(null); f()`,
++	"bound function chain instanceof": `var f = function () {}; for (var i = 0; i < 1000000; i++) f = f.bind(null); ({}) instanceof f`,
++	"bound function chain new":        `var f = function () {}; for (var i = 0; i < 1000000; i++) f = f.bind(null); new f()`,
++}
++
++// Every shape ends its run with a StackOverflowError instead of the process, or is refused when it
++// builds a chain of proxies or bound functions; the export of a deep result panics with one, which
++// the caller recovers from.
++func TestEngineNativeDepth(t *testing.T) {
++	if name := os.Getenv("GOJA_DEPTH_SHAPE"); name != "" {
++		debug.SetMaxStack(64 << 20)
++		vm := New()
++		value, err := vm.RunString(nativeDepthShapes[name])
++		if strings.HasSuffix(name, "exported") && err == nil {
++			err = func() (err error) {
++				defer func() {
++					if p := recover(); p != nil {
++						err, _ = p.(error)
++					}
++				}()
++				value.Export()
++				return nil
++			}()
++		}
++		var overflow *StackOverflowError
++		var exception *Exception
++		refused := errors.As(err, &exception) && strings.Contains(exception.Error(), "Maximum chain of 10000 proxies and bound functions exceeded")
++		if !errors.As(err, &overflow) && !refused {
++			t.Fatalf("expected a StackOverflowError or a refused chain, got %v", err)
++		}
++		return
++	}
++	for name := range nativeDepthShapes {
++		t.Run(name, func(t *testing.T) {
++			cmd := exec.Command(os.Args[0], "-test.run=^TestEngineNativeDepth$")
++			cmd.Env = append(os.Environ(), "GOJA_DEPTH_SHAPE="+name)
++			out, err := cmd.CombinedOutput()
++			if err != nil {
++				lines := strings.SplitN(string(out), "\n", 4)
++				t.Errorf("%v: %v", err, strings.Join(lines[:min(3, len(lines))], " | "))
++			}
++		})
++	}
++}
+diff --git a/func.go b/func.go
+index 1f083d3..1daa4b3 100644
+--- a/func.go
++++ b/func.go
+@@ -141,6 +141,8 @@ type wrappedFuncObject struct {
+ type boundFuncObject struct {
+ 	nativeFuncObject
+ 	wrapped *Object
++	// the length of the chain of proxies and bound functions it starts (nextWrapperDepth)
++	wrapperDepth int
+ }
+ 
+ type generatorState uint8
+@@ -1066,6 +1068,9 @@ func (g *generatorObject) nextResult(v Value) (Value, bool) {
+ }
+ 
+ func (g *generatorObject) next(v Value) Value {
++	// a yield* chain resumes natively, one level per delegate
++	g.val.runtime.enterNative()
++	defer g.val.runtime.leaveNative()
+ 	g.validate()
+ 	if g.state == genStateCompleted {
+ 		return g.val.runtime.createIterResultObject(_undefined, true)
+diff --git a/object.go b/object.go
+index 7696675..8bce46c 100644
+--- a/object.go
++++ b/object.go
+@@ -293,7 +293,7 @@ func (o *baseObject) hasPropertyStr(name unistring.String) bool {
+ 		return true
+ 	}
+ 	if o.prototype != nil {
+-		return o.prototype.self.hasPropertyStr(name)
++		return protoHasPropertyStr(o.prototype, name)
+ 	}
+ 	return false
+ }
+@@ -307,7 +307,7 @@ func (o *baseObject) hasPropertySym(s *Symbol) bool {
+ 		return true
+ 	}
+ 	if o.prototype != nil {
+-		return o.prototype.self.hasPropertySym(s)
++		return protoHasPropertySym(o.prototype, s)
+ 	}
+ 	return false
+ }
+@@ -315,9 +315,9 @@ func (o *baseObject) hasPropertySym(s *Symbol) bool {
+ func (o *baseObject) getWithOwnProp(prop, p, receiver Value) Value {
+ 	if prop == nil && o.prototype != nil {
+ 		if receiver == nil {
+-			return o.prototype.get(p, o.val)
++			return protoGet(o.prototype, p, o.val)
+ 		}
+-		return o.prototype.get(p, receiver)
++		return protoGet(o.prototype, p, receiver)
+ 	}
+ 	if prop, ok := prop.(*valueProperty); ok {
+ 		if receiver == nil {
+@@ -331,9 +331,9 @@ func (o *baseObject) getWithOwnProp(prop, p, receiver Value) Value {
+ func (o *baseObject) getStrWithOwnProp(prop Value, name unistring.String, receiver Value) Value {
+ 	if prop == nil && o.prototype != nil {
+ 		if receiver == nil {
+-			return o.prototype.self.getStr(name, o.val)
++			return protoGetStr(o.prototype, name, o.val)
+ 		}
+-		return o.prototype.self.getStr(name, receiver)
++		return protoGetStr(o.prototype, name, receiver)
+ 	}
+ 	if prop, ok := prop.(*valueProperty); ok {
+ 		if receiver == nil {
+@@ -357,9 +357,9 @@ func (o *baseObject) getStr(name unistring.String, receiver Value) Value {
+ 	if prop == nil {
+ 		if o.prototype != nil {
+ 			if receiver == nil {
+-				return o.prototype.self.getStr(name, o.val)
++				return protoGetStr(o.prototype, name, o.val)
+ 			}
+-			return o.prototype.self.getStr(name, receiver)
++			return protoGetStr(o.prototype, name, receiver)
+ 		}
+ 	}
+ 	if prop, ok := prop.(*valueProperty); ok {
+@@ -489,7 +489,7 @@ func (o *baseObject) setOwnStr(name unistring.String, val Value, throw bool) boo
+ 	if ownDesc == nil {
+ 		if proto := o.prototype; proto != nil {
+ 			// we know it's foreign because prototype loops are not allowed
+-			if res, handled := proto.self.setForeignStr(name, val, o.val, throw); handled {
++			if res, handled := protoSetForeignStr(proto, name, val, o.val, throw); handled {
+ 				return res
+ 			}
+ 		}
+@@ -529,7 +529,7 @@ func (o *baseObject) setOwnSym(name *Symbol, val Value, throw bool) bool {
+ 	if ownDesc == nil {
+ 		if proto := o.prototype; proto != nil {
+ 			// we know it's foreign because prototype loops are not allowed
+-			if res, handled := proto.self.setForeignSym(name, val, o.val, throw); handled {
++			if res, handled := protoSetForeignSym(proto, name, val, o.val, throw); handled {
+ 				return res
+ 			}
+ 		}
+@@ -573,7 +573,7 @@ func (o *baseObject) _setForeignStr(name unistring.String, prop, val, receiver V
+ 	} else {
+ 		if proto := o.prototype; proto != nil {
+ 			if receiver != proto {
+-				return proto.self.setForeignStr(name, val, receiver, throw)
++				return protoSetForeignStr(proto, name, val, receiver, throw)
+ 			}
+ 			return proto.self.setOwnStr(name, val, throw), true
+ 		}
+@@ -596,7 +596,7 @@ func (o *baseObject) _setForeignIdx(idx valueInt, prop, val, receiver Value, thr
+ 	} else {
+ 		if proto := o.prototype; proto != nil {
+ 			if receiver != proto {
+-				return proto.self.setForeignIdx(idx, val, receiver, throw)
++				return protoSetForeignIdx(proto, idx, val, receiver, throw)
+ 			}
+ 			return proto.self.setOwnIdx(idx, val, throw), true
+ 		}
+@@ -637,7 +637,7 @@ func (o *baseObject) setForeignSym(name *Symbol, val, receiver Value, throw bool
+ 	} else {
+ 		if proto := o.prototype; proto != nil {
+ 			if receiver != o.val {
+-				return proto.self.setForeignSym(name, val, receiver, throw)
++				return protoSetForeignSym(proto, name, val, receiver, throw)
+ 			}
+ 			return proto.self.setOwnSym(name, val, throw), true
+ 		}
+@@ -914,6 +914,9 @@ func (o *Object) tryExoticToPrimitive(hint Value) Value {
+ }
+ 
+ func (o *Object) toPrimitiveNumber() Value {
++	// a native as toString or Symbol.toPrimitive converts its receiver again, natively
++	o.runtime.enterNative()
++	defer o.runtime.leaveNative()
+ 	if v := o.tryExoticToPrimitive(hintNumber); v != nil {
+ 		return v
+ 	}
+@@ -922,6 +925,8 @@ func (o *Object) toPrimitiveNumber() Value {
+ }
+ 
+ func (o *Object) toPrimitiveString() Value {
++	o.runtime.enterNative()
++	defer o.runtime.leaveNative()
+ 	if v := o.tryExoticToPrimitive(hintString); v != nil {
+ 		return v
+ 	}
+@@ -930,6 +935,8 @@ func (o *Object) toPrimitiveString() Value {
+ }
+ 
+ func (o *Object) toPrimitive() Value {
++	o.runtime.enterNative()
++	defer o.runtime.leaveNative()
+ 	if v := o.tryExoticToPrimitive(hintDefault); v != nil {
+ 		return v
+ 	}
+diff --git a/object_dynamic.go b/object_dynamic.go
+index b1e3161..6709efe 100644
+--- a/object_dynamic.go
++++ b/object_dynamic.go
+@@ -183,9 +183,9 @@ func (*dynamicObject) className() string {
+ func (o *baseDynamicObject) getParentStr(p unistring.String, receiver Value) Value {
+ 	if proto := o.prototype; proto != nil {
+ 		if receiver == nil {
+-			return proto.self.getStr(p, o.val)
++			return protoGetStr(proto, p, o.val)
+ 		}
+-		return proto.self.getStr(p, receiver)
++		return protoGetStr(proto, p, receiver)
+ 	}
+ 	return nil
+ }
+@@ -201,9 +201,9 @@ func (o *dynamicObject) getStr(p unistring.String, receiver Value) Value {
+ func (o *baseDynamicObject) getParentIdx(p valueInt, receiver Value) Value {
+ 	if proto := o.prototype; proto != nil {
+ 		if receiver == nil {
+-			return proto.self.getIdx(p, o.val)
++			return protoGetIdx(proto, p, o.val)
+ 		}
+-		return proto.self.getIdx(p, receiver)
++		return protoGetIdx(proto, p, receiver)
+ 	}
+ 	return nil
+ }
+@@ -219,9 +219,9 @@ func (o *dynamicObject) getIdx(p valueInt, receiver Value) Value {
+ func (o *baseDynamicObject) getSym(p *Symbol, receiver Value) Value {
+ 	if proto := o.prototype; proto != nil {
+ 		if receiver == nil {
+-			return proto.self.getSym(p, o.val)
++			return protoGetSym(proto, p, o.val)
+ 		}
+-		return proto.self.getSym(p, receiver)
++		return protoGetSym(proto, p, receiver)
+ 	}
+ 	return nil
+ }
+@@ -255,7 +255,7 @@ func (o *dynamicObject) setOwnStr(p unistring.String, v Value, throw bool) bool
+ 	if !o.d.Has(prop) {
+ 		if proto := o.prototype; proto != nil {
+ 			// we know it's foreign because prototype loops are not allowed
+-			if res, handled := proto.self.setForeignStr(p, v, o.val, throw); handled {
++			if res, handled := protoSetForeignStr(proto, p, v, o.val, throw); handled {
+ 				return res
+ 			}
+ 		}
+@@ -268,7 +268,7 @@ func (o *dynamicObject) setOwnIdx(p valueInt, v Value, throw bool) bool {
+ 	if !o.d.Has(prop) {
+ 		if proto := o.prototype; proto != nil {
+ 			// we know it's foreign because prototype loops are not allowed
+-			if res, handled := proto.self.setForeignIdx(p, v, o.val, throw); handled {
++			if res, handled := protoSetForeignIdx(proto, p, v, o.val, throw); handled {
+ 				return res
+ 			}
+ 		}
+@@ -279,7 +279,7 @@ func (o *dynamicObject) setOwnIdx(p valueInt, v Value, throw bool) bool {
+ func (o *baseDynamicObject) setOwnSym(s *Symbol, v Value, throw bool) bool {
+ 	if proto := o.prototype; proto != nil {
+ 		// we know it's foreign because prototype loops are not allowed
+-		if res, handled := proto.self.setForeignSym(s, v, o.val, throw); handled {
++		if res, handled := protoSetForeignSym(proto, s, v, o.val, throw); handled {
+ 			return res
+ 		}
+ 	}
+@@ -290,7 +290,7 @@ func (o *baseDynamicObject) setOwnSym(s *Symbol, v Value, throw bool) bool {
+ func (o *baseDynamicObject) setParentForeignStr(p unistring.String, v, receiver Value, throw bool) (res bool, handled bool) {
+ 	if proto := o.prototype; proto != nil {
+ 		if receiver != proto {
+-			return proto.self.setForeignStr(p, v, receiver, throw)
++			return protoSetForeignStr(proto, p, v, receiver, throw)
+ 		}
+ 		return proto.self.setOwnStr(p, v, throw), true
+ 	}
+@@ -308,7 +308,7 @@ func (o *dynamicObject) setForeignStr(p unistring.String, v, receiver Value, thr
+ func (o *baseDynamicObject) setParentForeignIdx(p valueInt, v, receiver Value, throw bool) (res bool, handled bool) {
+ 	if proto := o.prototype; proto != nil {
+ 		if receiver != proto {
+-			return proto.self.setForeignIdx(p, v, receiver, throw)
++			return protoSetForeignIdx(proto, p, v, receiver, throw)
+ 		}
+ 		return proto.self.setOwnIdx(p, v, throw), true
+ 	}
+@@ -326,7 +326,7 @@ func (o *dynamicObject) setForeignIdx(p valueInt, v, receiver Value, throw bool)
+ func (o *baseDynamicObject) setForeignSym(p *Symbol, v, receiver Value, throw bool) (res bool, handled bool) {
+ 	if proto := o.prototype; proto != nil {
+ 		if receiver != proto {
+-			return proto.self.setForeignSym(p, v, receiver, throw)
++			return protoSetForeignSym(proto, p, v, receiver, throw)
+ 		}
+ 		return proto.self.setOwnSym(p, v, throw), true
+ 	}
+@@ -338,7 +338,7 @@ func (o *dynamicObject) hasPropertyStr(u unistring.String) bool {
+ 		return true
+ 	}
+ 	if proto := o.prototype; proto != nil {
+-		return proto.self.hasPropertyStr(u)
++		return protoHasPropertyStr(proto, u)
+ 	}
+ 	return false
+ }
+@@ -348,14 +348,14 @@ func (o *dynamicObject) hasPropertyIdx(idx valueInt) bool {
+ 		return true
+ 	}
+ 	if proto := o.prototype; proto != nil {
+-		return proto.self.hasPropertyIdx(idx)
++		return protoHasPropertyIdx(proto, idx)
+ 	}
+ 	return false
+ }
+ 
+ func (o *baseDynamicObject) hasPropertySym(s *Symbol) bool {
+ 	if proto := o.prototype; proto != nil {
+-		return proto.self.hasPropertySym(s)
++		return protoHasPropertySym(proto, s)
+ 	}
+ 	return false
+ }
+@@ -656,7 +656,7 @@ func (a *dynamicArray) hasPropertyStr(u unistring.String) bool {
+ 		return true
+ 	}
+ 	if proto := a.prototype; proto != nil {
+-		return proto.self.hasPropertyStr(u)
++		return protoHasPropertyStr(proto, u)
+ 	}
+ 	return false
+ }
+@@ -666,7 +666,7 @@ func (a *dynamicArray) hasPropertyIdx(idx valueInt) bool {
+ 		return true
+ 	}
+ 	if proto := a.prototype; proto != nil {
+-		return proto.self.hasPropertyIdx(idx)
++		return protoHasPropertyIdx(proto, idx)
+ 	}
+ 	return false
+ }
+diff --git a/object_gomap.go b/object_gomap.go
+index 82138c2..ed6cbb8 100644
+--- a/object_gomap.go
++++ b/object_gomap.go
+@@ -48,7 +48,7 @@ func (o *objectGoMapSimple) setOwnStr(name unistring.String, val Value, throw bo
+ 	}
+ 	if proto := o.prototype; proto != nil {
+ 		// we know it's foreign because prototype loops are not allowed
+-		if res, ok := proto.self.setForeignStr(name, val, o.val, throw); ok {
++		if res, ok := protoSetForeignStr(proto, name, val, o.val, throw); ok {
+ 			return res
+ 		}
+ 	}
+diff --git a/object_gomap_reflect.go b/object_gomap_reflect.go
+index d4c1a06..59f6993 100644
+--- a/object_gomap_reflect.go
++++ b/object_gomap_reflect.go
+@@ -129,7 +129,7 @@ func (o *objectGoMapReflect) setOwnStr(name unistring.String, val Value, throw b
+ 	if !key.IsValid() || !o.fieldsValue.MapIndex(key).IsValid() {
+ 		if proto := o.prototype; proto != nil {
+ 			// we know it's foreign because prototype loops are not allowed
+-			if res, ok := proto.self.setForeignStr(name, val, o.val, throw); ok {
++			if res, ok := protoSetForeignStr(proto, name, val, o.val, throw); ok {
+ 				return res
+ 			}
+ 		}
+@@ -153,7 +153,7 @@ func (o *objectGoMapReflect) setOwnIdx(idx valueInt, val Value, throw bool) bool
+ 	if !key.IsValid() || !o.fieldsValue.MapIndex(key).IsValid() {
+ 		if proto := o.prototype; proto != nil {
+ 			// we know it's foreign because prototype loops are not allowed
+-			if res, ok := proto.self.setForeignIdx(idx, val, o.val, throw); ok {
++			if res, ok := protoSetForeignIdx(proto, idx, val, o.val, throw); ok {
+ 				return res
+ 			}
+ 		}
+diff --git a/object_goslice.go b/object_goslice.go
+index 1a52207..c4d61ed 100644
+--- a/object_goslice.go
++++ b/object_goslice.go
+@@ -66,9 +66,9 @@ func (o *objectGoSlice) getIdx(idx valueInt, receiver Value) Value {
+ 	}
+ 	if o.prototype != nil {
+ 		if receiver == nil {
+-			return o.prototype.self.getIdx(idx, o.val)
++			return protoGetIdx(o.prototype, idx, o.val)
+ 		}
+-		return o.prototype.self.getIdx(idx, receiver)
++		return protoGetIdx(o.prototype, idx, receiver)
+ 	}
+ 	return nil
+ }
+diff --git a/object_template.go b/object_template.go
+index e8c5c07..8cedeab 100644
+--- a/object_template.go
++++ b/object_template.go
+@@ -193,7 +193,7 @@ func (o *templatedObject) hasPropertyStr(name unistring.String) bool {
+ 	}
+ 	o.materialiseProto()
+ 	if o.prototype != nil {
+-		return o.prototype.self.hasPropertyStr(name)
++		return protoHasPropertyStr(o.prototype, name)
+ 	}
+ 	return false
+ }
+@@ -204,7 +204,7 @@ func (o *templatedObject) hasPropertySym(s *Symbol) bool {
+ 	}
+ 	o.materialiseProto()
+ 	if o.prototype != nil {
+-		return o.prototype.self.hasPropertySym(s)
++		return protoHasPropertySym(o.prototype, s)
+ 	}
+ 	return false
+ }
+diff --git a/proxy.go b/proxy.go
+index 15f50bb..49c31ca 100644
+--- a/proxy.go
++++ b/proxy.go
+@@ -48,6 +48,7 @@ func (r *Runtime) _newProxyObject(target *Object, handler proxyHandler, proto *O
+ 	} else {
+ 		p.prototype = proto
+ 	}
++	p.wrapperDepth = r.nextWrapperDepth(target)
+ 	p.extensible = false
+ 	p.init()
+ 	p.target = target
+@@ -285,10 +286,12 @@ func (h *jsProxyHandler) construct(target *Object, args []Value, newTarget *Obje
+ 
+ type proxyObject struct {
+ 	baseObject
+-	target  *Object
+-	handler proxyHandler
+-	call    func(FunctionCall) Value
+-	ctor    func(args []Value, newTarget *Object) *Object
++	// the length of the chain of proxies and bound functions it starts (nextWrapperDepth)
++	wrapperDepth int
++	target       *Object
++	handler      proxyHandler
++	call         func(FunctionCall) Value
++	ctor         func(args []Value, newTarget *Object) *Object
+ }
+ 
+ func (p *proxyObject) checkHandler() proxyHandler {
+diff --git a/runtime.go b/runtime.go
+index bb06380..8fa8ddc 100644
+--- a/runtime.go
++++ b/runtime.go
+@@ -183,6 +183,9 @@ type RandSource func() float64
+ type Now func() time.Time
+ 
+ type Runtime struct {
++	// native recursion over script values and its bound (SetMaxNativeDepth)
++	nativeDepth, maxNativeDepth int
++
+ 	global          global
+ 	globalObject    *Object
+ 	stringSingleton *stringObject
+diff --git a/value.go b/value.go
+index 8931909..e3d0cd5 100644
+--- a/value.go
++++ b/value.go
+@@ -1134,6 +1134,11 @@ func (s *Symbol) hash(*maphash.Hash) uint64 {
+ }
+ 
+ func exportValue(v Value, ctx *objectExportCtx) interface{} {
++	if o, ok := v.(*Object); ok {
++		// one level per nested value; Export panics with the StackOverflowError past the bound
++		o.runtime.enterNative()
++		defer o.runtime.leaveNative()
++	}
+ 	if obj, ok := v.(*Object); ok {
+ 		return obj.self.export(ctx)
+ 	}

@@ -183,6 +183,9 @@ type RandSource func() float64
 type Now func() time.Time
 
 type Runtime struct {
+	// native recursion over script values and its bound (SetMaxNativeDepth)
+	nativeDepth, maxNativeDepth int
+
 	global          global
 	globalObject    *Object
 	stringSingleton *stringObject

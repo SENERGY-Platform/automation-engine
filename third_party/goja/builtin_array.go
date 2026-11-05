@@ -266,6 +266,8 @@ func (r *Runtime) writeItemLocaleString(item Value, buf *StringBuilder) {
 }
 
 func (r *Runtime) arrayproto_toLocaleString(call FunctionCall) Value {
+	r.enterNative()
+	defer r.leaveNative()
 	array := call.This.ToObject(r)
 
 	if r.pushToStringStack(array) {
@@ -1203,6 +1205,8 @@ func (r *Runtime) arrayproto_flat(call FunctionCall) Value {
 }
 
 func (r *Runtime) flattenIntoArray(target, source *Object, sourceLen, start, depth int64, mapperFunction func(FunctionCall) Value, thisArg Value) int64 {
+	r.enterNative()
+	defer r.leaveNative()
 	targetIndex, sourceIndex := start, int64(0)
 	for sourceIndex < sourceLen {
 		p := intToValue(sourceIndex)

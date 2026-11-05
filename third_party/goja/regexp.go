@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf16"
 
 	"github.com/dlclark/regexp2/v2"
@@ -103,6 +104,9 @@ func compileRegexp2(src string, multiline, dotAll, ignoreCase, unicode bool) (*r
 	regexp2Pattern, err1 := regexp2.Compile(src, opts)
 	if err1 != nil {
 		return nil, fmt.Errorf("Invalid regular expression (regexp2): %s (%v)", src, err1)
+	}
+	if timeout := regExpMatchTimeout.Load(); timeout > 0 {
+		regexp2Pattern.MatchTimeout = time.Duration(timeout)
 	}
 
 	return &regexp2Wrapper{rx: regexp2Pattern}, nil
@@ -257,7 +261,7 @@ func (r *regexp2Wrapper) findUTF16Cached(s String, start int, doCache bool) (mat
 func (r *regexp2Wrapper) findSubmatchIndexUTF16(s String, start int, doCache bool) regexpResult {
 	match, _, err := r.findUTF16Cached(s, start, doCache)
 	if err != nil {
-		return regexpResult{}
+		r.matchFailed(err)
 	}
 
 	if match == nil {
@@ -324,7 +328,10 @@ func (r *regexp2Wrapper) findUnicodeCached(s String, start int, doCache bool) (m
 
 func (r *regexp2Wrapper) findSubmatchIndexUnicode(s String, start int, doCache bool) regexpResult {
 	match, posMap, err := r.findUnicodeCached(s, start, doCache)
-	if match == nil || err != nil {
+	if err != nil {
+		r.matchFailed(err)
+	}
+	if match == nil {
 		return regexpResult{}
 	}
 
@@ -347,7 +354,10 @@ func (r *regexp2Wrapper) findSubmatchIndexUnicode(s String, start int, doCache b
 func (r *regexp2Wrapper) findAllSubmatchIndexUTF16(s String, start, limit int, sticky bool) []regexpResult {
 	wrapped := r.rx
 	match, runes, err := r.findUTF16Cached(s, start, false)
-	if match == nil || err != nil {
+	if err != nil {
+		r.matchFailed(err)
+	}
+	if match == nil {
 		return nil
 	}
 	if limit < 0 {
@@ -386,7 +396,7 @@ func (r *regexp2Wrapper) findAllSubmatchIndexUTF16(s String, start, limit int, s
 		}
 		match, err = wrapped.FindNextMatch(match)
 		if err != nil {
-			return nil
+			r.matchFailed(err)
 		}
 	}
 	return results
@@ -438,7 +448,7 @@ func (r *regexp2Wrapper) findAllSubmatchIndexUnicode(s unicodeString, start, lim
 	results := make([]regexpResult, 0, limit)
 	match, posMap, err := r.findUnicodeCached(s, start, false)
 	if err != nil {
-		return nil
+		r.matchFailed(err)
 	}
 	for match != nil {
 		groups := match.Groups()
@@ -468,7 +478,7 @@ func (r *regexp2Wrapper) findAllSubmatchIndexUnicode(s unicodeString, start, lim
 		results = append(results, result)
 		match, err = wrapped.FindNextMatch(match)
 		if err != nil {
-			return nil
+			r.matchFailed(err)
 		}
 	}
 	return results

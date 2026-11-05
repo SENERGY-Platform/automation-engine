@@ -18,6 +18,7 @@ package events
 
 import (
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,6 +55,8 @@ func TestConditionCrashChild(t *testing.T) {
 	if dir == "" {
 		t.Skip("started by TestConditionThatEndsTheProcessIsNamed")
 	}
+	// without goja's bound on native recursion, the script ends the process as it is meant to
+	script.MaxNativeDepth = math.MaxInt32
 	brake, _, err := crashbrake.Open(dir, nil)
 	if err != nil {
 		t.Fatal(err)

@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,6 +92,8 @@ func TestServerCrashChild(t *testing.T) {
 	if dir == "" {
 		t.Skip("started by TestServerStopsTheScriptThatEndedIt")
 	}
+	// without goja's bound on native recursion, the script ends the process as it is meant to
+	enginescript.MaxNativeDepth = math.MaxInt32
 	ctx := context.Background()
 	srv, err := client.NewTestServer(ctx, crashConfig(dir))
 	if err != nil {

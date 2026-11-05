@@ -155,6 +155,7 @@ func (r *Runtime) boundConstruct(f *Object, target func([]Value, *Object) *Objec
 
 func (r *Runtime) functionproto_bind(call FunctionCall) Value {
 	obj := r.toObject(call.This)
+	wrapperDepth := r.nextWrapperDepth(obj)
 
 	fcall := r.toCallable(call.This)
 	construct := obj.self.assertConstructor()
@@ -200,6 +201,7 @@ lenNotInt:
 	bf := &boundFuncObject{
 		nativeFuncObject: *ff,
 		wrapped:          obj,
+		wrapperDepth:     wrapperDepth,
 	}
 	bf.prototype = obj.self.proto()
 	v.self = bf

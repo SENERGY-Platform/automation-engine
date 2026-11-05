@@ -48,6 +48,7 @@ func (r *Runtime) _newProxyObject(target *Object, handler proxyHandler, proto *O
 	} else {
 		p.prototype = proto
 	}
+	p.wrapperDepth = r.nextWrapperDepth(target)
 	p.extensible = false
 	p.init()
 	p.target = target
@@ -285,10 +286,12 @@ func (h *jsProxyHandler) construct(target *Object, args []Value, newTarget *Obje
 
 type proxyObject struct {
 	baseObject
-	target  *Object
-	handler proxyHandler
-	call    func(FunctionCall) Value
-	ctor    func(args []Value, newTarget *Object) *Object
+	// the length of the chain of proxies and bound functions it starts (nextWrapperDepth)
+	wrapperDepth int
+	target       *Object
+	handler      proxyHandler
+	call         func(FunctionCall) Value
+	ctor         func(args []Value, newTarget *Object) *Object
 }
 
 func (p *proxyObject) checkHandler() proxyHandler {

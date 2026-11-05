@@ -66,9 +66,9 @@ func (o *objectGoSlice) getIdx(idx valueInt, receiver Value) Value {
 	}
 	if o.prototype != nil {
 		if receiver == nil {
-			return o.prototype.self.getIdx(idx, o.val)
+			return protoGetIdx(o.prototype, idx, o.val)
 		}
-		return o.prototype.self.getIdx(idx, receiver)
+		return protoGetIdx(o.prototype, idx, receiver)
 	}
 	return nil
 }

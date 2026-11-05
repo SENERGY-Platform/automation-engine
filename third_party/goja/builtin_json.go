@@ -138,6 +138,8 @@ func (r *Runtime) builtinJSON_decodeArray(d *json.Decoder) (*Object, error) {
 }
 
 func (r *Runtime) builtinJSON_reviveWalk(reviver func(FunctionCall) Value, holder *Object, name Value) Value {
+	r.enterNative()
+	defer r.leaveNative()
 	value := nilSafe(holder.get(name, nil))
 
 	if object, ok := value.(*Object); ok {
@@ -391,6 +393,8 @@ func (ctx *_builtinJSON_stringifyContext) str(key Value, holder *Object) bool {
 }
 
 func (ctx *_builtinJSON_stringifyContext) ja(array *Object) {
+	ctx.r.enterNative()
+	defer ctx.r.leaveNative()
 	var stepback string
 	if ctx.gap != "" {
 		stepback = ctx.indent
@@ -429,6 +433,8 @@ func (ctx *_builtinJSON_stringifyContext) ja(array *Object) {
 }
 
 func (ctx *_builtinJSON_stringifyContext) jo(object *Object) {
+	ctx.r.enterNative()
+	defer ctx.r.leaveNative()
 	var stepback string
 	if ctx.gap != "" {
 		stepback = ctx.indent

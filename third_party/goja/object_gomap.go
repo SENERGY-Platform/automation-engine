@@ -48,7 +48,7 @@ func (o *objectGoMapSimple) setOwnStr(name unistring.String, val Value, throw bo
 	}
 	if proto := o.prototype; proto != nil {
 		// we know it's foreign because prototype loops are not allowed
-		if res, ok := proto.self.setForeignStr(name, val, o.val, throw); ok {
+		if res, ok := protoSetForeignStr(proto, name, val, o.val, throw); ok {
 			return res
 		}
 	}

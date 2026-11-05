@@ -1,0 +1,201 @@
+diff --git b/engine_regexp.go b/engine_regexp.go
+new file mode 100644
+index 0000000..198c50e
+--- /dev/null
++++ b/engine_regexp.go
+@@ -0,0 +1,65 @@
++package goja
++
++import (
++	"fmt"
++	"strings"
++	"sync/atomic"
++	"time"
++)
++
++func init() {
++	enginePatches = append(enginePatches, "regexp-timeout")
++}
++
++var regExpMatchTimeout atomic.Int64
++
++// SetRegExpMatchTimeout bounds every match of a regular expression that needs backtracking, which
++// goja runs with regexp2: such a match ignores Interrupt, and one that backtracks catastrophically,
++// e.g. /^(a+)+$/ against "aaaa...b", runs for minutes. Past the bound, the run ends with a
++// *RegExpTimeoutError, which a script cannot catch; without this patch, goja reported no match.
++// It applies to expressions compiled after the call, so it is set before any script runs. Zero or
++// less leaves matches unbounded, the default.
++func SetRegExpMatchTimeout(timeout time.Duration) {
++	regExpMatchTimeout.Store(int64(timeout))
++}
++
++// RegExpTimeoutError ends a run whose regular expression did not finish its match in the time
++// SetRegExpMatchTimeout gives.
++type RegExpTimeoutError struct {
++	baseUncatchableException
++	pattern string
++	timeout time.Duration
++}
++
++func (e *RegExpTimeoutError) Error() string {
++	return fmt.Sprintf("the regular expression /%v/ did not finish its match within %v", truncatePattern(e.pattern), e.timeout)
++}
++
++// RegExpMatchError ends a run whose regular expression regexp2 failed to match for another reason
++// than the timeout, an error of regexp2 itself.
++type RegExpMatchError struct {
++	baseUncatchableException
++	pattern string
++	err     string
++}
++
++func (e *RegExpMatchError) Error() string {
++	return fmt.Sprintf("the regular expression /%v/ failed to match: %v", truncatePattern(e.pattern), e.err)
++}
++
++func truncatePattern(pattern string) string {
++	if len(pattern) > 100 {
++		return pattern[:100] + "..."
++	}
++	return pattern
++}
++
++// matchFailed ends the run after regexp2 failed a match, mostly because it timed out. goja
++// reported no match before, which a script cannot tell from a real one. regexp2's message of a
++// timeout carries the whole input and is left out.
++func (r *regexp2Wrapper) matchFailed(err error) {
++	if strings.HasPrefix(err.Error(), "match timeout") {
++		panic(&RegExpTimeoutError{pattern: r.rx.String(), timeout: r.rx.MatchTimeout})
++	}
++	panic(&RegExpMatchError{pattern: r.rx.String(), err: err.Error()})
++}
+diff --git b/engine_regexp_test.go b/engine_regexp_test.go
+new file mode 100644
+index 0000000..c305307
+--- /dev/null
++++ b/engine_regexp_test.go
+@@ -0,0 +1,42 @@
++package goja
++
++import (
++	"errors"
++	"testing"
++	"time"
++)
++
++// A match that backtracks catastrophically ends the run after the timeout, through every method
++// that matches, and a script cannot catch it; a normal match is unaffected.
++func TestEngineRegExpTimeout(t *testing.T) {
++	SetRegExpMatchTimeout(200 * time.Millisecond)
++	t.Cleanup(func() { SetRegExpMatchTimeout(0) })
++	// the lookahead needs regexp2, which backtracks; RE2 would not
++	prefix := `var re = /^(a+)+(?!x)$/; var g = /(a+)+(?!x)$/g; var s = "a".repeat(28) + "b"; `
++	for _, src := range []string{
++		`re.test(s)`,
++		`re.exec(s)`,
++		`s.match(re)`,
++		`s.match(g)`,
++		`Array.from(s.matchAll(g))`,
++		`s.replace(re, "x")`,
++		`s.replace(g, "x")`,
++		`s.split(re)`,
++		`s.search(re)`,
++		`try { re.test(s) } catch (e) { "caught" }`,
++	} {
++		start := time.Now()
++		_, err := New().RunString(prefix + src)
++		var timeout *RegExpTimeoutError
++		if !errors.As(err, &timeout) {
++			t.Errorf("%v: %v", src, err)
++		}
++		if elapsed := time.Since(start); elapsed > 5*time.Second {
++			t.Errorf("%v: %v", src, elapsed)
++		}
++	}
++	value, err := New().RunString(`/^(a+)+(?!x)$/.test("aaaa") && "a1b2".replace(/(?<=a)\d/g, "#")`)
++	if err != nil || value.String() != "a#b2" {
++		t.Errorf("%v %v", value, err)
++	}
++}
+diff --git a/regexp.go b/regexp.go
+index 43e7d0e..cc85872 100644
+--- a/regexp.go
++++ b/regexp.go
+@@ -6,6 +6,7 @@ import (
+ 	"regexp"
+ 	"sort"
+ 	"strings"
++	"time"
+ 	"unicode/utf16"
+ 
+ 	"github.com/dlclark/regexp2/v2"
+@@ -104,6 +105,9 @@ func compileRegexp2(src string, multiline, dotAll, ignoreCase, unicode bool) (*r
+ 	if err1 != nil {
+ 		return nil, fmt.Errorf("Invalid regular expression (regexp2): %s (%v)", src, err1)
+ 	}
++	if timeout := regExpMatchTimeout.Load(); timeout > 0 {
++		regexp2Pattern.MatchTimeout = time.Duration(timeout)
++	}
+ 
+ 	return &regexp2Wrapper{rx: regexp2Pattern}, nil
+ }
+@@ -257,7 +261,7 @@ func (r *regexp2Wrapper) findUTF16Cached(s String, start int, doCache bool) (mat
+ func (r *regexp2Wrapper) findSubmatchIndexUTF16(s String, start int, doCache bool) regexpResult {
+ 	match, _, err := r.findUTF16Cached(s, start, doCache)
+ 	if err != nil {
+-		return regexpResult{}
++		r.matchFailed(err)
+ 	}
+ 
+ 	if match == nil {
+@@ -324,7 +328,10 @@ func (r *regexp2Wrapper) findUnicodeCached(s String, start int, doCache bool) (m
+ 
+ func (r *regexp2Wrapper) findSubmatchIndexUnicode(s String, start int, doCache bool) regexpResult {
+ 	match, posMap, err := r.findUnicodeCached(s, start, doCache)
+-	if match == nil || err != nil {
++	if err != nil {
++		r.matchFailed(err)
++	}
++	if match == nil {
+ 		return regexpResult{}
+ 	}
+ 
+@@ -347,7 +354,10 @@ func (r *regexp2Wrapper) findSubmatchIndexUnicode(s String, start int, doCache b
+ func (r *regexp2Wrapper) findAllSubmatchIndexUTF16(s String, start, limit int, sticky bool) []regexpResult {
+ 	wrapped := r.rx
+ 	match, runes, err := r.findUTF16Cached(s, start, false)
+-	if match == nil || err != nil {
++	if err != nil {
++		r.matchFailed(err)
++	}
++	if match == nil {
+ 		return nil
+ 	}
+ 	if limit < 0 {
+@@ -386,7 +396,7 @@ func (r *regexp2Wrapper) findAllSubmatchIndexUTF16(s String, start, limit int, s
+ 		}
+ 		match, err = wrapped.FindNextMatch(match)
+ 		if err != nil {
+-			return nil
++			r.matchFailed(err)
+ 		}
+ 	}
+ 	return results
+@@ -438,7 +448,7 @@ func (r *regexp2Wrapper) findAllSubmatchIndexUnicode(s unicodeString, start, lim
+ 	results := make([]regexpResult, 0, limit)
+ 	match, posMap, err := r.findUnicodeCached(s, start, false)
+ 	if err != nil {
+-		return nil
++		r.matchFailed(err)
+ 	}
+ 	for match != nil {
+ 		groups := match.Groups()
+@@ -468,7 +478,7 @@ func (r *regexp2Wrapper) findAllSubmatchIndexUnicode(s unicodeString, start, lim
+ 		results = append(results, result)
+ 		match, err = wrapped.FindNextMatch(match)
+ 		if err != nil {
+-			return nil
++			r.matchFailed(err)
+ 		}
+ 	}
+ 	return results
