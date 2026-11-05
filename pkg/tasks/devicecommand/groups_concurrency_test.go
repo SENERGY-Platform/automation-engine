@@ -18,15 +18,20 @@ package devicecommand
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"html"
 	"reflect"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
+	"github.com/SENERGY-Platform/models/go/models"
 )
 
 // With GROUP_CONCURRENCY or senergy:groupConcurrency, sequential and round robin groups keep up
@@ -307,4 +312,59 @@ func TestGroupConcurrencyAWindowEndingDuringTheCallSkipsOnlyThatSubTask(t *testi
 	if got := sentDevices(e.producer.messages()); !reflect.DeepEqual(got, []string{"d0", "d1", "d2", "d3"}) {
 		t.Fatalf("d0 and d1 wait for the next call, d2 and d3 take the places: %v", got)
 	}
+}
+
+// answers handled in parallel, on SQLite and Postgres: the lock of the instance keeps two
+// handlers from choosing the same sub-task, which Postgres would otherwise allow
+func TestGroupConcurrencyParallelAnswersSendEachDeviceOnce(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		e := newEnvOn(t, Sequential, s)
+		ids := []string{}
+		services := map[string][]models.Service{}
+		for i := range 12 {
+			id := "d" + strconv.Itoa(i)
+			ids = append(ids, id)
+			services[id] = []models.Service{serviceWith("s", models.REQUEST, true, variable("v", measuring))}
+		}
+		e.use(repoWith(ids, services), e.aspects, fakeMarshaller{}, Sequential)
+		e.dc.config.GroupConcurrency = 3
+		// a send that takes a moment widens the time between choosing and sending
+		withHook(e, func(int) { time.Sleep(200 * time.Microsecond) })
+		inst := e.start(e.deploy(process(Pessimistic, payload(measuring, map[string]any{"device_group_id": "g", "retries": 0}), ""), nil))
+		answered := map[int]bool{}
+		for range 20 {
+			var wg sync.WaitGroup
+			errs := make(chan error, 64)
+			for i, m := range e.producer.messages() {
+				if answered[i] {
+					continue
+				}
+				answered[i] = true
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					m.msg.Response.Output = map[string]string{"data": "1"}
+					raw, _ := json.Marshal(m.msg)
+					errs <- e.dc.HandleResponse(ctx, raw)
+				}()
+			}
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		count := map[string]int{}
+		for _, m := range e.producer.messages() {
+			count[m.key]++
+		}
+		for _, id := range ids {
+			if count[id] != 1 {
+				t.Errorf("%v got %v commands: %v", id, count[id], fmt.Sprint(sentDevices(e.producer.messages())))
+			}
+		}
+		e.expectState(inst.Id, model.StateCompleted)
+	})
 }

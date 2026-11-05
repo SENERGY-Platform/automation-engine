@@ -212,7 +212,11 @@ type env struct {
 }
 
 func newEnv(t *testing.T, scheduler string) *env {
-	s := storetest.OpenSQLite(t)
+	return newEnvOn(t, scheduler, storetest.OpenSQLite(t))
+}
+
+// newEnvOn is newEnv on the given store, e.g. one of storetest.Backends
+func newEnvOn(t *testing.T, scheduler string, s *store.Store) *env {
 	this := &env{t: t, s: s, producer: &fakeProducer{}, metrics: &fakeMetrics{sent: map[string]int{}}, clock: time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)}
 	config := engine.DefaultConfig()
 	config.TaskRetryBackoff = time.Second

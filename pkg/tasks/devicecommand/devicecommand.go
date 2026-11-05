@@ -118,6 +118,11 @@ func New(config Config, s *store.Store, iot devicerepository.Interface, tokens a
 	return &Type{config: config, store: s, iot: iot, tokens: tokens, marshaller: m, timescale: ts, producer: producer, metrics: metrics, logger: logger, workerId: uuid.NewString(), now: time.Now}
 }
 
+// Config is the configuration in effect, with the defaults of New
+func (this *Type) Config() Config {
+	return this.config
+}
+
 // token is the token of the user, from the token source of the owners
 func (this *Type) token(user string) (string, error) {
 	if this.tokens == nil {
