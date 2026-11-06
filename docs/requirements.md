@@ -447,6 +447,7 @@ Takes over `external-task-worker` (optimistic, pessimistic), `process-io-worker`
   - `incident` raises an incident by the user.
 - **TASK-10 (M)** The result is available as the local variable `result` (a list from payload version 2 on) and then runs through the output mappings.
   - Next to it, `results` lists `{device_id, service_id, value}` for every sub-task with a result, in the order of `result`, also before payload version 2 (decided 2026-10-28, SNRGY-5054). A sub-task without an answer is missing from both, so only `results` tells which device a value of a device group came from. An optimistic command, which waits for no answer, gives an empty list.
+  - An entry of a value read from the last values (TASK-08) also carries `time`, when the value was received, as the time-series store or mgw-last-value gives it (decided 2026-11-06). A measuring task otherwise cannot tell a sensor that fell silent hours ago from a fresh reading. An answer of the device carries no `time`.
 - **TASK-11 (M)** Every task is completed at most once, even if answers arrive twice or late.
 - **TASK-12 (M)** Cost-relevant metric with the same label semantics: `external_task_worker_task_command_send_count_vec{user_id, process_definition_id}`, where `process_definition_id` carries the deployment ID (DATA-04). The cost-calculator uses it to distribute the process costs to users.
 

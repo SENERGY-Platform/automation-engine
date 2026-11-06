@@ -142,10 +142,12 @@ func (this fakeMarshaller) Unmarshal(ctx context.Context, request UnmarshallingR
 
 type fakeTimescale struct{}
 
+var lastValueTime = "2026-11-06T09:07:58Z"
+
 func (fakeTimescale) Query(_ string, request []TimescaleRequest, _ time.Duration) ([]TimescaleResponse, error) {
 	result := []TimescaleResponse{}
 	for range request {
-		result = append(result, TimescaleResponse{Value: 21.5})
+		result = append(result, TimescaleResponse{Time: &lastValueTime, Value: 21.5})
 	}
 	return result, nil
 }

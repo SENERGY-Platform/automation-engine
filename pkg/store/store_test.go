@@ -277,6 +277,35 @@ func TestEventDescriptionsAreReadByRevision(t *testing.T) {
 	})
 }
 
+func TestSubtasksKeepTheTimeOfAReadValueOnly(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		tx(t, s, func(tx *store.Tx) error {
+			if err := seedInstance(tx, "d1", "i1"); err != nil {
+				return err
+			}
+			t0 := time.UnixMilli(1000)
+			if err := tx.SaveJob(store.Job{Id: "job", InstanceId: "i1", Run: 1, TokenId: "t", ElementId: "e", TaskType: "x", State: store.JobRunning, DueAt: t0, CreatedAt: t0}); err != nil {
+				return err
+			}
+			subtasks := []store.Subtask{{JobId: "job", SubId: "job_0_0", Position: 0, Command: []byte(`{}`), TaskInfo: []byte(`{}`)}, {JobId: "job", SubId: "job_1_0", Position: 1, Command: []byte(`{}`), TaskInfo: []byte(`{}`)}}
+			if err := tx.EnsureSubtasks(subtasks); err != nil {
+				return err
+			}
+			if ok, err := tx.SetSubtaskReadValue("job", "job_0_0", 21.5, "2026-11-06T09:07:58Z"); err != nil || !ok {
+				return fmt.Errorf("set read value: %v %v", ok, err)
+			}
+			if ok, err := tx.SetSubtaskResult("job", "job_1_0", 3.0); err != nil || !ok {
+				return fmt.Errorf("set result: %v %v", ok, err)
+			}
+			list, err := tx.ListSubtasks("job")
+			if err != nil || len(list) != 2 || list[0].Result != 21.5 || list[0].ResultTime != "2026-11-06T09:07:58Z" || list[1].ResultTime != "" {
+				return fmt.Errorf("a read value keeps its time, an answer has none: %+v %v", list, err)
+			}
+			return nil
+		})
+	})
+}
+
 func TestSubtasksKeepResults(t *testing.T) {
 	storetest.Run(t, func(t *testing.T, s *store.Store) {
 		tx(t, s, func(tx *store.Tx) error {

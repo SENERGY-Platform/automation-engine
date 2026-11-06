@@ -31,8 +31,10 @@ type Subtask struct {
 	TaskInfo  json.RawMessage
 	HasResult bool
 	Result    any
-	Tries     int
-	LastTry   time.Time
+	// ResultTime is when a value read from the last values was received, "" for an answer
+	ResultTime string
+	Tries      int
+	LastTry    time.Time
 }
 
 // EnsureSubtasks stores the sub-tasks of a job; results of existing ones are kept.
@@ -49,7 +51,7 @@ func (this *Tx) EnsureSubtasks(subtasks []Subtask) error {
 }
 
 func (this *Tx) ListSubtasks(jobId string) ([]Subtask, error) {
-	rows, err := this.query("SELECT job_id, sub_id, position, command, task_info, has_result, result, tries, last_try FROM command_subtasks WHERE job_id = ? ORDER BY position", jobId)
+	rows, err := this.query("SELECT job_id, sub_id, position, command, task_info, has_result, result, result_time, tries, last_try FROM command_subtasks WHERE job_id = ? ORDER BY position", jobId)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +62,7 @@ func (this *Tx) ListSubtasks(jobId string) ([]Subtask, error) {
 		var command, taskInfo, result string
 		var hasResult int
 		var lastTry int64
-		if err = rows.Scan(&s.JobId, &s.SubId, &s.Position, &command, &taskInfo, &hasResult, &result, &s.Tries, &lastTry); err != nil {
+		if err = rows.Scan(&s.JobId, &s.SubId, &s.Position, &command, &taskInfo, &hasResult, &result, &s.ResultTime, &s.Tries, &lastTry); err != nil {
 			return nil, err
 		}
 		s.Command = json.RawMessage(command)
@@ -76,7 +78,13 @@ func (this *Tx) ListSubtasks(jobId string) ([]Subtask, error) {
 // SetSubtaskResult stores the result of a sub-task; false if the sub-task does not exist,
 // e.g. because its job has already been completed.
 func (this *Tx) SetSubtaskResult(jobId string, subId string, value any) (bool, error) {
-	result, err := this.exec("UPDATE command_subtasks SET has_result = 1, result = ? WHERE job_id = ? AND sub_id = ?", toJson(value), jobId, subId)
+	return this.SetSubtaskReadValue(jobId, subId, value, "")
+}
+
+// SetSubtaskReadValue stores a value read from the last values as the result of a sub-task,
+// with the time it was received
+func (this *Tx) SetSubtaskReadValue(jobId string, subId string, value any, at string) (bool, error) {
+	result, err := this.exec("UPDATE command_subtasks SET has_result = 1, result = ?, result_time = ? WHERE job_id = ? AND sub_id = ?", toJson(value), at, jobId, subId)
 	if err != nil {
 		return false, err
 	}

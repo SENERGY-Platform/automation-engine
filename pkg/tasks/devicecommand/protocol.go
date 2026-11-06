@@ -174,18 +174,26 @@ func (this *Type) output(ctx context.Context, msg ProtocolMsg) (any, error) {
 	return result, err
 }
 
-// lastValue reads the last event value of a service through timescale-wrapper (TASK-08)
-func (this *Type) lastValue(ctx context.Context, token string, event EventRequest) (any, error) {
+// lastValue reads the last event value of a service through timescale-wrapper (TASK-08), with
+// the time it was received, "" if unknown
+func (this *Type) lastValue(ctx context.Context, token string, event EventRequest) (value any, at string, err error) {
 	if this.timescale == nil {
-		return nil, errors.New("reading event values needs a timescale-wrapper url")
+		return nil, "", errors.New("reading event values needs a timescale-wrapper url")
 	}
 	request := timescaleRequest(event.Device, event.Service)
 	response, err := this.timescale.Query(string(token), request, this.config.TimescaleTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read last value: %w", err)
+		return nil, "", fmt.Errorf("unable to read last value: %w", err)
 	}
 	if len(request) != len(response) {
-		return nil, errors.New("timescale response has less elements than the request")
+		return nil, "", errors.New("timescale response has less elements than the request")
+	}
+	// the columns of one service come from one message and share its time
+	for _, r := range response {
+		if r.Time != nil {
+			at = *r.Time
+			break
+		}
 	}
 	values := map[string]any{}
 	paths := make([]string, 0, len(request))
@@ -207,17 +215,17 @@ func (this *Type) lastValue(ctx context.Context, token string, event EventReques
 		}
 		m, ok := serialization.Get(content.Serialization)
 		if !ok {
-			return nil, errors.New("unknown serialization")
+			return nil, "", errors.New("unknown serialization")
 		}
 		message[segment], err = m.Marshal(value, marshallermodel.ContentVariable{Name: content.ContentVariable.Name})
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
-	result, err, _ := this.marshaller.UnmarshalV2(ctx, UnmarshallingV2Request{
+	value, err, _ = this.marshaller.UnmarshalV2(ctx, UnmarshallingV2Request{
 		Service: event.Service, Protocol: event.Protocol, CharacteristicId: event.CharacteristicId, Message: message, FunctionId: event.FunctionId, AspectNodes: event.AspectNodes,
 	})
-	return result, err
+	return value, at, err
 }
 
 func timescaleRequest(device models.Device, service models.Service) (result []TimescaleRequest) {

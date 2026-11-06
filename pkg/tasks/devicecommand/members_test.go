@@ -24,6 +24,7 @@ import (
 
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
+	"github.com/SENERGY-Platform/models/go/models"
 )
 
 // membersProcess keeps result as out and results as members
@@ -63,5 +64,22 @@ func TestAGroupReadNamesTheDeviceOfEachValue(t *testing.T) {
 	}
 	if members := e.variable(inst.Id, "members"); !reflect.DeepEqual(members, expected) {
 		t.Errorf("results names the device and service of each value: %#v", members)
+	}
+}
+
+// A read of the last value tells when the value was received, so that a process can recognise a
+// sensor that fell silent; result stays the plain value.
+func TestAReadOfTheLastValueTellsWhenItWasReceived(t *testing.T) {
+	e := newEnv(t, Parallel)
+	e.use(repoWith([]string{"d1"}, map[string][]models.Service{"d1": eventAndRequestServices("s1")}), aspectTree(), fakeMarshaller{}, Parallel)
+	inst := e.start(e.deploy(membersProcess(Pessimistic, payload(measuring, map[string]any{"device_id": "d1", "service_id": "s1", "prefer_event": true})), nil))
+	e.expectState(inst.Id, model.StateCompleted)
+	value := map[string]any{"v": 21.5}
+	if out := e.variable(inst.Id, "out"); !reflect.DeepEqual(out, []any{value}) {
+		t.Fatalf("result stays the list of values: %#v", out)
+	}
+	expected := []any{map[string]any{"device_id": "d1", "service_id": "s1", "value": value, "time": lastValueTime}}
+	if members := e.variable(inst.Id, "members"); !reflect.DeepEqual(members, expected) {
+		t.Errorf("results carries the time of the read value: %#v", members)
 	}
 }

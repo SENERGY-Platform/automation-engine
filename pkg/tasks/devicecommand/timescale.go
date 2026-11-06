@@ -50,8 +50,8 @@ type timescaleColumn struct {
 	Name string
 }
 
-// Query asks for the last row per device and service and answers in the order of the request;
-// a value is nil without data
+// Query asks for the last row per device and service and answers in the order of the request,
+// with the time of the row; value and time are nil without data
 func (this *timescaleWrapper) Query(token string, request []TimescaleRequest, timeout time.Duration) ([]TimescaleResponse, error) {
 	query := timescaleQueries(request)
 	body, err := json.Marshal(query)
@@ -121,7 +121,11 @@ func timescaleValues(request []TimescaleRequest, query []timescaleQuery, respons
 		if j >= len(response[i][0]) {
 			return result, errors.New("timescale: response has fewer columns than the request")
 		}
-		result = append(result, TimescaleResponse{Value: response[i][0][j]})
+		var at *string
+		if t, ok := response[i][0][0].(string); ok {
+			at = &t
+		}
+		result = append(result, TimescaleResponse{Time: at, Value: response[i][0][j]})
 	}
 	return result, nil
 }

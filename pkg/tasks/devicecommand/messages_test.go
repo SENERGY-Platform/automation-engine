@@ -151,3 +151,20 @@ func TestTimescaleReportsAShortAnswerInsteadOfPanicking(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+func TestTimescaleAnswersWithTheTimeOfTheRow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[[["2026-10-12T10:00:00Z", 21.5]], []]`))
+	}))
+	defer server.Close()
+	result, err := NewTimescale(server.URL).Query("Bearer t", []TimescaleRequest{
+		{Device: models.Device{Id: "d1"}, Service: models.Service{Id: "s1"}, ColumnName: "value.temperature"},
+		{Device: models.Device{Id: "d2"}, Service: models.Service{Id: "s1"}, ColumnName: "value.temperature"},
+	}, time.Second)
+	if err != nil || len(result) != 2 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if result[0].Time == nil || *result[0].Time != "2026-10-12T10:00:00Z" || result[1].Time != nil {
+		t.Errorf("the time of the row, nil without data: %v %v", result[0].Time, result[1].Time)
+	}
+}

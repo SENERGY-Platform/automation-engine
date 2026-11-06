@@ -393,7 +393,7 @@ func (this *Type) sendSubtask(ctx context.Context, jobId string, token string, s
 		return false, err
 	}
 	return true, this.store.Tx(ctx, func(tx *store.Tx) error {
-		_, err := tx.SetSubtaskResult(jobId, s.SubId, value.value)
+		_, err := tx.SetSubtaskReadValue(jobId, s.SubId, value.value, value.at)
 		return err
 	})
 }
@@ -456,6 +456,7 @@ func windowEnd(open []store.Subtask, timeout time.Duration) (result time.Time) {
 
 type readValue struct {
 	value any
+	at    string
 }
 
 // send sends the command of a sub-task, or reads the last value for an event service
@@ -468,11 +469,11 @@ func (this *Type) send(ctx context.Context, token string, command Command, info 
 		if info.CompletionStrategy == Optimistic {
 			return nil, nil
 		}
-		value, err := this.lastValue(ctx, token, *event)
+		value, at, err := this.lastValue(ctx, token, *event)
 		if err != nil {
 			return nil, err
 		}
-		return &readValue{value: value}, nil
+		return &readValue{value: value, at: at}, nil
 	}
 	payload, err := json.Marshal(msg)
 	if err != nil {
@@ -493,7 +494,8 @@ func output(version int64, subtasks []store.Subtask) map[string]any {
 }
 
 // deviceResults lists {device_id, service_id, value} in sub-task order, for the sub-tasks with a
-// result like results, so that the i-th entry belongs to the i-th value of result
+// result like results, so that the i-th entry belongs to the i-th value of result; a value read
+// from the last values carries the time it was received as time
 func deviceResults(subtasks []store.Subtask) []any {
 	list := []any{}
 	for _, s := range subtasks {
@@ -502,7 +504,11 @@ func deviceResults(subtasks []store.Subtask) []any {
 		}
 		var command Command
 		_ = json.Unmarshal(s.Command, &command)
-		list = append(list, map[string]any{"device_id": command.DeviceId, "service_id": command.ServiceId, "value": s.Result})
+		entry := map[string]any{"device_id": command.DeviceId, "service_id": command.ServiceId, "value": s.Result}
+		if s.ResultTime != "" {
+			entry["time"] = s.ResultTime
+		}
+		list = append(list, entry)
 	}
 	return list
 }
