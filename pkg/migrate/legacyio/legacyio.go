@@ -22,6 +22,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -29,11 +30,14 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // marker is the sync position that records the import
 const marker = "legacy_io_imported"
+
+const undefinedTable = "42P01"
 
 // Result counts what an import did.
 type Result struct {
@@ -60,6 +64,12 @@ func Import(ctx context.Context, s *store.Store, dsn string, owner string) (resu
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, "SELECT user_id, variable_key, COALESCE(process_definition_id, ''), COALESCE(process_instance_id, ''), COALESCE(unix_timestamp_in_s, 0), variable_value FROM variables")
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == undefinedTable {
+		// no process-io ever ran on this database and nothing will create the table
+		err = s.Tx(ctx, func(tx *store.Tx) error { return tx.SetSyncPosition(marker, time.Now().Unix()) })
+		return result, err == nil, err
+	}
 	if err != nil {
 		return result, false, fmt.Errorf("legacy process-io: %w", err)
 	}

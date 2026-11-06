@@ -32,7 +32,8 @@ import (
 var ctx = context.Background()
 
 // legacyDatabase creates a database with the table of process-io-api for Postgres
-func legacyDatabase(t *testing.T) string {
+// emptyDatabase is a database of its own, without any table
+func emptyDatabase(t *testing.T) string {
 	_, dsn := storetest.OpenPostgresDsn(t)
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -45,7 +46,11 @@ func legacyDatabase(t *testing.T) string {
 	}
 	start := strings.LastIndex(dsn, "/")
 	end := strings.Index(dsn[start:], "?")
-	legacy := dsn[:start+1] + name + dsn[start+end:]
+	return dsn[:start+1] + name + dsn[start+end:]
+}
+
+func legacyDatabase(t *testing.T) string {
+	legacy := emptyDatabase(t)
 	db, err := sql.Open("pgx", legacy)
 	if err != nil {
 		t.Fatal(err)
@@ -82,5 +87,19 @@ func TestValuesOfTheOldProcessModuleAreTakenOverOnce(t *testing.T) {
 	}
 	if _, done, err = legacyio.Import(ctx, s, legacy, "alice"); err != nil || done {
 		t.Errorf("a second start imports nothing: %v %v", done, err)
+	}
+}
+
+// A Postgres without the table never held values of process-io, and nothing will create it: the
+// import is finished instead of being tried again at every start and in the background.
+func TestADatabaseWithoutTheTableHasNothingToTakeOver(t *testing.T) {
+	dsn := emptyDatabase(t)
+	s := storetest.OpenSQLite(t)
+	result, done, err := legacyio.Import(ctx, s, dsn, "alice")
+	if err != nil || !done || result.Imported != 0 {
+		t.Fatalf("%+v %v %v", result, done, err)
+	}
+	if _, done, err = legacyio.Import(ctx, s, dsn, "alice"); err != nil || done {
+		t.Errorf("a second start does not look again: %v %v", done, err)
 	}
 }
