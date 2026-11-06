@@ -121,3 +121,60 @@ func TestClientDeliversMessagesOfWildcardSubscriptions(t *testing.T) {
 		t.Fatalf("the subscriber receives the message: %v", received)
 	}
 }
+
+// A persistent session delivers from the connect on, before the engine has subscribed. A message
+// without a handler has to be acknowledged anyway: the broker sends nothing more once the
+// unacknowledged ones fill its window, also to the subscriptions made later.
+func TestMessagesBeforeTheSubscriptionDoNotBlockThePersistentSession(t *testing.T) {
+	url := broker(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	first, cancelFirst := context.WithCancel(context.Background())
+	defer cancelFirst()
+	receiver, err := mqtt.Connect(first, mqtt.Config{Broker: url, ClientId: "persistent"}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = receiver.Subscribe("event/#", 1, func(string, []byte) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	cancelFirst()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sender, err := mqtt.Connect(ctx, mqtt.Config{Broker: url, ClientId: "sender", CleanSession: true}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// more than the 20 messages mosquitto keeps in flight per client
+	for range 30 {
+		if err = sender.Publish(ctx, "event/old", 1, []byte("old")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// a restart: the same session, connected but not yet subscribed by the engine
+	second, err := mqtt.Connect(ctx, mqtt.Config{Broker: url, ClientId: "persistent"}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	received := make(chan string, 100)
+	if err = second.Subscribe("event/#", 1, func(topic string, _ []byte) error {
+		received <- topic
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = sender.Publish(ctx, "event/new", 1, []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case topic := <-received:
+			if topic == "event/new" {
+				return
+			}
+		case <-timeout:
+			t.Fatal("the message after the subscription never arrived")
+		}
+	}
+}

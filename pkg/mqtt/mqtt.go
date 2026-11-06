@@ -82,6 +82,12 @@ func Connect(ctx context.Context, config Config, logger *slog.Logger) (*Client, 
 		SetConnectRetryInterval(5 * time.Second).
 		SetAutoAckDisabled(true).
 		SetOrderMatters(false).
+		// a persistent session delivers before the subscriptions of this start exist; unacknowledged
+		// messages would fill the window of the broker, which then delivers nothing more
+		SetDefaultPublishHandler(func(_ paho.Client, message paho.Message) {
+			logger.Info("mqtt message without a subscription dropped", "topic", message.Topic())
+			message.Ack()
+		}).
 		SetConnectionLostHandler(func(_ paho.Client, err error) {
 			logger.Warn("mqtt connection lost", "broker", config.Broker, "error", err)
 		}).
