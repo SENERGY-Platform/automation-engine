@@ -227,22 +227,37 @@ func (this *Handler) smartServices() {
 	this.handle("GET /smart-services/resource-usage/{kind}/{id}", this.resourceUsage)
 }
 
-// userOf reads the user of a token for display; every call checks the token in the engine
-func userOf(r *http.Request) string {
-	parsed, err := jwt.Parse(token(r))
-	if err != nil {
-		return ""
-	}
-	return parsed.GetUserId()
+// callerRights are what the caller may do with the resources of one answer: everything for
+// the owner and an admin, otherwise what permissions-v2 computes. Reading stays set in any
+// case, because the resource reached the answer, which a resource of a gateway does on a
+// grant past permissions-v2 (FOG-11).
+type callerRights struct {
+	user   string
+	admin  bool
+	shared map[string]model.Rights
 }
 
-// permissions describes the rights of the user as far as the layer knows them: all for the
-// owner, reading otherwise
-func permissions(r *http.Request, owner string, keys [4]string) PermissionsInfo {
-	own := userOf(r) == owner
-	result := PermissionsInfo{Shared: !own, Permissions: map[string]bool{}}
+// rightsOn reads the rights of the caller on the given resources once per request. A failed
+// lookup leaves reading, which is what the layer reported before it asked at all.
+func (this *Handler) rightsOn(r *http.Request, kind model.Kind, ids []string) callerRights {
+	result := callerRights{shared: map[string]model.Rights{}}
+	if parsed, err := jwt.Parse(token(r)); err == nil {
+		result.user, result.admin = parsed.GetUserId(), parsed.IsAdmin()
+	}
+	if shared, err := this.c.Rights(r.Context(), token(r), smartServices, kind, ids); err == nil {
+		result.shared = shared
+	}
+	return result
+}
+
+// of names the rights on one resource under the keys of the old API
+func (this callerRights) of(id string, owner string, keys [4]string) PermissionsInfo {
+	all := this.admin || this.user == owner
+	shared := this.shared[id]
+	values := [4]bool{true, shared.Write, shared.Execute, shared.Administrate}
+	result := PermissionsInfo{Shared: this.user != owner, Permissions: map[string]bool{}}
 	for i, key := range keys {
-		result.Permissions[key] = own || i == 0
+		result.Permissions[key] = all || values[i]
 	}
 	return result
 }
@@ -710,13 +725,13 @@ func releaseInfo(xml string) ReleaseInfo {
 // extendedRelease shows the BPMN of the design as it was released, as smart-service-repository
 // kept it; clients compare it with their design to tell whether a release is current. Only a
 // version without its model, e.g. one taken over without a matching design, shows what runs.
-func (this *Handler) extendedRelease(r *http.Request, d model.Deployment, v model.DeploymentVersion) SmartServiceReleaseExtended {
+func (this *Handler) extendedRelease(r *http.Request, d model.Deployment, v model.DeploymentVersion, rights callerRights) SmartServiceReleaseExtended {
 	xml, svg := v.Xml, v.Svg
 	if source, err := this.c.GetDeploymentSource(r.Context(), token(r), smartServices, d.Id, v.Version); err == nil {
 		xml, svg = source.Xml, source.Svg
 	}
 	return SmartServiceReleaseExtended{SmartServiceRelease: release(d, v.Version, v.CreatedAt.Unix(), v.ChangedResources), BpmnXml: xml, SvgXml: svg,
-		ParsedInfo: releaseInfo(v.Xml), PermissionsInfo: permissions(r, d.Owner, releaseRights)}
+		ParsedInfo: releaseInfo(v.Xml), PermissionsInfo: rights.of(d.Id, d.Owner, releaseRights)}
 }
 
 // getExtendedRelease godoc
@@ -736,7 +751,7 @@ func (this *Handler) getExtendedRelease(w http.ResponseWriter, r *http.Request) 
 		writeError(w, err)
 		return
 	}
-	writeJson(w, http.StatusOK, this.extendedRelease(r, d, v))
+	writeJson(w, http.StatusOK, this.extendedRelease(r, d, v, this.rightsOn(r, model.KindDeployment, []string{d.Id})))
 }
 
 // releases lists the releases with the parameters of smart-service-repository; latest=true
@@ -826,15 +841,21 @@ func (this *Handler) releases(r *http.Request) ([]model.Deployment, []model.Depl
 // list gets it from the cache of the engine.
 var usableBudget = 3 * time.Second
 
-// usableFlags reports per deployment whether it is usable, as smart-service-repository
-// computed the flags; nil for a flag not computed within usableBudget or after an error
-func (this *Handler) usableFlags(r *http.Request, deployments []model.Deployment) []*bool {
+// deploymentIds lists the ids of the deployments of a page, each once
+func deploymentIds(deployments []model.Deployment) []string {
 	ids := make([]string, 0, len(deployments))
 	for _, d := range deployments {
 		if !slices.Contains(ids, d.Id) {
 			ids = append(ids, d.Id)
 		}
 	}
+	return ids
+}
+
+// usableFlags reports per deployment whether it is usable, as smart-service-repository
+// computed the flags; nil for a flag not computed within usableBudget or after an error
+func (this *Handler) usableFlags(r *http.Request, deployments []model.Deployment) []*bool {
+	ids := deploymentIds(deployments)
 	ctx, cancel := context.WithTimeout(r.Context(), usableBudget)
 	defer cancel()
 	usable, _ := this.c.DeploymentsUsable(ctx, token(r), smartServices, ids)
@@ -912,9 +933,10 @@ func (this *Handler) listExtendedReleases(w http.ResponseWriter, r *http.Request
 	if boolParam(r, "add-usable-flag") {
 		usable = this.usableFlags(r, deployments)
 	}
+	rights := this.rightsOn(r, model.KindDeployment, deploymentIds(deployments))
 	result := make([]SmartServiceReleaseExtended, 0, len(versions))
 	for i, v := range versions {
-		item := this.extendedRelease(r, deployments[i], v)
+		item := this.extendedRelease(r, deployments[i], v, rights)
 		if usable != nil {
 			item.Usable = usable[i]
 		}
@@ -962,9 +984,9 @@ func variables(parameters []SmartServiceParameter) map[string]any {
 
 // smartServiceInstance shows an instance as smart-service-repository did; the deployment
 // gives design and release
-func smartServiceInstance(r *http.Request, i model.Instance, d model.Deployment) SmartServiceInstance {
+func smartServiceInstance(r *http.Request, i model.Instance, d model.Deployment, rights callerRights) SmartServiceInstance {
 	result := SmartServiceInstance{SmartServiceInstanceInit: SmartServiceInstanceInit{Name: i.Name, Description: i.Description, Parameters: []SmartServiceParameter{}},
-		PermissionsInfo: permissions(r, i.Owner, instanceRights), Id: i.Id, UserId: i.Owner, DesignId: d.ModelId,
+		PermissionsInfo: rights.of(i.Id, i.Owner, instanceRights), Id: i.Id, UserId: i.Owner, DesignId: d.ModelId,
 		ReleaseId: releaseId(i.DeploymentId, i.DeploymentVersion, d.Version), Ready: i.Status == model.StatusReady,
 		CreatedAt: i.CreatedAt.Unix(), UpdatedAt: i.LastActivityAt.Unix()}
 	if d.Version > i.DeploymentVersion {
@@ -1031,7 +1053,7 @@ func (this *Handler) createSmartServiceInstance(w http.ResponseWriter, r *http.R
 		return
 	}
 	d, err := this.c.GetDeployment(r.Context(), token(r), smartServices, deploymentId)
-	respond(w, smartServiceInstance(r, i, d), err)
+	respond(w, smartServiceInstance(r, i, d, this.rightsOn(r, model.KindInstance, []string{i.Id})), err)
 }
 
 // listSmartServiceInstances godoc
@@ -1073,6 +1095,13 @@ func (this *Handler) listSmartServiceInstances(w http.ResponseWriter, r *http.Re
 		return
 	}
 	cache := this.newDeploymentCache(r)
+	ids := make([]string, 0, len(instances))
+	for _, i := range instances {
+		if i.ParentId == "" {
+			ids = append(ids, i.Id)
+		}
+	}
+	rights := this.rightsOn(r, model.KindInstance, ids)
 	result := make([]SmartServiceInstance, 0, len(instances))
 	for _, i := range instances {
 		if i.ParentId != "" {
@@ -1084,7 +1113,7 @@ func (this *Handler) listSmartServiceInstances(w http.ResponseWriter, r *http.Re
 			writeError(w, err)
 			return
 		}
-		result = append(result, smartServiceInstance(r, i, d))
+		result = append(result, smartServiceInstance(r, i, d, rights))
 	}
 	w.Header().Set("X-Total-Count", strconv.Itoa(total))
 	w.Header().Set("Access-Control-Expose-Headers", "X-Total-Count")
@@ -1097,7 +1126,7 @@ func (this *Handler) smartServiceInstanceById(w http.ResponseWriter, r *http.Req
 		return
 	}
 	d, err := this.c.GetDeployment(r.Context(), token(r), smartServices, i.DeploymentId)
-	respond(w, smartServiceInstance(r, i, d), err)
+	respond(w, smartServiceInstance(r, i, d, this.rightsOn(r, model.KindInstance, []string{i.Id})), err)
 }
 
 // getSmartServiceInstance godoc

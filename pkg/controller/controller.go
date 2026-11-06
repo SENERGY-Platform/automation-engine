@@ -80,6 +80,12 @@ type Granter interface {
 	GrantedIds(ctx context.Context, token jwt.Token, namespace string, kind model.Kind, right Right) ([]string, error)
 }
 
+// RightsLister is implemented by authorizers that can name the rights a token holds through
+// sharing.
+type RightsLister interface {
+	Rights(ctx context.Context, token jwt.Token, namespace string, kind model.Kind, ids []string) (map[string]model.Rights, error)
+}
+
 // UserRemover removes a deleted user's rights on resources of others (SEC-08).
 type UserRemover interface {
 	RemoveUser(ctx context.Context, userId string, owners permissions.Owners) error
@@ -284,6 +290,28 @@ func (this *Controller) access(ctx context.Context, token jwt.Token, namespace s
 		access.Gateway, err = granter.GrantedIds(ctx, token, namespace, kind, right)
 	}
 	return access, err
+}
+
+// Rights names what the caller may do with the given resources, for clients that show it:
+// everything for an admin, otherwise what permissions-v2 computes. Ownership is left out,
+// because the caller knows the owners; an id without rights is missing from the answer.
+func (this *Controller) Rights(ctx context.Context, token string, namespace string, kind model.Kind, ids []string) (map[string]model.Rights, error) {
+	user, _, err := this.begin(token, namespace)
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]model.Rights{}
+	if user.IsAdmin() {
+		for _, id := range ids {
+			result[id] = model.Rights{Read: true, Write: true, Execute: true, Administrate: true}
+		}
+		return result, nil
+	}
+	lister, ok := this.auth.(RightsLister)
+	if !ok {
+		return result, nil
+	}
+	return lister.Rights(ctx, user, namespace, kind, ids)
 }
 
 // grant gives the user who deploys or starts on a gateway the rights of the namespace on the new

@@ -279,3 +279,46 @@ func TestSharedReleaseStaysSharedForTheNextRelease(t *testing.T) {
 		t.Fatalf("bob reads the next release: %v %+v", status, read)
 	}
 }
+
+// The rights in permissions_info are those of permissions-v2 and no guess from ownership: a
+// user who holds execute on a shared release sees it, so that the web-ui offers the start.
+func TestPermissionsInfoShowsTheSharedRightsOfTheCaller(t *testing.T) {
+	shared := map[string]bool{"r": true, "w": false, "x": true, "a": false}
+	own := map[string]bool{"r": true, "w": true, "x": true, "a": true}
+	e, deps := newEnvWith(t, nil)
+	design := e.createDesign(alice, "Room info", smartServiceDesign("widget"))
+	release := e.createRelease(alice, design.Id, "v1")
+	if err := e.srv.Permissions.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	resource, err, _ := deps.Permissions.GetResource(alice, "smart-services_deployments", release.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource.UserPermissions["bob"] = permmodel.PermissionsMap{Read: true, Execute: true}
+	if _, err, _ = deps.Permissions.SetPermission(alice, "smart-services_deployments", release.Id, resource.ResourcePermissions); err != nil {
+		t.Fatal(err)
+	}
+
+	var list []deprecated.SmartServiceReleaseExtended
+	if status, _ := e.call(bob, http.MethodGet, "/smart-services/extended-releases?latest=true", nil, &list); status != http.StatusOK || len(list) != 1 {
+		t.Fatalf("bob lists the shared release: %v %+v", status, list)
+	}
+	if info := list[0].PermissionsInfo; !info.Shared || !reflect.DeepEqual(info.Permissions, shared) {
+		t.Errorf("the list names read and execute: %+v", info)
+	}
+	var single deprecated.SmartServiceReleaseExtended
+	if status, _ := e.call(bob, http.MethodGet, "/smart-services/extended-releases/"+url.PathEscape(release.Id), nil, &single); status != http.StatusOK {
+		t.Fatalf("bob reads the shared release: %v", status)
+	}
+	if info := single.PermissionsInfo; !info.Shared || !reflect.DeepEqual(info.Permissions, shared) {
+		t.Errorf("the single release names the same rights: %+v", info)
+	}
+
+	if status, _ := e.call(alice, http.MethodGet, "/smart-services/extended-releases/"+url.PathEscape(release.Id), nil, &single); status != http.StatusOK {
+		t.Fatalf("alice reads her own release: %v", status)
+	}
+	if info := single.PermissionsInfo; info.Shared || !reflect.DeepEqual(info.Permissions, own) {
+		t.Errorf("the owner keeps every right: %+v", info)
+	}
+}

@@ -58,6 +58,8 @@ type Controller interface {
 	// PutModel creates a model with the given id or stores a new version of it, as the old
 	// repositories did (SNRGY-5035)
 	PutModel(ctx context.Context, token string, namespace string, id string, input model.ModelInput) (model.Model, error)
+	// Rights names the rights the caller holds on resources, which permissions_info shows
+	Rights(ctx context.Context, token string, namespace string, kind model.Kind, ids []string) (map[string]model.Rights, error)
 }
 
 type Handler struct {

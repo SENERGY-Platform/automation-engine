@@ -155,6 +155,28 @@ func (this *Service) Access(ctx context.Context, token jwt.Token, namespace stri
 	return result, nil
 }
 
+// Rights lists the rights the token holds through sharing on resources of a kind, as
+// permissions-v2 computes them. Ownership and the admin role are not part of the answer; an
+// id without an entry holds nothing.
+func (this *Service) Rights(ctx context.Context, token jwt.Token, namespace string, kind model.Kind, ids []string) (map[string]model.Rights, error) {
+	result := map[string]model.Rights{}
+	if len(ids) == 0 || !this.level(namespace, kind).Shareable {
+		return result, nil
+	}
+	computed, err, code := this.client.ListComputedPermissionsContext(ctx, token.Jwt(), model.Topic(namespace, kind), ids)
+	if code == http.StatusNotFound {
+		// the topic is not written yet, so nothing is shared
+		return result, nil
+	}
+	if err != nil {
+		return result, codeErr(err, code)
+	}
+	for _, c := range computed {
+		result[c.Id] = model.Rights{Read: c.Read, Write: c.Write, Execute: c.Execute, Administrate: c.Administrate}
+	}
+	return result, nil
+}
+
 // HasAdministrate reports whether user holds administrate on a resource in permissions-v2,
 // directly or through a group or role (SEC-11). permissions-v2 evaluates the rights with a
 // token of that user.
