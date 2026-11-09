@@ -322,3 +322,87 @@ func TestPermissionsInfoShowsTheSharedRightsOfTheCaller(t *testing.T) {
 		t.Errorf("the owner keeps every right: %+v", info)
 	}
 }
+
+// shareWithBob gives bob read and execute on a resource of alice in permissions-v2
+func shareWithBob(t *testing.T, e *env, deps server.Dependencies, topic string, id string) {
+	t.Helper()
+	if err := e.srv.Permissions.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	resource, err, _ := deps.Permissions.GetResource(alice, topic, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource.UserPermissions["bob"] = permmodel.PermissionsMap{Read: true, Execute: true}
+	if _, err, _ = deps.Permissions.SetPermission(alice, topic, id, resource.ResourcePermissions); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The release lists read the versions of all deployments at once; a user to whom releases are
+// shared gets those and no others, in the order and pages of the reads per release before.
+func TestReleaseListsOfASharedUserHoldWhatIsShared(t *testing.T) {
+	e, deps := newEnvWith(t, nil)
+	var current = map[string]string{}
+	for _, name := range []string{"a", "b", "c"} {
+		design := e.createDesign(alice, name, smartServiceDesign("widget"))
+		current[name] = e.createRelease(alice, design.Id, name+"1").Id
+		e.createRelease(alice, design.Id, name+"2")
+	}
+	a, b, c := current["a"], current["b"], current["c"]
+	shareWithBob(t, e, deps, "smart-services_deployments", a)
+	shareWithBob(t, e, deps, "smart-services_deployments", b)
+
+	for _, check := range []struct {
+		token, query string
+		expected     []string
+		total        string
+	}{
+		{bob, "", []string{a, a + ":v1", b, b + ":v1"}, "4"},
+		{bob, "?sort=name.desc", []string{b, b + ":v1", a, a + ":v1"}, "4"},
+		{bob, "?limit=2&offset=1", []string{a + ":v1", b}, "4"},
+		{bob, "?limit=2&offset=4", []string{}, "4"},
+		{bob, "?latest=true", []string{a, b}, "2"},
+		{bob, "?latest=true&limit=1&offset=1", []string{b}, "2"},
+		{bob, "?ids=" + c + "," + b + ",unknown," + a, []string{b, a}, "2"},
+		{alice, "?limit=3&offset=2", []string{b, b + ":v1", c}, "6"},
+	} {
+		var list []deprecated.SmartServiceRelease
+		status, header := e.call(check.token, http.MethodGet, "/smart-services/releases"+check.query, nil, &list)
+		if status != http.StatusOK || !slices.Equal(releaseIds(list), check.expected) || header.Get("X-Total-Count") != check.total {
+			t.Errorf("%v %q: %v %v total %v, want %v total %v", check.token == bob, check.query, status, releaseIds(list), header.Get("X-Total-Count"), check.expected, check.total)
+		}
+	}
+	var extended []deprecated.SmartServiceReleaseExtended
+	if status, _ := e.call(bob, http.MethodGet, "/smart-services/extended-releases?limit=1&offset=1", nil, &extended); status != http.StatusOK || len(extended) != 1 ||
+		extended[0].Id != a+":v1" || extended[0].BpmnXml == "" || !extended[0].PermissionsInfo.Shared {
+		t.Errorf("an extended page carries the content of its version: %v %+v", status, extended)
+	}
+}
+
+// The process list of the designer reads the content of all models at once; a shared model
+// carries its own.
+func TestProcessListOfASharedUserCarriesTheContent(t *testing.T) {
+	e, deps := newEnvWith(t, nil)
+	var shared deprecated.Process
+	for _, call := range []struct {
+		method, path, name, svg string
+		result                  any
+	}{
+		{http.MethodPost, "/repository/processes", "shared", "<svg>shared</svg>", &shared},
+		{http.MethodPost, "/repository/processes", "private", "<svg>private</svg>", nil},
+	} {
+		if status, _ := e.call(alice, call.method, call.path, map[string]any{"name": call.name, "bpmn_xml": waitingProcess(), "svgXML": call.svg}, call.result); status != http.StatusOK {
+			t.Fatalf("%v %v: %v", call.method, call.name, status)
+		}
+	}
+	if status, _ := e.call(alice, http.MethodPut, "/repository/processes/"+shared.Id, map[string]any{"_id": shared.Id, "name": "shared", "bpmn_xml": waitingProcess(), "svgXML": "<svg>shared 2</svg>"}, nil); status != http.StatusOK {
+		t.Fatalf("update: %v", status)
+	}
+	shareWithBob(t, e, deps, "processes_models", shared.Id)
+	var list []deprecated.Process
+	status, header := e.call(bob, http.MethodGet, "/repository/v2/processes", nil, &list)
+	if status != http.StatusOK || len(list) != 1 || list[0].Id != shared.Id || list[0].SvgXml != "<svg>shared 2</svg>" || header.Get("X-Total-Count") != "1" {
+		t.Errorf("bob lists the current version of the shared model: %v %+v %v", status, list, header.Get("X-Total-Count"))
+	}
+}

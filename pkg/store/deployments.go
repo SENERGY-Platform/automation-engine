@@ -19,6 +19,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -210,6 +211,98 @@ func scanDeploymentVersion(row interface{ Scan(...any) error }) (v model.Deploym
 func (this *Tx) GetDeploymentVersion(deploymentId string, version int) (v model.DeploymentVersion, err error) {
 	v, err = scanDeploymentVersion(this.queryRow("SELECT "+deploymentVersionColumns+" FROM deployment_versions WHERE deployment_id = ? AND version = ?", deploymentId, version))
 	return v, notFound(err, "version %v of deployment %v not found", version, deploymentId)
+}
+
+// idsPerQuery bounds the ids in one IN list, well below the parameter limits of SQLite (32766)
+// and Postgres (65535); a variable for tests
+var idsPerQuery = 500
+
+// chunks splits ids into slices of at most idsPerQuery
+func chunks(ids []string) [][]string {
+	var result [][]string
+	for len(ids) > idsPerQuery {
+		result = append(result, ids[:idsPerQuery])
+		ids = ids[idsPerQuery:]
+	}
+	if len(ids) > 0 {
+		result = append(result, ids)
+	}
+	return result
+}
+
+// DeploymentVersionNumbers lists the versions kept of the deployments ids in the namespace that
+// access allows, newest first per deployment; with current only the current version of each. A
+// deployment that is missing, of another namespace or not allowed has no entry.
+func (this *Tx) DeploymentVersionNumbers(namespace string, ids []string, current bool, access Access) (map[string][]int, error) {
+	result := map[string][]int{}
+	for _, chunk := range chunks(ids) {
+		w := &where{}
+		w.add("d.namespace = ?", namespace)
+		w.access("d.", access)
+		w.in("d.id", chunk)
+		if current {
+			w.add("v.version = d.version")
+		}
+		rows, err := this.query("SELECT v.deployment_id, v.version FROM deployment_versions v JOIN deployments d ON d.id = v.deployment_id"+w.String()+" ORDER BY v.deployment_id, v.version DESC", w.args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			var version int
+			if err = rows.Scan(&id, &version); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			result[id] = append(result[id], version)
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+// VersionRef names a version of a deployment or model.
+type VersionRef struct {
+	Id      string
+	Version int
+}
+
+// versionRefsPerQuery bounds the versions read by one query of GetDeploymentVersions
+var versionRefsPerQuery = 200
+
+// GetDeploymentVersions reads the given versions with their content, keyed by ref; a version that
+// does not exist has no entry. Rights are not checked: refs come from DeploymentVersionNumbers.
+func (this *Tx) GetDeploymentVersions(refs []VersionRef) (map[VersionRef]model.DeploymentVersion, error) {
+	result := map[VersionRef]model.DeploymentVersion{}
+	for start := 0; start < len(refs); start += versionRefsPerQuery {
+		chunk := refs[start:min(start+versionRefsPerQuery, len(refs))]
+		conditions := make([]string, 0, len(chunk))
+		args := make([]any, 0, 2*len(chunk))
+		for _, ref := range chunk {
+			conditions = append(conditions, "(deployment_id = ? AND version = ?)")
+			args = append(args, ref.Id, ref.Version)
+		}
+		rows, err := this.query("SELECT "+deploymentVersionColumns+" FROM deployment_versions WHERE "+strings.Join(conditions, " OR "), args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			v, err := scanDeploymentVersion(rows)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			result[VersionRef{Id: v.DeploymentId, Version: v.Version}] = v
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 func (this *Tx) GetIncidentHandling(deploymentId string, version int) (result model.IncidentHandling, err error) {

@@ -491,6 +491,64 @@ func (this *Controller) GetDeploymentVersion(ctx context.Context, token string, 
 	return result, err
 }
 
+// DeploymentVersions lists the versions of the deployments ids the caller may read: with current
+// the current version of each, otherwise every version kept. They follow the order of ids, newest
+// first per deployment; an id the caller may not read is left out, as is a repeated id. limit and
+// offset select a window of that order before the content is read, a limit of 0 means all; total
+// counts the whole order. The rights are read once and checked in the query, so the versions of
+// a list cost one transaction instead of one per version with a check each.
+func (this *Controller) DeploymentVersions(ctx context.Context, token string, namespace string, ids []string, current bool, limit int, offset int) (result []model.DeploymentVersion, total int, err error) {
+	user, _, err := this.begin(token, namespace)
+	if err != nil {
+		return nil, 0, err
+	}
+	access, err := this.access(ctx, user, namespace, KindDeployment, Read)
+	if err != nil {
+		return nil, 0, err
+	}
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		numbers, err := tx.DeploymentVersionNumbers(namespace, ids, current, access)
+		if err != nil {
+			return err
+		}
+		var refs []store.VersionRef
+		seen := map[string]bool{}
+		for _, id := range ids {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			for _, version := range numbers[id] {
+				refs = append(refs, store.VersionRef{Id: id, Version: version})
+			}
+		}
+		total = len(refs)
+		end := len(refs)
+		if limit > 0 {
+			end = min(offset+limit, len(refs))
+		}
+		refs = refs[min(max(offset, 0), end):end]
+		versions, err := tx.GetDeploymentVersions(refs)
+		if err != nil {
+			return err
+		}
+		result = make([]model.DeploymentVersion, 0, len(refs))
+		checks := map[string]map[int]store.ResourceCheck{}
+		for _, ref := range refs {
+			v, ok := versions[ref]
+			if !ok {
+				continue
+			}
+			if err = this.addResourcesWith(tx, &v, checks); err != nil {
+				return err
+			}
+			result = append(result, v)
+		}
+		return nil
+	})
+	return result, total, err
+}
+
 // GetDeploymentSource returns the model version a version of a deployment was created from, as
 // it was saved, before the conversion for the engine. Reading the deployment is enough: whoever
 // sees a release sees what it was made of, as with the copy smart-service-repository kept.

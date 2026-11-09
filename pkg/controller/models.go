@@ -305,6 +305,25 @@ func (this *Controller) ListModelVersions(ctx context.Context, token string, nam
 	return result, err
 }
 
+// CurrentModelVersions reads the current version of the models ids the caller may read, keyed by
+// model id; an id the caller may not read is missing. The rights are read once and checked in the
+// query, so a list costs one transaction instead of one per model with a check each.
+func (this *Controller) CurrentModelVersions(ctx context.Context, token string, namespace string, ids []string) (result map[string]model.ModelVersion, err error) {
+	user, _, err := this.begin(token, namespace)
+	if err != nil {
+		return nil, err
+	}
+	access, err := this.auth.Access(ctx, user, namespace, KindModel, Read)
+	if err != nil {
+		return nil, err
+	}
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		result, err = tx.CurrentModelVersions(namespace, ids, access)
+		return err
+	})
+	return result, err
+}
+
 func (this *Controller) GetModelVersion(ctx context.Context, token string, namespace string, id string, version int) (result model.ModelVersion, err error) {
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		if _, err := this.readModel(ctx, tx, token, namespace, id, Read, false); err != nil {

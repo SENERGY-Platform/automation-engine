@@ -315,24 +315,49 @@ func (this *Engine) version(tx *store.Tx, deploymentId string, version int) (*ca
 	if err != nil {
 		return nil, err
 	}
-	key := fmt.Sprintf("%v/%v/%v", deploymentId, version, created.UnixMilli())
-	this.cacheMux.Lock()
-	cached, ok := this.cache[key]
-	this.cacheMux.Unlock()
-	if ok {
+	if cached, ok := this.cached(deploymentId, version, created); ok {
 		return cached, nil
 	}
 	v, err := tx.GetDeploymentVersion(deploymentId, version)
 	if err != nil {
 		return nil, err
 	}
+	return this.parse(v)
+}
+
+// ProcessOf returns the parsed process of a version read with its content, cached as by
+// Process, without a query.
+func (this *Engine) ProcessOf(v model.DeploymentVersion) (*bpmn.Process, error) {
+	cached, ok := this.cached(v.DeploymentId, v.Version, v.CreatedAt)
+	if !ok {
+		var err error
+		if cached, err = this.parse(v); err != nil {
+			return nil, err
+		}
+	}
+	return cached.process, nil
+}
+
+func versionKey(deploymentId string, version int, created time.Time) string {
+	return fmt.Sprintf("%v/%v/%v", deploymentId, version, created.UnixMilli())
+}
+
+func (this *Engine) cached(deploymentId string, version int, created time.Time) (*cachedVersion, bool) {
+	this.cacheMux.Lock()
+	defer this.cacheMux.Unlock()
+	cached, ok := this.cache[versionKey(deploymentId, version, created)]
+	return cached, ok
+}
+
+// parse parses a version with its content and caches it
+func (this *Engine) parse(v model.DeploymentVersion) (*cachedVersion, error) {
 	p, _, err := bpmn.Parse(v.Xml)
 	if err != nil {
-		return nil, fmt.Errorf("deployment %v version %v: %w", deploymentId, version, err)
+		return nil, fmt.Errorf("deployment %v version %v: %w", v.DeploymentId, v.Version, err)
 	}
 	// the deploy validated them; what does not fit anymore is left out
 	bpmn.ApplyParameters(p, v.Parameters)
-	cached = &cachedVersion{process: p, selections: v.Selections}
+	cached := &cachedVersion{process: p, selections: v.Selections}
 	this.cacheMux.Lock()
 	if len(this.cache) >= maxCachedProcesses {
 		for k := range this.cache {
@@ -340,7 +365,7 @@ func (this *Engine) version(tx *store.Tx, deploymentId string, version int) (*ca
 			break
 		}
 	}
-	this.cache[key] = cached
+	this.cache[versionKey(v.DeploymentId, v.Version, v.CreatedAt)] = cached
 	this.cacheMux.Unlock()
 	return cached, nil
 }

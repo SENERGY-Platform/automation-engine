@@ -21,6 +21,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -231,6 +232,15 @@ func changes(t *testing.T, srv *server.Server, deploymentId string, failing ...b
 	v, err := srv.Controller.GetDeploymentVersion(ctx, alice, "smart-services", deploymentId, 1)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// the lists of releases read the versions together and mark them the same
+	list, _, err := srv.Controller.DeploymentVersions(ctx, alice, "smart-services", []string{deploymentId}, false, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i := slices.IndexFunc(list, func(l model.DeploymentVersion) bool { return l.Version == 1 }); i < 0 ||
+		!reflect.DeepEqual(list[i].ChangedResources, v.ChangedResources) || !reflect.DeepEqual(list[i].UsedResources, v.UsedResources) {
+		t.Errorf("the list marks version 1 as the single read does: %+v, want %+v", list, v)
 	}
 	result := map[string]model.ChangedResource{}
 	for _, c := range v.ChangedResources {

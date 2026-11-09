@@ -60,6 +60,12 @@ type Controller interface {
 	PutModel(ctx context.Context, token string, namespace string, id string, input model.ModelInput) (model.Model, error)
 	// Rights names the rights the caller holds on resources, which permissions_info shows
 	Rights(ctx context.Context, token string, namespace string, kind model.Kind, ids []string) (map[string]model.Rights, error)
+	// DeploymentVersions reads the versions of a list of deployments in one go, which the lists
+	// of releases need for every element
+	DeploymentVersions(ctx context.Context, token string, namespace string, ids []string, current bool, limit int, offset int) ([]model.DeploymentVersion, int, error)
+	// CurrentModelVersions reads the current versions of a list of models in one go, which the
+	// lists of processes and designs need for every element
+	CurrentModelVersions(ctx context.Context, token string, namespace string, ids []string) (map[string]model.ModelVersion, error)
 }
 
 type Handler struct {

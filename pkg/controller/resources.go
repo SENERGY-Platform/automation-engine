@@ -28,9 +28,16 @@ import (
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 )
 
-// addResources adds the resources a version uses and those that changed since (SMS-15)
+// addResources adds the resources a version uses and those that changed since (SMS-15); v holds
+// its content
 func (this *Controller) addResources(tx *store.Tx, v *model.DeploymentVersion) error {
-	process, err := this.engine.Process(tx, v.DeploymentId, v.Version)
+	return this.addResourcesWith(tx, v, map[string]map[int]store.ResourceCheck{})
+}
+
+// addResourcesWith is addResources for several versions, with the checks read so far per
+// deployment
+func (this *Controller) addResourcesWith(tx *store.Tx, v *model.DeploymentVersion, checks map[string]map[int]store.ResourceCheck) error {
+	process, err := this.engine.ProcessOf(*v)
 	if err != nil {
 		return err
 	}
@@ -39,11 +46,12 @@ func (this *Controller) addResources(tx *store.Tx, v *model.DeploymentVersion) e
 		return nil
 	}
 	v.UsedResources = &used
-	checks, err := tx.ResourceChecks(v.DeploymentId)
-	if err != nil {
-		return err
+	if _, ok := checks[v.DeploymentId]; !ok {
+		if checks[v.DeploymentId], err = tx.ResourceChecks(v.DeploymentId); err != nil {
+			return err
+		}
 	}
-	v.ChangedResources = checks[v.Version].Changed
+	v.ChangedResources = checks[v.DeploymentId][v.Version].Changed
 	return nil
 }
 

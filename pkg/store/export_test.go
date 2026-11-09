@@ -31,3 +31,11 @@ func ExecForTest(tx *Tx, statement string) error {
 func MaxOpenConnsForTest(s *Store) int {
 	return s.db.Stats().MaxOpenConnections
 }
+
+// SetIdsPerQueryForTest changes how many ids and versions one query of a list reads, so that a
+// test covers several queries with a few rows; it returns the restore.
+func SetIdsPerQueryForTest(n int) func() {
+	ids, refs := idsPerQuery, versionRefsPerQuery
+	idsPerQuery, versionRefsPerQuery = n, n
+	return func() { idsPerQuery, versionRefsPerQuery = ids, refs }
+}

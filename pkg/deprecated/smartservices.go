@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -324,14 +323,17 @@ func (this *Handler) listDesigns(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	versions, err := this.c.CurrentModelVersions(r.Context(), token(r), smartServices, modelIds(models))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	result := make([]SmartServiceDesign, 0, len(models))
 	for _, m := range models {
-		v, err := this.c.GetModelVersion(r.Context(), token(r), smartServices, m.Id, m.Version)
-		if err != nil {
-			writeError(w, err)
-			return
+		// a model without version was deleted after the list was read
+		if v, ok := versions[m.Id]; ok {
+			result = append(result, design(m, v))
 		}
-		result = append(result, design(m, v))
 	}
 	writeJson(w, http.StatusOK, result)
 }
@@ -772,15 +774,21 @@ func (this *Handler) releases(r *http.Request) ([]model.Deployment, []model.Depl
 	ids := splitList(q.Get("ids"))
 	switch {
 	case len(ids) > 0:
+		// in the order of ids, without the ones the caller may not read, as one read per id did
+		found, err := all(func(page model.PageOptions) (model.Page[model.Deployment], error) {
+			return this.c.ListDeployments(r.Context(), token(r), smartServices, model.DeploymentListOptions{Ids: ids, PageOptions: page})
+		})
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		byId := map[string]model.Deployment{}
+		for _, d := range found {
+			byId[d.Id] = d
+		}
 		for _, id := range ids {
-			d, err := this.c.GetDeployment(r.Context(), token(r), smartServices, id)
-			if errors.Is(err, model.ErrNotFound) || errors.Is(err, model.ErrForbidden) {
-				continue
+			if d, ok := byId[id]; ok {
+				deployments = append(deployments, d)
 			}
-			if err != nil {
-				return nil, nil, 0, err
-			}
-			deployments = append(deployments, d)
 		}
 		total = len(deployments)
 	case boolParam(r, "latest"):
@@ -799,39 +807,35 @@ func (this *Handler) releases(r *http.Request) ([]model.Deployment, []model.Depl
 	}
 	var resultDeployments []model.Deployment
 	var versions []model.DeploymentVersion
-	for _, d := range deployments {
-		all := []model.DeploymentVersion{}
-		if boolParam(r, "latest") || len(ids) > 0 {
-			v, err := this.c.GetDeploymentVersion(r.Context(), token(r), smartServices, d.Id, d.Version)
-			if err != nil {
-				return nil, nil, 0, err
-			}
-			all = append(all, v)
-		} else {
-			for version := d.Version; version >= 1; version-- {
-				v, err := this.c.GetDeploymentVersion(r.Context(), token(r), smartServices, d.Id, version)
-				if errors.Is(err, model.ErrNotFound) {
-					continue
-				}
-				if err != nil {
-					return nil, nil, 0, err
-				}
-				all = append(all, v)
+	if boolParam(r, "latest") || len(ids) > 0 {
+		current, _, err := this.c.DeploymentVersions(r.Context(), token(r), smartServices, deploymentIds(deployments), true, 0, 0)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		byId := map[string]model.DeploymentVersion{}
+		for _, v := range current {
+			byId[v.DeploymentId] = v
+		}
+		for _, d := range deployments {
+			if v, ok := byId[d.Id]; ok {
+				resultDeployments = append(resultDeployments, d)
+				versions = append(versions, v)
 			}
 		}
-		for _, v := range all {
-			resultDeployments = append(resultDeployments, d)
-			versions = append(versions, v)
-		}
+		return resultDeployments, versions, total, nil
 	}
-	if !boolParam(r, "latest") && len(ids) == 0 {
-		total = len(versions)
-		end := len(versions)
-		if limit > 0 {
-			end = min(offset+limit, len(versions))
-		}
-		start := min(offset, len(versions))
-		resultDeployments, versions = resultDeployments[start:end], versions[start:end]
+	// all versions, paged before their content is read
+	versions, total, err = this.c.DeploymentVersions(r.Context(), token(r), smartServices, deploymentIds(deployments), false, limit, offset)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	byId := map[string]model.Deployment{}
+	for _, d := range deployments {
+		byId[d.Id] = d
+	}
+	resultDeployments = make([]model.Deployment, 0, len(versions))
+	for _, v := range versions {
+		resultDeployments = append(resultDeployments, byId[v.DeploymentId])
 	}
 	return resultDeployments, versions, total, nil
 }
@@ -841,13 +845,25 @@ func (this *Handler) releases(r *http.Request) ([]model.Deployment, []model.Depl
 // list gets it from the cache of the engine.
 var usableBudget = 3 * time.Second
 
-// deploymentIds lists the ids of the deployments of a page, each once
+// deploymentIds lists the ids of deployments in their order, each once; the release list passes
+// every deployment of the caller
 func deploymentIds(deployments []model.Deployment) []string {
 	ids := make([]string, 0, len(deployments))
+	seen := make(map[string]bool, len(deployments))
 	for _, d := range deployments {
-		if !slices.Contains(ids, d.Id) {
+		if !seen[d.Id] {
+			seen[d.Id] = true
 			ids = append(ids, d.Id)
 		}
+	}
+	return ids
+}
+
+// modelIds lists the ids of models
+func modelIds(models []model.Model) []string {
+	ids := make([]string, 0, len(models))
+	for _, m := range models {
+		ids = append(ids, m.Id)
 	}
 	return ids
 }

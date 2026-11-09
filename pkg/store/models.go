@@ -128,6 +128,40 @@ func (this *Tx) GetModelVersion(modelId string, version int) (v model.ModelVersi
 	return v, notFound(err, "version %v of model %v not found", version, modelId)
 }
 
+// CurrentModelVersions reads the current version of the models ids in the namespace that access
+// allows, keyed by model id; a model that is missing, of another namespace or not allowed has no
+// entry.
+func (this *Tx) CurrentModelVersions(namespace string, ids []string, access Access) (map[string]model.ModelVersion, error) {
+	result := map[string]model.ModelVersion{}
+	for _, chunk := range chunks(ids) {
+		w := &where{}
+		w.add("m.namespace = ?", namespace)
+		w.access("m.", access)
+		w.in("m.id", chunk)
+		rows, err := this.query("SELECT v.model_id, v.version, v.xml, v.svg, v.issues, v.created_at FROM model_versions v JOIN models m ON m.id = v.model_id AND m.version = v.version"+w.String(), w.args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var v model.ModelVersion
+			var issues string
+			var created int64
+			if err = rows.Scan(&v.ModelId, &v.Version, &v.Xml, &v.Svg, &issues, &created); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			v.Issues = fromJson[[]model.Issue](issues)
+			v.CreatedAt = fromMillis(created)
+			result[v.ModelId] = v
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
 // ListModelVersions returns versions without XML and SVG, newest first.
 func (this *Tx) ListModelVersions(modelId string, page model.PageOptions) (result model.Page[model.ModelVersion], err error) {
 	if result.Total, err = this.count("SELECT COUNT(*) FROM model_versions WHERE model_id = ?", modelId); err != nil {

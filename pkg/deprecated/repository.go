@@ -95,6 +95,11 @@ func (this *Handler) process(r *http.Request, m model.Model) (Process, error) {
 	if err != nil {
 		return Process{}, err
 	}
+	return processOf(m, version), nil
+}
+
+// processOf is a model in the format of process-model-repository
+func processOf(m model.Model, version model.ModelVersion) Process {
 	result := Process{Id: m.Id, Name: m.Name, Date: m.UpdatedAt.UnixMilli(), Owner: m.Owner, BpmnXml: version.Xml, SvgXml: version.Svg,
 		Publish: m.Published, Description: m.Description, LastUpdatedUnix: m.UpdatedAt.Unix()}
 	if m.PublishedAt != nil {
@@ -103,7 +108,7 @@ func (this *Handler) process(r *http.Request, m model.Model) (Process, error) {
 	if m.Published {
 		result.Description = m.PublishDescription
 	}
-	return result, nil
+	return result
 }
 
 // listProcesses godoc
@@ -153,14 +158,17 @@ func (this *Handler) listProcesses(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	versions, err := this.c.CurrentModelVersions(r.Context(), token(r), processes, modelIds(models))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	result := make([]Process, 0, len(models))
 	for _, m := range models {
-		p, err := this.process(r, m)
-		if err != nil {
-			writeError(w, err)
-			return
+		// a model without version was deleted after the list was read
+		if v, ok := versions[m.Id]; ok {
+			result = append(result, processOf(m, v))
 		}
-		result = append(result, p)
 	}
 	w.Header().Set("X-Total-Count", strconv.Itoa(total))
 	w.Header().Set("Access-Control-Expose-Headers", "X-Total-Count")
