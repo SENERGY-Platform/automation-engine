@@ -16,7 +16,8 @@
 
 // Command devicesim stands in for a protocol handler and its devices in the local Docker Compose
 // setup. It reads the device commands the engine sends to the Kafka topic of a protocol handler
-// and answers every one on the topic the command names (metadata.response_to), as
+// and answers every one on the topic the command names (metadata.response_to), or with a POST
+// to it if it is an HTTP URL, as the connectors of the platform answer, up to 32 at a time; as
 // platform-connector does once the device answered. At a fixed interval it also sends an event
 // of every device in device-repository for each of its services with the interaction event or
 // event+request, to the device data topic of the service, as platform-connector does when a
@@ -36,6 +37,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -90,7 +92,9 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	writer := &kafka.Writer{Addr: kafka.TCP(broker), RequiredAcks: kafka.RequireOne, AllowAutoTopicCreation: true}
+	// an answer is one message: with the default BatchTimeout of one second, every write waited
+	// for a fuller batch and the simulator answered one command a second
+	writer := &kafka.Writer{Addr: kafka.TCP(broker), RequiredAcks: kafka.RequireOne, AllowAutoTopicCreation: true, BatchTimeout: 10 * time.Millisecond}
 	defer writer.Close()
 	done := make(chan struct{})
 	topics := strings.Split(env("TOPICS", "connector"), ",")
@@ -165,7 +169,38 @@ func answer(ctx context.Context, writer *kafka.Writer, raw []byte, number float6
 	if to == "" {
 		to = "response"
 	}
+	if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
+		posting <- struct{}{}
+		go func() {
+			defer func() { <-posting }()
+			if err := post(ctx, to, response); err != nil {
+				log.Println("answer:", err)
+			}
+		}()
+		return nil
+	}
 	return writer.WriteMessages(ctx, kafka.Message{Topic: to, Key: []byte(msg.Metadata.Device.Id), Value: response})
+}
+
+// posting bounds the answers sent over HTTP at the same time
+var posting = make(chan struct{}, 32)
+
+func post(ctx context.Context, url string, body []byte) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		text, _ := io.ReadAll(io.LimitReader(resp.Body, 1000))
+		return fmt.Errorf("%v answered %v: %s", url, resp.Status, text)
+	}
+	return nil
 }
 
 func serialise(content models.Content, number float64) (string, error) {
