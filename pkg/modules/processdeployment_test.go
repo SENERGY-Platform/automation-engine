@@ -177,6 +177,10 @@ func TestProcessDeploymentSelectsTheSourceOfAnEvent(t *testing.T) {
 		"group":                  {`{"device_group_selection":{"id":"group_1"}}`, model.Selection{DeviceGroupId: "group_1"}},
 		"import":                 {`{"import_selection":{"id":"import_2","characteristic_id":"test-characteristic","path":"root.value"}}`, model.Selection{ImportId: "import_2", Path: &model.SelectedPath{Path: "root.value", CharacteristicId: "test-characteristic"}}},
 		"import without path":    {`{"import_selection":{"id":"import_2"}}`, model.Selection{ImportId: "import_2"}},
+		// the output of an analytics operator, as the designer writes it and as the iot option of
+		// smart-service-module-worker-process named it (SNRGY-5113)
+		"analytics operator":   {`{"pipeline_id":"p1","operator_id":"o1"}`, model.Selection{PipelineId: "p1", OperatorId: "o1"}},
+		"generic event source": {`{"generic_event_source":{"filter_type":"operatorId","filter_ids":"p1:o1","topic":"analytics-stopping"}}`, model.Selection{PipelineId: "p1", OperatorId: "o1"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			deployed := deployProcess(t, map[string]any{"process_deployment.StartEvent_1.selection": test.selection}, nil, nil).deployed(t)

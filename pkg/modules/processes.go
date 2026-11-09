@@ -385,8 +385,11 @@ func keepsModel(name string, value string, original string) (bool, error) {
 	return false, fmt.Errorf("%v: the expression %q is not the one of the model; a deploy parameter is a value", name, value)
 }
 
-// selectionOf converts the iot option of smart services into a device selection, or the output
-// of an analytics operator given as {"pipeline_id": ..., "operator_id": ...} (SNRGY-5113)
+// selectionOf converts the iot option of smart services into a device selection. The output of
+// an analytics operator is given as {"pipeline_id": ..., "operator_id": ...}, as the designer
+// writes it, or as generic_event_source of the iot option with filter_type operatorId and
+// filter_ids "<pipeline id>:<operator id>", as smart-service-module-worker-process read it
+// (SNRGY-5113)
 func selectionOf(raw string) (result model.Selection, err error) {
 	var option struct {
 		PipelineId      string `json:"pipeline_id"`
@@ -405,7 +408,11 @@ func selectionOf(raw string) (result model.Selection, err error) {
 			Path             *string `json:"path"`
 			CharacteristicId *string `json:"characteristic_id"`
 		} `json:"import_selection"`
-		GenericEventSource json.RawMessage `json:"generic_event_source"`
+		GenericEventSource *struct {
+			FilterType string `json:"filter_type"`
+			FilterIds  string `json:"filter_ids"`
+			Path       string `json:"path"`
+		} `json:"generic_event_source"`
 	}
 	if err = json.Unmarshal([]byte(raw), &option); err != nil {
 		return result, err
@@ -437,8 +444,21 @@ func selectionOf(raw string) (result model.Selection, err error) {
 			return result, fmt.Errorf("an analytics operator needs pipeline_id and operator_id")
 		}
 		result.PipelineId, result.OperatorId = option.PipelineId, option.OperatorId
-	case len(option.GenericEventSource) > 0 && string(option.GenericEventSource) != "null":
-		return result, fmt.Errorf("generic event sources are not supported")
+	case option.GenericEventSource != nil:
+		source := option.GenericEventSource
+		if !strings.EqualFold(source.FilterType, "operatorId") {
+			return result, fmt.Errorf("generic event sources are supported only with filter_type operatorId")
+		}
+		pipelineId, operatorId, ok := strings.Cut(source.FilterIds, ":")
+		if !ok || pipelineId == "" || operatorId == "" {
+			return result, fmt.Errorf("filter_ids of a generic event source must be <pipeline id>:<operator id>")
+		}
+		if source.Path != "" {
+			// the old event-worker read the value at the path; the engine hands the whole output
+			// of the operator to the condition, which reads the field it needs
+			return result, fmt.Errorf("a generic event source takes no path; the event is the whole output of the operator")
+		}
+		result.PipelineId, result.OperatorId = pipelineId, operatorId
 	default:
 		return result, fmt.Errorf("no device, device group, import or analytics operator selected")
 	}

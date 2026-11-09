@@ -38,6 +38,20 @@ func TestSelectionOfAnalyticsOperator(t *testing.T) {
 			t.Errorf("%v is rejected", raw)
 		}
 	}
+	// the iot option of smart-service-module-worker-process
+	selection, err = selectionOf(`{"generic_event_source": {"filter_type": "operatorId", "filter_ids": "p1:o1", "topic": "analytics-stopping"}}`)
+	if err != nil || selection != (model.Selection{PipelineId: "p1", OperatorId: "o1"}) {
+		t.Errorf("generic event source: %+v %v", selection, err)
+	}
+	for _, raw := range []string{
+		`{"generic_event_source": {"filter_type": "deviceId", "filter_ids": "p1:o1"}}`,
+		`{"generic_event_source": {"filter_type": "operatorId", "filter_ids": "p1"}}`,
+		`{"generic_event_source": {"filter_type": "operatorId", "filter_ids": "p1:o1", "path": "analytics.x"}}`,
+	} {
+		if _, err = selectionOf(raw); err == nil {
+			t.Errorf("%v is rejected", raw)
+		}
+	}
 	if selection, err = selectionOf(`{"import_selection": {"id": "i1"}}`); err != nil || selection.ImportId != "i1" {
 		t.Errorf("the iot option format stays: %+v %v", selection, err)
 	}
