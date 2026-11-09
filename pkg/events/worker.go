@@ -93,8 +93,10 @@ type Worker struct {
 	byId         map[string]model.EventDescription
 	index        map[string][]string
 	importTopics map[string]bool
-	revision     int64
-	lastFull     time.Time
+	// topics of analytics operators, shared by all pipelines with an operator of the same name
+	analyticsTopics map[string]bool
+	revision        int64
+	lastFull        time.Time
 
 	notifyMux sync.Mutex
 	notified  map[string]time.Time
@@ -104,7 +106,7 @@ type Worker struct {
 func NewWorker(config WorkerConfig, s *store.Store, evaluator *Evaluator, correlator Correlator, consume Consumer, logger *slog.Logger) *Worker {
 	return &Worker{
 		config: config, store: s, evaluator: evaluator, correlator: correlator, consume: consume, logger: logger, now: time.Now,
-		byId: map[string]model.EventDescription{}, index: map[string][]string{}, importTopics: map[string]bool{},
+		byId: map[string]model.EventDescription{}, index: map[string][]string{}, importTopics: map[string]bool{}, analyticsTopics: map[string]bool{},
 		notified: map[string]time.Time{}, async: make(chan struct{}, max(config.AsyncWorkers, 1)),
 	}
 }
@@ -121,12 +123,19 @@ func importKey(importId string) string {
 	return "i|" + importId
 }
 
+func analyticsKey(pipelineId string, operatorId string) string {
+	return "a|" + pipelineId + "|" + operatorId
+}
+
 func (this *Worker) keyOf(d model.EventDescription) string {
 	if this.config.Local {
 		return topicKey(d.Topic)
 	}
 	if d.ImportId != "" {
 		return importKey(d.ImportId)
+	}
+	if d.PipelineId != "" {
+		return analyticsKey(d.PipelineId, d.OperatorId)
 	}
 	return serviceKey(d.DeviceId, d.ServiceId)
 }
@@ -166,12 +175,16 @@ func (this *Worker) Sync(ctx context.Context) ([]string, error) {
 	this.revision = latest
 	this.index = map[string][]string{}
 	this.importTopics = map[string]bool{}
+	this.analyticsTopics = map[string]bool{}
 	topics := map[string]bool{}
 	for id, d := range this.byId {
 		this.index[this.keyOf(d)] = append(this.index[this.keyOf(d)], id)
 		topics[d.Topic] = true
 		if d.ImportId != "" {
 			this.importTopics[d.Topic] = true
+		}
+		if d.PipelineId != "" {
+			this.analyticsTopics[d.Topic] = true
 		}
 	}
 	result := make([]string, 0, len(topics))
@@ -266,6 +279,14 @@ type DeviceMessage struct {
 	Value     map[string]any `json:"value"`
 }
 
+// OperatorMessage is a message of an analytics operator on its output topic: the outputs of the
+// operator under "analytics", with the pipeline and the operator that wrote them (SNRGY-5113).
+type OperatorMessage struct {
+	PipelineId string         `json:"pipeline_id" description:"id of the pipeline in analytics-pipeline"`
+	OperatorId string         `json:"operator_id" description:"id of the operator in the pipeline"`
+	Analytics  map[string]any `json:"analytics" description:"outputs of the operator; the local variable event of the correlation"`
+}
+
 // Handle evaluates a message against its descriptions; qos 1 descriptions are evaluated and
 // correlated before the message is acknowledged, qos 0 ones afterwards (EVT-05).
 func (this *Worker) Handle(ctx context.Context, m Message) error {
@@ -275,6 +296,7 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 	}
 	this.mux.RLock()
 	isImport := this.importTopics[m.Topic]
+	isAnalytics := this.analyticsTopics[m.Topic]
 	this.mux.RUnlock()
 	var key string
 	var payload map[string]any
@@ -284,6 +306,16 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 		}
 		importId, _ := payload["import_id"].(string)
 		key = importKey(importId)
+	} else if isAnalytics {
+		var o OperatorMessage
+		if err := json.Unmarshal(m.Value, &o); err != nil || o.PipelineId == "" {
+			return nil
+		}
+		key = analyticsKey(o.PipelineId, o.OperatorId)
+		payload = o.Analytics
+		if payload == nil {
+			payload = map[string]any{}
+		}
 	} else if this.config.Local {
 		key = topicKey(m.Topic)
 	} else {
@@ -391,6 +423,9 @@ func (this *Worker) notifyError(ctx context.Context, d model.EventDescription, e
 	source := d.DeviceId + " " + d.ServiceId
 	if d.ImportId != "" {
 		source = "import " + d.ImportId
+	}
+	if d.PipelineId != "" {
+		source = "operator " + d.OperatorId + " of pipeline " + d.PipelineId
 	}
 	message := fmt.Sprintf("The event %v of deployment %v could not be evaluated for %v: %v", d.ElementId, d.DeploymentId, strings.TrimSpace(source), err)
 	if notifyErr := this.correlator.QueueNotification(ctx, d.Owner, d.Namespace, "Event evaluation failed", message); notifyErr != nil {

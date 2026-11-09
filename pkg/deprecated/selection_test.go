@@ -55,3 +55,32 @@ func TestDeviceSelectionMapsBothWays(t *testing.T) {
 		t.Error("generic event sources are rejected")
 	}
 }
+
+// The old format names the output of an analytics operator as generic event source with
+// filter_type operatorId and filter_ids "<pipeline>:<operator>", as event-deployment did; the
+// engine reads the topic from the pipeline and returns none (SNRGY-5113).
+func TestAnalyticsOperatorMapsToGenericEventSource(t *testing.T) {
+	selection, err := newSelection(models.Selection{SelectedGenericEventSource: &models.GenericEventSource{FilterType: "operatorId", FilterIds: "p1:o1", Topic: "analytics-stopping"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(selection, model.Selection{PipelineId: "p1", OperatorId: "o1"}) {
+		t.Fatalf("%+v", selection)
+	}
+	back := oldSelection(model.Criteria{}, selection, nil)
+	if back.SelectedGenericEventSource == nil || *back.SelectedGenericEventSource != (models.GenericEventSource{FilterType: "operatorId", FilterIds: "p1:o1"}) {
+		t.Fatalf("%+v", back.SelectedGenericEventSource)
+	}
+	if back.SelectedDeviceId != nil && *back.SelectedDeviceId != "" {
+		t.Errorf("no device: %v", *back.SelectedDeviceId)
+	}
+	for name, source := range map[string]models.GenericEventSource{
+		"other filter type": {FilterType: "deviceId", FilterIds: "p1:o1"},
+		"without operator":  {FilterType: "operatorId", FilterIds: "p1"},
+		"empty pipeline":    {FilterType: "operatorId", FilterIds: ":o1"},
+	} {
+		if _, err = newSelection(models.Selection{SelectedGenericEventSource: &source}); err == nil {
+			t.Errorf("%v is rejected", name)
+		}
+	}
+}

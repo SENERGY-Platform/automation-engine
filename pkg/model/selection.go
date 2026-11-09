@@ -23,6 +23,10 @@ type Selection struct {
 	ServiceId     string `json:"service_id,omitempty"`
 	DeviceGroupId string `json:"device_group_id,omitempty"`
 	ImportId      string `json:"import_id,omitempty"`
+	// the output of an operator of an analytics pipeline of the deployment owner, only for
+	// events; both are set or neither (SNRGY-5113)
+	PipelineId string `json:"pipeline_id,omitempty"`
+	OperatorId string `json:"operator_id,omitempty"`
 	// the value of the function in the service and the values of its configurables
 	Path *SelectedPath `json:"path,omitempty"`
 	// read the last event value instead of sending a command, for services with event and request (TASK-08)
@@ -46,5 +50,5 @@ type Configurable struct {
 }
 
 func (this Selection) Empty() bool {
-	return this.DeviceId == "" && this.DeviceGroupId == "" && this.ImportId == ""
+	return this.DeviceId == "" && this.DeviceGroupId == "" && this.ImportId == "" && this.PipelineId == "" && this.OperatorId == ""
 }

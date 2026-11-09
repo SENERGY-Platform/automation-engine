@@ -281,10 +281,15 @@ func (this *fakeSeries) Last(context.Context, string, string, string, []string) 
 }
 
 func newEnv(t *testing.T) *env {
+	return newEnvWith(t, func(*configuration.Config) {})
+}
+
+func newEnvWith(t *testing.T, configure func(*configuration.Config)) *env {
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
 	config := configuration.Default()
 	config.SqlitePath = storetest.MemoryDsn()
+	configure(&config)
 	repo := &fakeRepo{groups: map[string]models.DeviceGroup{"g": {Id: "g", DeviceIds: []string{"d1"}}}}
 	series := &fakeSeries{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

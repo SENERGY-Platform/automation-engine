@@ -188,6 +188,10 @@ func (this *Controller) EventEvaluations(ctx context.Context, token string, name
 			result.Limitations = append(result.Limitations, "import events are not reconstructed, it is open whether import data reaches timescale (EVT-12)")
 			continue
 		}
+		if d.PipelineId != "" {
+			result.Limitations = append(result.Limitations, "events of analytics operators are not reconstructed, their output is not read from timescale")
+			continue
+		}
 		service, err := events.ServiceOf(d)
 		if err != nil {
 			result.Limitations = append(result.Limitations, fmt.Sprintf("%v: %v", d.Id, err))
@@ -314,6 +318,9 @@ func (this *Controller) evaluateEvents(ctx context.Context, state *model.DebugSt
 func (this *Controller) currentEvaluation(ctx context.Context, inst model.Instance, source model.EventSource, ownerToken *string) *model.EventEvaluation {
 	if source.ImportId != "" {
 		return &model.EventEvaluation{Error: "the current value of import events is not available"}
+	}
+	if source.PipelineId != "" {
+		return &model.EventEvaluation{Error: "the current value of analytics operators is not available"}
 	}
 	var d model.EventDescription
 	found := false

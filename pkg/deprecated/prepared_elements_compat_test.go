@@ -21,12 +21,14 @@ import "testing"
 // The old designer leaves a timer without definition for the deploy dialog to fill in;
 // process-deployment offered it as a duration with an empty time. A device event without
 // script was a message event of the analytics pipeline there; the engine offers it as a device
-// event that triggers on every value (EVT-03), so it is not compared.
+// event that triggers on every value (EVT-03), so it is not compared. A message event without
+// any device criteria was not offered there; the engine needs a selection for it and offers it,
+// e.g. for the output of an analytics operator (SNRGY-5113).
 func TestPreparedDeploymentOffersAnEmptyTimerAsDurationToFillIn(t *testing.T) {
 	e := newEnv(t)
 	cases := map[string][]string{
 		"0pools0lane_with_order": {"IntermediateThrowEvent_164ft4m"},
-		"0pools0lanes4events":    nil,
+		"0pools0lanes4events":    {"StartEvent_1"},
 		"0pools0lanes5events":    {"StartEvent_1"},
 		"conditional_event_2":    nil,
 	}

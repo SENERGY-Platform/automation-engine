@@ -215,7 +215,7 @@ func Live(tx *store.Tx, inst store.Instance, proc *bpmn.Process) (result model.D
 // Source describes the event source of a description (DBG-02).
 func Source(d model.EventDescription) model.EventSource {
 	return model.EventSource{EventDescriptionId: d.Id, DeviceId: d.DeviceId, ServiceId: d.ServiceId, DeviceGroupId: d.DeviceGroupId, ImportId: d.ImportId,
-		Script: d.Script, ValueVariable: d.ValueVariable, Variables: d.Variables}
+		PipelineId: d.PipelineId, OperatorId: d.OperatorId, Script: d.Script, ValueVariable: d.ValueVariable, Variables: d.Variables}
 }
 
 func sortWaits(waits []model.Wait) {

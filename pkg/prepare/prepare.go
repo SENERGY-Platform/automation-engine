@@ -347,16 +347,25 @@ func ValidateSelections(process *bpmn.Process, selections map[string]model.Selec
 			continue
 		}
 		sources := 0
-		for _, v := range []string{s.DeviceId, s.DeviceGroupId, s.ImportId} {
+		for _, v := range []string{s.DeviceId, s.DeviceGroupId, s.ImportId, s.PipelineId + s.OperatorId} {
 			if v != "" {
 				sources++
 			}
 		}
 		if sources != 1 {
-			issues = append(issues, model.Issue{ElementId: id, Message: "select exactly one of device, device group or import"})
+			issues = append(issues, model.Issue{ElementId: id, Message: "select exactly one of device, device group, import or analytics operator"})
 		}
 		if s.ImportId != "" && e.IsDeviceCommand() {
 			issues = append(issues, model.Issue{ElementId: id, Message: "an import cannot receive commands"})
+		}
+		if (s.PipelineId == "") != (s.OperatorId == "") {
+			issues = append(issues, model.Issue{ElementId: id, Message: "an analytics operator needs pipeline_id and operator_id"})
+		}
+		if (s.PipelineId != "" || s.OperatorId != "") && e.IsDeviceCommand() {
+			issues = append(issues, model.Issue{ElementId: id, Message: "an analytics operator cannot receive commands"})
+		}
+		if (s.PipelineId != "" || s.OperatorId != "") && s.Path != nil {
+			issues = append(issues, model.Issue{ElementId: id, Message: "an analytics operator takes no path; the event is the whole output of the operator"})
 		}
 		if s.ServiceId != "" && s.DeviceId == "" {
 			issues = append(issues, model.Issue{ElementId: id, Message: "a service needs a device"})

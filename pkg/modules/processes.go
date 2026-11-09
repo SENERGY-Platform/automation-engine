@@ -259,11 +259,12 @@ func devicesInput(task Task) ([]string, error) {
 // gatewayFor chooses the first gateway that carries every selected device, with the devices of
 // selected groups, as smart-service-module-worker-process did, and the devices the process finds
 // at runtime (SNRGY-5060); without devices, with imports or without such gateway the deployment
-// stays in the cloud (TASK-20, DEP-09)
+// stays in the cloud (TASK-20, DEP-09); so does one with analytics events, whose operators the
+// gateway cannot read (SNRGY-5113)
 func (this *processModules) gatewayFor(ctx context.Context, token string, selections map[string]model.Selection, runtimeDevices []string) (string, error) {
 	selected := slices.Clone(runtimeDevices)
 	for _, s := range selections {
-		if s.ImportId != "" {
+		if s.ImportId != "" || s.PipelineId != "" {
 			return "", nil
 		}
 		if s.DeviceId != "" {
@@ -384,9 +385,12 @@ func keepsModel(name string, value string, original string) (bool, error) {
 	return false, fmt.Errorf("%v: the expression %q is not the one of the model; a deploy parameter is a value", name, value)
 }
 
-// selectionOf converts the iot option of smart services into a device selection
+// selectionOf converts the iot option of smart services into a device selection, or the output
+// of an analytics operator given as {"pipeline_id": ..., "operator_id": ...} (SNRGY-5113)
 func selectionOf(raw string) (result model.Selection, err error) {
 	var option struct {
+		PipelineId      string `json:"pipeline_id"`
+		OperatorId      string `json:"operator_id"`
 		DeviceSelection *struct {
 			DeviceId         string  `json:"device_id"`
 			ServiceId        *string `json:"service_id"`
@@ -428,10 +432,15 @@ func selectionOf(raw string) (result model.Selection, err error) {
 	case option.ImportSelection != nil:
 		result.ImportId = option.ImportSelection.Id
 		result.Path = path(option.ImportSelection.Path, option.ImportSelection.CharacteristicId)
+	case option.PipelineId != "" || option.OperatorId != "":
+		if option.PipelineId == "" || option.OperatorId == "" {
+			return result, fmt.Errorf("an analytics operator needs pipeline_id and operator_id")
+		}
+		result.PipelineId, result.OperatorId = option.PipelineId, option.OperatorId
 	case len(option.GenericEventSource) > 0 && string(option.GenericEventSource) != "null":
 		return result, fmt.Errorf("generic event sources are not supported")
 	default:
-		return result, fmt.Errorf("no device, device group or import selected")
+		return result, fmt.Errorf("no device, device group, import or analytics operator selected")
 	}
 	return result, nil
 }

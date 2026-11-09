@@ -140,6 +140,11 @@ func main() {
 		"Data of the imports that event descriptions of deployments name, read in the consumer group EVENT_CONSUMER_GROUP.", kafka,
 		"importTopic", "kafka_topic of the import instance in import-deploy"),
 		new(ImportMessage), "ImportMessage", "evaluate import events")
+	g.operation(receive, g.channel("operatorOutput", "{operatorTopic}",
+		"Output of analytics operators that event descriptions of deployments name, read in the consumer group EVENT_CONSUMER_GROUP. "+
+			"All pipelines with an operator of the same name share the topic; a description takes only the messages of its pipeline and operator (SNRGY-5113).", kafka,
+		"operatorTopic", "outputTopic of the operator in analytics-pipeline, analytics-<operator name>"),
+		new(events.OperatorMessage), "OperatorMessage", "evaluate analytics events")
 
 	// platform signals
 	g.operation(receive, g.channel("deviceGroups", config.DeviceGroupTopic,

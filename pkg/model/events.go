@@ -37,6 +37,10 @@ type EventDescription struct {
 	ServiceId     string `json:"service_id,omitempty"`
 	DeviceGroupId string `json:"device_group_id,omitempty"`
 	ImportId      string `json:"import_id,omitempty"`
+	// the operator of an analytics pipeline whose output the description evaluates; its value
+	// is the object "analytics" of the operator message, without unmarshalling (SNRGY-5113)
+	PipelineId string `json:"pipeline_id,omitempty"`
+	OperatorId string `json:"operator_id,omitempty"`
 	// the Kafka topic with the data
 	Topic string `json:"topic"`
 	// condition: true, "true" or a number >= 1 triggers the event

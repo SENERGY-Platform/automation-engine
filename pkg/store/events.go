@@ -25,12 +25,12 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 )
 
-const eventColumns = "id, deployment_id, version, element_id, namespace, owner, message_name, device_id, service_id, device_group_id, import_id, topic, script, value_variable, variables, qos, characteristic_id, function_id, aspect_ids, path, service, revision, suspended"
+const eventColumns = "id, deployment_id, version, element_id, namespace, owner, message_name, device_id, service_id, device_group_id, import_id, topic, script, value_variable, variables, qos, characteristic_id, function_id, aspect_ids, path, service, revision, suspended, pipeline_id, operator_id"
 
 func scanEventDescription(row interface{ Scan(...any) error }, extra ...any) (d model.EventDescription, err error) {
 	var variables, aspects, service string
 	err = row.Scan(append([]any{&d.Id, &d.DeploymentId, &d.Version, &d.ElementId, &d.Namespace, &d.Owner, &d.MessageName, &d.DeviceId, &d.ServiceId, &d.DeviceGroupId, &d.ImportId,
-		&d.Topic, &d.Script, &d.ValueVariable, &variables, &d.Qos, &d.CharacteristicId, &d.FunctionId, &aspects, &d.Path, &service, &d.Revision, &d.Suspended}, extra...)...)
+		&d.Topic, &d.Script, &d.ValueVariable, &variables, &d.Qos, &d.CharacteristicId, &d.FunctionId, &aspects, &d.Path, &service, &d.Revision, &d.Suspended, &d.PipelineId, &d.OperatorId}, extra...)...)
 	d.Variables = fromJson[map[string]string](variables)
 	d.AspectIds = fromJson[[]string](aspects)
 	if service != "" {
@@ -74,9 +74,9 @@ func (this *Tx) ReplaceEventDescriptions(deploymentId string, version int, descr
 		if len(d.AspectIds) > 0 {
 			aspects = toJson(d.AspectIds)
 		}
-		_, err = this.exec("INSERT INTO event_descriptions ("+eventColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		_, err = this.exec("INSERT INTO event_descriptions ("+eventColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			d.Id, deploymentId, d.Version, d.ElementId, d.Namespace, d.Owner, d.MessageName, d.DeviceId, d.ServiceId, d.DeviceGroupId, d.ImportId,
-			d.Topic, d.Script, d.ValueVariable, variables, d.Qos, d.CharacteristicId, d.FunctionId, aspects, d.Path, string(d.Service), revision, d.Suspended)
+			d.Topic, d.Script, d.ValueVariable, variables, d.Qos, d.CharacteristicId, d.FunctionId, aspects, d.Path, string(d.Service), revision, d.Suspended, d.PipelineId, d.OperatorId)
 		if err != nil {
 			return err
 		}

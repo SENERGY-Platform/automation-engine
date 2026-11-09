@@ -209,24 +209,43 @@ func oldSelection(criteria model.Criteria, s model.Selection, options []model.Se
 	result := models.Selection{FilterCriteria: oldCriteria(criteria), SelectionOptions: []models.SelectionOption{},
 		SelectedDeviceId: ptr(s.DeviceId), SelectedServiceId: ptr(s.ServiceId), SelectedDeviceGroupId: ptr(s.DeviceGroupId), SelectedImportId: ptr(s.ImportId),
 		SelectedPath: oldPath(s.Path)}
+	if s.PipelineId != "" {
+		// the engine derives the topic from the pipeline; it is not part of the selection
+		result.SelectedGenericEventSource = &models.GenericEventSource{FilterType: operatorFilterType, FilterIds: s.PipelineId + ":" + s.OperatorId}
+	}
 	for _, o := range options {
 		result.SelectionOptions = append(result.SelectionOptions, oldOption(o))
 	}
 	return result
 }
 
+// operatorFilterType is the filter_type of a generic event source on the output of an analytics
+// operator, with filter_ids "<pipeline id>:<operator id>", as event-deployment and the flow
+// deploy dialog of the web-ui wrote it
+const operatorFilterType = "operatorId"
+
 func newSelection(s models.Selection) (model.Selection, error) {
-	if s.SelectedGenericEventSource != nil {
-		return model.Selection{}, model.BadRequest("generic event sources are not supported")
-	}
 	value := func(p *string) string {
 		if p == nil {
 			return ""
 		}
 		return *p
 	}
-	return model.Selection{DeviceId: value(s.SelectedDeviceId), ServiceId: value(s.SelectedServiceId), DeviceGroupId: value(s.SelectedDeviceGroupId),
-		ImportId: value(s.SelectedImportId), Path: newPath(s.SelectedPath)}, nil
+	result := model.Selection{DeviceId: value(s.SelectedDeviceId), ServiceId: value(s.SelectedServiceId), DeviceGroupId: value(s.SelectedDeviceGroupId),
+		ImportId: value(s.SelectedImportId), Path: newPath(s.SelectedPath)}
+	if source := s.SelectedGenericEventSource; source != nil {
+		// the output of an analytics operator (SNRGY-5113); the topic is ignored, the engine reads
+		// it from the pipeline
+		if !strings.EqualFold(source.FilterType, operatorFilterType) {
+			return model.Selection{}, model.BadRequest("generic event sources are supported only with filter_type %q", operatorFilterType)
+		}
+		pipelineId, operatorId, ok := strings.Cut(source.FilterIds, ":")
+		if !ok || pipelineId == "" || operatorId == "" {
+			return model.Selection{}, model.BadRequest("filter_ids of a generic event source must be <pipeline id>:<operator id>")
+		}
+		result.PipelineId, result.OperatorId = pipelineId, operatorId
+	}
+	return result, nil
 }
 
 // inputText is the text of an input mapping, false if the input is missing or not text
@@ -271,8 +290,10 @@ func elements(process *bpmn.Process, selections map[string]model.Selection, opti
 				task.PreferEvent = *prefer
 			}
 			element.Task = task
-		case device:
-			// the event is evaluated with "value" without a name of its own (events.baseDescription)
+		case device || e.IsDeviceEvent():
+			// an event without device criteria is listed as well: its source can be the output of an
+			// analytics operator (SNRGY-5113). The event is evaluated with "value" without a name of
+			// its own (events.baseDescription)
 			event := &models.ConditionalEvent{Script: e.Attributes["script"], ValueVariable: firstNonEmpty(e.Attributes["value_variable_name"], "value"), Variables: map[string]string{},
 				Selection: oldSelection(criteria, selections[e.Id], options[e.Id])}
 			_ = json.Unmarshal([]byte(e.Attributes["variables"]), &event.Variables)

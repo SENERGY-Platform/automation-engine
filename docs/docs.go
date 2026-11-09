@@ -12377,11 +12377,18 @@ const docTemplate = `{
                 "namespace": {
                     "type": "string"
                 },
+                "operator_id": {
+                    "type": "string"
+                },
                 "owner": {
                     "type": "string"
                 },
                 "path": {
                     "description": "empty: the path follows from function and aspects",
+                    "type": "string"
+                },
+                "pipeline_id": {
+                    "description": "the operator of an analytics pipeline whose output the description evaluates; its value\nis the object \"analytics\" of the operator message, without unmarshalling (SNRGY-5113)",
                     "type": "string"
                 },
                 "qos": {
@@ -12527,6 +12534,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "import_id": {
+                    "type": "string"
+                },
+                "operator_id": {
+                    "type": "string"
+                },
+                "pipeline_id": {
                     "type": "string"
                 },
                 "script": {
@@ -14203,6 +14216,9 @@ const docTemplate = `{
                 "import_id": {
                     "type": "string"
                 },
+                "operator_id": {
+                    "type": "string"
+                },
                 "path": {
                     "description": "the value of the function in the service and the values of its configurables",
                     "allOf": [
@@ -14210,6 +14226,10 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.SelectedPath"
                         }
                     ]
+                },
+                "pipeline_id": {
+                    "description": "the output of an operator of an analytics pipeline of the deployment owner, only for\nevents; both are set or neither (SNRGY-5113)",
+                    "type": "string"
                 },
                 "prefer_event": {
                     "description": "read the last event value instead of sending a command, for services with event and request (TASK-08)",

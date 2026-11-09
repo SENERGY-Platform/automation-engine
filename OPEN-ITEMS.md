@@ -71,6 +71,11 @@ Feature branches, each forked from the default branch. Since 2026-10-22 all of t
 - [ ] **Question:** Can the withdrawal of the owner right be prevented in permissions-v2 itself, e.g. through a topic option? Today the engine reacts to the rights signal over Kafka and restores the right (SEC-10, M3). A solution in permissions-v2 would also benefit devices and hubs.
 - [ ] **Task (operations):** Set `PERMISSIONS_KAFKA_TOPIC` in the engine (the topic of the rights signal of permissions-v2). Checked on 2026-11-03: neither `processes/automation-engine/app/config.yaml` nor an overlay in rancher-2-defs sets it, so an owner right withdrawn in permissions-v2 stays withdrawn there; in the engine, the owner keeps access (SEC-10, M3).
 
+### analytics-pipeline (SNRGY-5113)
+
+- [ ] **Task (operations):** Set `ANALYTICS_PIPELINE_URL` in the engine (`processes/automation-engine` in rancher-2-defs, branch `senergy`), the in-cluster URL of analytics-pipeline. Without it every deployment with an analytics event is rejected with "analytics events are not configured". The engine reads `GET /pipeline/{id}` with the token of the owner; the event role reads the topics `analytics-<operator name>` in `EVENT_CONSUMER_GROUP`.
+- [ ] **Task (platform-content):** The designs "Thermostatsteuerung nach Lüftungsverhalten" select `{"pipeline_id": ..., "operator_id": ...}` at their catch event and drop the operator `event-all` with its token (branch `fix/thermostat-event-target`). The Groovy script in `Task_12pf9lz` (see Rollout) is still to be rewritten as well.
+
 ### user-management
 
 - [x] **Task:** Before deleting a user, call the dry run of the engine, then the delete call (`/users`), instead of addressing process-scheduler. Kafka `user` remains the fallback (SEC-14, M2).

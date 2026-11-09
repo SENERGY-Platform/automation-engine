@@ -1299,10 +1299,17 @@ definitions:
         type: string
       namespace:
         type: string
+      operator_id:
+        type: string
       owner:
         type: string
       path:
         description: 'empty: the path follows from function and aspects'
+        type: string
+      pipeline_id:
+        description: |-
+          the operator of an analytics pipeline whose output the description evaluates; its value
+          is the object "analytics" of the operator message, without unmarshalling (SNRGY-5113)
         type: string
       qos:
         description: '1: the message is acknowledged only after the correlation; 0:
@@ -1403,6 +1410,10 @@ definitions:
       event_description_id:
         type: string
       import_id:
+        type: string
+      operator_id:
+        type: string
+      pipeline_id:
         type: string
       script:
         type: string
@@ -2572,11 +2583,18 @@ definitions:
         type: string
       import_id:
         type: string
+      operator_id:
+        type: string
       path:
         allOf:
         - $ref: '#/definitions/model.SelectedPath'
         description: the value of the function in the service and the values of its
           configurables
+      pipeline_id:
+        description: |-
+          the output of an operator of an analytics pipeline of the deployment owner, only for
+          events; both are set or neither (SNRGY-5113)
+        type: string
       prefer_event:
         description: read the last event value instead of sending a command, for services
           with event and request (TASK-08)

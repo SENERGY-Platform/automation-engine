@@ -561,6 +561,29 @@
                 }
             ]
         },
+        "operatorOutput": {
+            "address": "{operatorTopic}",
+            "messages": {
+                "OperatorMessage": {
+                    "payload": {
+                        "$ref": "#/components/schemas/EventsOperatorMessage"
+                    },
+                    "name": "OperatorMessage",
+                    "title": "OperatorMessage"
+                }
+            },
+            "parameters": {
+                "operatorTopic": {
+                    "description": "outputTopic of the operator in analytics-pipeline, analytics-\u003coperator name\u003e"
+                }
+            },
+            "description": "Output of analytics operators that event descriptions of deployments name, read in the consumer group EVENT_CONSUMER_GROUP. All pipelines with an operator of the same name share the topic; a description takes only the messages of its pipeline and operator (SNRGY-5113).",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
         "permissions": {
             "address": "{permissionsTopic}",
             "messages": {
@@ -848,6 +871,18 @@
                 }
             ],
             "summary": "complete a device command"
+        },
+        "receiveOperatorOutput": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/operatorOutput"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/operatorOutput/messages/OperatorMessage"
+                }
+            ],
+            "summary": "evaluate analytics events"
         },
         "receivePermissions": {
             "action": "receive",
@@ -1168,6 +1203,27 @@
                             "object",
                             "null"
                         ]
+                    }
+                },
+                "type": "object"
+            },
+            "EventsOperatorMessage": {
+                "properties": {
+                    "analytics": {
+                        "additionalProperties": {},
+                        "description": "outputs of the operator; the local variable event of the correlation",
+                        "type": [
+                            "object",
+                            "null"
+                        ]
+                    },
+                    "operator_id": {
+                        "description": "id of the operator in the pipeline",
+                        "type": "string"
+                    },
+                    "pipeline_id": {
+                        "description": "id of the pipeline in analytics-pipeline",
+                        "type": "string"
                     }
                 },
                 "type": "object"
@@ -1842,10 +1898,16 @@
                     "namespace": {
                         "type": "string"
                     },
+                    "operator_id": {
+                        "type": "string"
+                    },
                     "owner": {
                         "type": "string"
                     },
                     "path": {
+                        "type": "string"
+                    },
+                    "pipeline_id": {
                         "type": "string"
                     },
                     "qos": {
@@ -2340,8 +2402,14 @@
                     "import_id": {
                         "type": "string"
                     },
+                    "operator_id": {
+                        "type": "string"
+                    },
                     "path": {
                         "$ref": "#/components/schemas/ModelSelectedPath"
+                    },
+                    "pipeline_id": {
+                        "type": "string"
                     },
                     "prefer_event": {
                         "type": [

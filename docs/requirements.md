@@ -539,9 +539,10 @@ The event-worker stays a role of its own, preferably as a second operating mode 
   - device + service;
   - device without service, expanded at deploy;
   - device group, expanded at deploy;
-  - import.
+  - import;
+  - output of an operator of an analytics pipeline of the deployment owner (SNRGY-5113, since 2026-11-09).
 
-  The analytics events (`MessageEvent` with flow_id) are dead and are dropped.
+  The old analytics events (`MessageEvent` with flow_id, triggered by `event-operator-all` over HTTP) are dropped. Their replacement reads the output topic of the operator instead of a callback, without a token in the pipeline.
 - **EVT-04 (M)** Condition evaluation in the event-worker:
   - unmarshalling to the characteristic of the event, via path or function + aspect;
   - script with `value_variable` and `variables`;

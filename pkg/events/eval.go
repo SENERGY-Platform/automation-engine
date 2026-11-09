@@ -69,16 +69,8 @@ func (this *Evaluator) Evaluate(d model.EventDescription, message map[string]any
 	if d.Suspended != "" {
 		return result, fmt.Errorf("the condition is suspended: %v", d.Suspended)
 	}
-	var service models.Service
-	if len(d.Service) > 0 {
-		if err = json.Unmarshal(d.Service, &service); err != nil {
-			return result, fmt.Errorf("invalid service of event description: %w", err)
-		}
-	}
-	result.Value, err = this.unmarshaller.Unmarshal(MessageDesc{Service: service, CharacteristicId: d.CharacteristicId, FunctionId: d.FunctionId,
-		AspectIds: d.AspectIds, Path: d.Path, Message: message})
-	if err != nil {
-		return result, fmt.Errorf("unable to read the value: %w", err)
+	if result.Value, err = this.value(d, message); err != nil {
+		return result, err
 	}
 	if triggered, constant := constantCondition(d.Script); constant {
 		result.Triggered = triggered
@@ -102,6 +94,26 @@ func (this *Evaluator) Evaluate(d model.EventDescription, message map[string]any
 	}
 	result.Triggered, err = triggers(run.Value)
 	return result, err
+}
+
+// value is the output of an analytics operator as it is (SNRGY-5113), or the device or import
+// value in the characteristic of the event
+func (this *Evaluator) value(d model.EventDescription, message map[string]any) (any, error) {
+	if d.PipelineId != "" {
+		return message, nil
+	}
+	var service models.Service
+	if len(d.Service) > 0 {
+		if err := json.Unmarshal(d.Service, &service); err != nil {
+			return nil, fmt.Errorf("invalid service of event description: %w", err)
+		}
+	}
+	value, err := this.unmarshaller.Unmarshal(MessageDesc{Service: service, CharacteristicId: d.CharacteristicId, FunctionId: d.FunctionId,
+		AspectIds: d.AspectIds, Path: d.Path, Message: message})
+	if err != nil {
+		return nil, fmt.Errorf("unable to read the value: %w", err)
+	}
+	return value, nil
 }
 
 // constantCondition reports the result of a condition that is a boolean literal. Such a condition

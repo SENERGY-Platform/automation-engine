@@ -172,6 +172,9 @@ type Config struct {
 	// consumer group of event workers, which share the device data topics
 	EventConsumerGroup  string `json:"event_consumer_group" env_var:"EVENT_CONSUMER_GROUP"`
 	ImportRepositoryUrl string `json:"import_repository_url" env_var:"IMPORT_REPOSITORY_URL"`
+	// analytics-pipeline, e.g. http://pipeline.analytics:8000: events can wait for the output of an
+	// operator of a pipeline (SNRGY-5113); empty rejects such events at deploy
+	AnalyticsPipelineUrl string `json:"analytics_pipeline_url" env_var:"ANALYTICS_PIPELINE_URL"`
 	// user deletions published by user-management, the fallback for users deleted outside of it (SEC-14)
 	UserTopic string `json:"user_topic" env_var:"USER_TOPIC"`
 	// permissions-v2 publishes rights changes of the engine topics here; the engine restores

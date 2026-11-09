@@ -143,3 +143,36 @@ func TestValidateSelections(t *testing.T) {
 		}
 	}
 }
+
+// The output of an analytics operator is an event source of its own: pipeline and operator
+// together, for events only, without a path (SNRGY-5113).
+func TestValidateAnalyticsSelections(t *testing.T) {
+	p := testProcess(t)
+	cases := map[string]struct {
+		element   string
+		selection model.Selection
+		valid     bool
+	}{
+		"event":            {"ev", model.Selection{PipelineId: "p", OperatorId: "o"}, true},
+		"without operator": {"ev", model.Selection{PipelineId: "p"}, false},
+		"without pipeline": {"ev", model.Selection{OperatorId: "o"}, false},
+		"with a device":    {"ev", model.Selection{PipelineId: "p", OperatorId: "o", DeviceId: "d"}, false},
+		"with a path":      {"ev", model.Selection{PipelineId: "p", OperatorId: "o", Path: &model.SelectedPath{Path: "analytics.x"}}, false},
+		"on a command":     {"on", model.Selection{PipelineId: "p", OperatorId: "o"}, false},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			selections := map[string]model.Selection{"ev": {ImportId: "i"}, "script": {DeviceId: "d"}, "on": {DeviceId: "d", ServiceId: "s"}}
+			selections[c.element] = c.selection
+			var issues []model.Issue
+			for _, issue := range ValidateSelections(p, selections) {
+				if issue.ElementId == c.element {
+					issues = append(issues, issue)
+				}
+			}
+			if c.valid != (len(issues) == 0) {
+				t.Errorf("valid %v, issues %v", c.valid, issues)
+			}
+		})
+	}
+}

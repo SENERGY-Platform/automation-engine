@@ -21,6 +21,7 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,6 +69,16 @@ func (this *httpImports) Type(token string, id string) (result models.ImportType
 	return result, err
 }
 
+// statusError is an answer other than 2xx
+type statusError struct {
+	code int
+	err  error
+}
+
+func (this *statusError) Error() string {
+	return this.err.Error()
+}
+
 var importsClient = &http.Client{Timeout: 10 * time.Second}
 
 // getJSON reads a resource with the token; an answer other than 2xx is an error with status and
@@ -85,9 +96,45 @@ func getJSON(token string, resourceUrl string, result any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("GET %v: %v %v", req.URL.Path, resp.StatusCode, strings.TrimSpace(string(body)))
+		return &statusError{code: resp.StatusCode, err: fmt.Errorf("GET %v: %v %v", req.URL.Path, resp.StatusCode, strings.TrimSpace(string(body)))}
 	}
 	return json.NewDecoder(resp.Body).Decode(result)
+}
+
+// Pipelines reads analytics pipelines with the token of the deployment owner (SNRGY-5113).
+type Pipelines interface {
+	Pipeline(token string, id string) (Pipeline, error)
+}
+
+// Pipeline is the part of an analytics-pipeline pipeline the describer needs.
+type Pipeline struct {
+	Id        string             `json:"id"`
+	UserId    string             `json:"userId"`
+	Operators []PipelineOperator `json:"operators"`
+}
+
+type PipelineOperator struct {
+	// the id the operator writes as operator_id into its messages
+	Id   string `json:"id"`
+	Name string `json:"name"`
+	// cloud or local; the output of a local operator reaches Kafka only if it is forwarded
+	DeploymentType string `json:"deploymentType"`
+	// analytics-<operator name> in the cloud, shared by every pipeline with this operator
+	OutputTopic string `json:"outputTopic"`
+}
+
+type httpPipelines struct {
+	url string
+}
+
+// NewPipelines reads from analytics-pipeline, e.g. http://pipeline.analytics:8000.
+func NewPipelines(analyticsPipelineUrl string) Pipelines {
+	return &httpPipelines{url: analyticsPipelineUrl}
+}
+
+func (this *httpPipelines) Pipeline(token string, id string) (result Pipeline, err error) {
+	err = getJSON(token, this.url+"/pipeline/"+url.PathEscape(id), &result)
+	return result, err
 }
 
 // Describer derives the event descriptions of a deployment version (DEP-07), following
@@ -100,6 +147,8 @@ type Describer struct {
 	// tokens of the owners, e.g. by token exchange
 	tokens  auth.UserTokenSource
 	imports Imports
+	// nil: analytics events are rejected at deploy
+	pipelines Pipelines
 	// descriptions for a gateway read the topics of its broker (FOG-06)
 	local bool
 }
@@ -109,6 +158,13 @@ type Describer struct {
 func (this *Describer) Local() *Describer {
 	result := *this
 	result.local = true
+	return &result
+}
+
+// WithPipelines lets deployments wait for the output of analytics operators (SNRGY-5113).
+func (this *Describer) WithPipelines(pipelines Pipelines) *Describer {
+	result := *this
+	result.pipelines = pipelines
 	return &result
 }
 
@@ -157,6 +213,8 @@ func (this *Describer) Describe(ctx context.Context, deployment model.Deployment
 			descriptions, err = this.deviceDescriptions(ctx, token, base, selection.DeviceId, selection.ServiceId)
 		case selection.ImportId != "":
 			descriptions, err = this.importDescription(ctx, token, base, selection)
+		case selection.PipelineId != "":
+			descriptions, err = this.analyticsDescription(token, base, selection)
 		}
 		if err != nil {
 			return nil, nil, err
@@ -300,4 +358,50 @@ func importVariable(v models.ImportContentVariable) models.ContentVariable {
 		result.SubContentVariables = append(result.SubContentVariables, importVariable(sub))
 	}
 	return result
+}
+
+// analyticsDescription describes the output of an operator of a pipeline of the owner: the topic
+// of the operator, filtered by pipeline and operator id in the worker, since the topic is shared
+// by every pipeline with an operator of the same name (SNRGY-5113)
+func (this *Describer) analyticsDescription(token string, base model.EventDescription, selection model.Selection) ([]model.EventDescription, error) {
+	issue := func(format string, args ...any) error {
+		return model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: fmt.Sprintf(format, args...)}})
+	}
+	if this.local {
+		return nil, issue("analytics events are not available on gateways")
+	}
+	if this.pipelines == nil {
+		return nil, issue("analytics events are not configured")
+	}
+	pipeline, err := this.pipelines.Pipeline(token, selection.PipelineId)
+	var status *statusError
+	if errors.As(err, &status) && (status.code == http.StatusNotFound || status.code == http.StatusForbidden) {
+		return nil, issue("pipeline %v does not exist or the owner of the deployment may not read it", selection.PipelineId)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("pipeline %v: %w", selection.PipelineId, err)
+	}
+	if pipeline.UserId != base.Owner {
+		return nil, issue("pipeline %v does not belong to the owner of the deployment", selection.PipelineId)
+	}
+	index := slices.IndexFunc(pipeline.Operators, func(o PipelineOperator) bool { return o.Id == selection.OperatorId })
+	if index < 0 {
+		return nil, issue("pipeline %v has no operator %v", selection.PipelineId, selection.OperatorId)
+	}
+	operator := pipeline.Operators[index]
+	if operator.DeploymentType == "local" {
+		return nil, issue("operator %v of pipeline %v runs on a gateway; only the output of cloud operators is available", operator.Id, selection.PipelineId)
+	}
+	if operator.OutputTopic == "" {
+		return nil, issue("operator %v of pipeline %v has no output topic", operator.Id, selection.PipelineId)
+	}
+	d := base
+	d.Id = uuid.NewString()
+	d.PipelineId = selection.PipelineId
+	d.OperatorId = selection.OperatorId
+	d.Topic = operator.OutputTopic
+	// the value is the output of the operator as it is; device criteria of the element do not
+	// apply to it
+	d.CharacteristicId, d.FunctionId, d.AspectIds, d.Path = "", "", nil, ""
+	return []model.EventDescription{d}, nil
 }

@@ -327,6 +327,9 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 			imports = events.NewImports(config.ImportDeployUrl, config.ImportRepositoryUrl)
 		}
 		describer := events.NewDescriber(repo, cacheTimeout, userToken, imports)
+		if config.AnalyticsPipelineUrl != "" {
+			describer = describer.WithPipelines(events.NewPipelines(config.AnalyticsPipelineUrl))
+		}
 		if fog {
 			describer = describer.Local()
 		}
