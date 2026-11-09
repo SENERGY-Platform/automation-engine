@@ -50,13 +50,16 @@ type WorkerConfig struct {
 	ErrorNotificationWindow time.Duration
 	// concurrent evaluations of qos 0 descriptions
 	AsyncWorkers int
+	// deployments whose qos 1 descriptions of a message are handled at the same time; each holds a
+	// database connection while it correlates. 1 handles them one after the other.
+	CorrelationWorkers int
 	// on a gateway: descriptions carry the topic event/{local device}/{local service}, and
 	// messages are the raw payload of the device (FOG-06)
 	Local bool
 }
 
 func DefaultWorkerConfig() WorkerConfig {
-	return WorkerConfig{MaxMessageAge: time.Hour, SyncInterval: time.Second, FullReloadInterval: 10 * time.Minute, TopicGrace: 10 * time.Minute, ErrorNotificationWindow: time.Hour, AsyncWorkers: 20}
+	return WorkerConfig{MaxMessageAge: time.Hour, SyncInterval: time.Second, FullReloadInterval: 10 * time.Minute, TopicGrace: 10 * time.Minute, ErrorNotificationWindow: time.Hour, AsyncWorkers: 20, CorrelationWorkers: 4}
 }
 
 // Message is a record of a device or import data topic.
@@ -335,7 +338,9 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 	// partition and offset alone are not unique across topics (EVT-05)
 	messageId := fmt.Sprintf("%s:%d:%d", m.Topic, m.Partition, m.Offset)
 	ageSeconds := float64(int64(max(age, 0).Seconds()))
-	var errs []error
+	// qos 1 descriptions per deployment
+	var groups [][]pending
+	group := map[string]int{}
 	for _, d := range descriptions {
 		// Kafka delivers again what a consumer had not committed, also after its topic was not
 		// read for days; a description only counts messages from after its deployment version was
@@ -348,7 +353,10 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 		if d.Suspended != "" {
 			continue
 		}
-		payload := payload
+		// its own copy: the value goes to the condition script as a live object that the script may
+		// change, and descriptions are evaluated at the same time, those of qos 0 and those of qos 1
+		// of different deployments
+		payload := copyPayload(payload)
 		if this.config.Local {
 			decoded, err := decodeFor(d, m.Value)
 			if err != nil {
@@ -358,7 +366,13 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 			payload = decoded
 		}
 		if d.Qos == 1 {
-			errs = append(errs, this.process(ctx, d, payload, messageId, ageSeconds))
+			i, ok := group[d.DeploymentId]
+			if !ok {
+				i = len(groups)
+				group[d.DeploymentId] = i
+				groups = append(groups, nil)
+			}
+			groups[i] = append(groups[i], pending{d, payload})
 			continue
 		}
 		this.async <- struct{}{}
@@ -369,6 +383,48 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 			}
 		}()
 	}
+	return this.processGroups(ctx, groups, messageId, ageSeconds)
+}
+
+// pending is a qos 1 description with the payload it evaluates
+type pending struct {
+	d       model.EventDescription
+	payload map[string]any
+}
+
+// processGroups handles the qos 1 descriptions of a message, the deployments in parallel on at
+// most CorrelationWorkers, the descriptions of a deployment one after the other, as all of them
+// before: a correlation can move an instance on to another event of its deployment that waits for
+// the same message. Message names are deploymentId_elementId, so two groups never correlate the
+// same instance, and a correlation locks only the row of its instance. The message is committed
+// when all are handled; errors are joined.
+func (this *Worker) processGroups(ctx context.Context, groups [][]pending, messageId string, ageSeconds float64) error {
+	errs := make([]error, len(groups))
+	run := func(i int) {
+		for _, p := range groups[i] {
+			errs[i] = errors.Join(errs[i], this.process(ctx, p.d, p.payload, messageId, ageSeconds))
+		}
+	}
+	if this.config.CorrelationWorkers <= 1 || len(groups) <= 1 {
+		for i := range groups {
+			run(i)
+		}
+		return errors.Join(errs...)
+	}
+	slots := make(chan struct{}, this.config.CorrelationWorkers)
+	var wg sync.WaitGroup
+	for i := range groups {
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-slots
+				wg.Done()
+			}()
+			run(i)
+		}()
+	}
+	wg.Wait()
 	return errors.Join(errs...)
 }
 
@@ -440,4 +496,31 @@ func decodeFor(d model.EventDescription, raw []byte) (map[string]any, error) {
 		return nil, fmt.Errorf("invalid service of event description: %w", err)
 	}
 	return DecodeLocalEvent(raw, service)
+}
+
+// copyPayload copies a decoded JSON value deeply, its maps and lists; other values are immutable
+func copyPayload(payload map[string]any) map[string]any {
+	if payload == nil {
+		return nil
+	}
+	return copyValue(payload).(map[string]any)
+}
+
+func copyValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		result := make(map[string]any, len(v))
+		for key, item := range v {
+			result[key] = copyValue(item)
+		}
+		return result
+	case []any:
+		result := make([]any, len(v))
+		for i, item := range v {
+			result[i] = copyValue(item)
+		}
+		return result
+	default:
+		return v
+	}
 }

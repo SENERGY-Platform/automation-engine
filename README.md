@@ -151,6 +151,7 @@ As in the other platform services, through `gin-middleware/otelx`:
 The same binary runs in two roles, scalable separately and bound to the same database:
 - `ROLE=engine` (default): API, execution, tasks, schedules.
 - `ROLE=event`: event worker. Reads the event descriptions from the database, subscribes to the related device data topics in the consumer group `EVENT_CONSUMER_GROUP` and correlates matches directly. Needs `KAFKA_URL` and, for the evaluation, `DEVICE_REPOSITORY_URL` with the `AUTH_*` values; unmarshalling runs in the process. If device-repository is not reachable, a QoS 1 message is read again instead of being reported to the owner.
+- `EVENT_CORRELATION_WORKERS` (default 4): how many deployments the event role correlates with one message at the same time; the descriptions of one deployment stay in their order, and the message is committed when all are handled. Each worker holds a database connection while it correlates, besides the up to 20 evaluations of QoS 0 events, so `POSTGRES_MAX_CONNS` of the event role should leave room for them. 1 correlates one after the other, as before. Gateways always correlate one after the other.
 
 ## Scripts that end the process
 

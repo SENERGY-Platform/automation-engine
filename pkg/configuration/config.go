@@ -176,8 +176,11 @@ type Config struct {
 	// engine or event: the event role evaluates device data and correlates events (section 10)
 	Role string `json:"role" env_var:"ROLE"`
 	// consumer group of event workers, which share the device data topics
-	EventConsumerGroup  string `json:"event_consumer_group" env_var:"EVENT_CONSUMER_GROUP"`
-	ImportRepositoryUrl string `json:"import_repository_url" env_var:"IMPORT_REPOSITORY_URL"`
+	EventConsumerGroup string `json:"event_consumer_group" env_var:"EVENT_CONSUMER_GROUP"`
+	// deployments whose waiting instances the event role correlates with a message at the same
+	// time; each holds a database connection. 1 correlates one after the other.
+	EventCorrelationWorkers int    `json:"event_correlation_workers" env_var:"EVENT_CORRELATION_WORKERS"`
+	ImportRepositoryUrl     string `json:"import_repository_url" env_var:"IMPORT_REPOSITORY_URL"`
 	// analytics-pipeline, e.g. http://pipeline.analytics:8000: events can wait for the output of an
 	// operator of a pipeline (SNRGY-5113); empty rejects such events at deploy
 	AnalyticsPipelineUrl string `json:"analytics_pipeline_url" env_var:"ANALYTICS_PIPELINE_URL"`
@@ -302,6 +305,7 @@ func Default() Config {
 		SyncProtocolWindow:         1,
 		Role:                       "engine",
 		EventConsumerGroup:         "automation-engine-events",
+		EventCorrelationWorkers:    4,
 		UserTopic:                  "user",
 		MaxIoValuesPerUser:         10000,
 		MaxIoValueBytes:            256 << 10,
@@ -402,6 +406,9 @@ func (this Config) validate() error {
 	}
 	if this.PprofPort == 0 && (this.PprofMutexFraction > 0 || this.PprofBlockRate > 0) {
 		return fmt.Errorf("pprof_mutex_fraction and pprof_block_rate need pprof_port")
+	}
+	if this.EventCorrelationWorkers < 1 {
+		return fmt.Errorf("event_correlation_workers must be at least 1")
 	}
 	if this.Database != "postgres" && this.Database != "sqlite" {
 		return fmt.Errorf("database must be postgres or sqlite, got %q", this.Database)

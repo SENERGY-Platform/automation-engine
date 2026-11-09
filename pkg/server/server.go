@@ -366,6 +366,8 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		}
 		workerConfig := events.DefaultWorkerConfig()
 		workerConfig.Local = true
+		// SQLite has one connection, correlations would only wait for it
+		workerConfig.CorrelationWorkers = 1
 		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller).WithCrashBrake(brake).WithBlocklist(e.Blocklist()), e, events.LocalConsumer(broker, 1, logger), logger)
 	}
 	var networks *fogsync.Cloud

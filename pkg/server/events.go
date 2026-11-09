@@ -123,6 +123,7 @@ func NewEventServer(ctx context.Context, config configuration.Config, logger *sl
 		consumer = result.kafkaConsumer
 	}
 	worker := events.DefaultWorkerConfig()
+	worker.CorrelationWorkers = config.EventCorrelationWorkers
 	result.Worker = events.NewWorker(worker, s, events.NewEvaluator(unmarshaller).WithCrashBrake(brake).WithBlocklist(e.Blocklist()), e, consumer, logger)
 	started = true
 	return result, nil

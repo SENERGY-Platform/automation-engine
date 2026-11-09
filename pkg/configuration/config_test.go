@@ -112,6 +112,17 @@ func TestValidatePprofLockProfiles(t *testing.T) {
 	}
 }
 
+func TestValidateEventCorrelationWorkers(t *testing.T) {
+	config := Default()
+	if config.EventCorrelationWorkers != 4 {
+		t.Fatalf("default: %v", config.EventCorrelationWorkers)
+	}
+	config.EventCorrelationWorkers = 0
+	if err := config.validate(); err == nil {
+		t.Error("at least one worker")
+	}
+}
+
 func TestValidateRejectsVerifyTokensWithoutCertUrl(t *testing.T) {
 	config := Default()
 	config.VerifyTokens = true
