@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"runtime"
 	"strconv"
 	"time"
 )
@@ -42,17 +43,25 @@ func pprofServer(port int) *http.Server {
 	return &http.Server{Addr: net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 }
 
-// servePprof serves the profiles until ctx is done; port 0 disables it.
-func servePprof(ctx context.Context, port int, logger *slog.Logger) {
+// servePprof serves the profiles until ctx is done; port 0 disables it. mutexFraction and
+// blockRate enable the profiles "mutex" and "block", which stay empty otherwise; both cost time
+// at every contention or blocking event, so they are off by default.
+func servePprof(ctx context.Context, port int, mutexFraction int, blockRate int, logger *slog.Logger) {
 	if port <= 0 {
 		return
+	}
+	if mutexFraction > 0 {
+		runtime.SetMutexProfileFraction(mutexFraction)
+	}
+	if blockRate > 0 {
+		runtime.SetBlockProfileRate(blockRate)
 	}
 	srv := pprofServer(port)
 	go func() {
 		<-ctx.Done()
 		_ = srv.Close()
 	}()
-	logger.Info("pprof listening", "address", srv.Addr)
+	logger.Info("pprof listening", "address", srv.Addr, "mutex_fraction", mutexFraction, "block_rate", blockRate)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		// profiling is a diagnostic aid, the engine keeps running without it
 		logger.Warn("pprof server stopped", "error", err)

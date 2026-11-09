@@ -90,6 +90,12 @@ type Config struct {
 	// net/http/pprof under /debug/pprof/ on 127.0.0.1 of this port, reachable only from inside the
 	// pod, e.g. with kubectl port-forward; 0 disables
 	PprofPort int `json:"pprof_port" env_var:"PPROF_PORT"`
+	// with pprof_port: one of this many lock contentions is recorded in the profile "mutex"
+	// (runtime.SetMutexProfileFraction); 0 records none. For measurements, not for steady operation.
+	PprofMutexFraction int `json:"pprof_mutex_fraction" env_var:"PPROF_MUTEX_FRACTION"`
+	// with pprof_port: a blocking event of at least this many nanoseconds is recorded in the
+	// profile "block" (runtime.SetBlockProfileRate), 1 records every one; 0 records none
+	PprofBlockRate int `json:"pprof_block_rate" env_var:"PPROF_BLOCK_RATE"`
 	// running instances without element change for this long count as stalled (LONG-13)
 	StalledAfter string `json:"stalled_after" env_var:"STALLED_AFTER"`
 	// OTLP collector over gRPC for traces; empty selects the platform default of
@@ -390,6 +396,12 @@ func (this Config) validate() error {
 	}
 	if this.PprofPort != 0 && (this.PprofPort == this.ServerPort || this.PprofPort == this.InternalPort) {
 		return fmt.Errorf("pprof_port must differ from server_port and internal_port")
+	}
+	if this.PprofMutexFraction < 0 || this.PprofBlockRate < 0 {
+		return fmt.Errorf("pprof_mutex_fraction and pprof_block_rate must not be negative")
+	}
+	if this.PprofPort == 0 && (this.PprofMutexFraction > 0 || this.PprofBlockRate > 0) {
+		return fmt.Errorf("pprof_mutex_fraction and pprof_block_rate need pprof_port")
 	}
 	if this.Database != "postgres" && this.Database != "sqlite" {
 		return fmt.Errorf("database must be postgres or sqlite, got %q", this.Database)

@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -61,7 +62,7 @@ func TestServePprofStopsWithContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		servePprof(ctx, port, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		servePprof(ctx, port, 0, 0, slog.New(slog.NewTextHandler(io.Discard, nil)))
 		close(done)
 	}()
 	url := "http://127.0.0.1:" + strconv.Itoa(port) + "/debug/pprof/goroutine?debug=1"
@@ -90,12 +91,41 @@ func TestServePprofStopsWithContext(t *testing.T) {
 func TestServePprofDisabledByZeroPort(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
-		servePprof(context.Background(), 0, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		servePprof(context.Background(), 0, 0, 0, slog.New(slog.NewTextHandler(io.Discard, nil)))
 		close(done)
 	}()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("port 0 must not start a server")
+	}
+}
+
+// The profiles mutex and block record only when configured; without, the runtime keeps them off.
+func TestServePprofEnablesLockProfilesOnlyWhenConfigured(t *testing.T) {
+	t.Cleanup(func() {
+		runtime.SetMutexProfileFraction(0)
+		runtime.SetBlockProfileRate(0)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	servePprof(ctx, 0, 5, 1000, logger)
+	if fraction := runtime.SetMutexProfileFraction(-1); fraction != 0 {
+		t.Errorf("without pprof_port nothing is recorded: %v", fraction)
+	}
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+	servePprof(ctx, port, 0, 0, logger)
+	if fraction := runtime.SetMutexProfileFraction(-1); fraction != 0 {
+		t.Errorf("off by default: %v", fraction)
+	}
+	servePprof(ctx, port, 5, 1000, logger)
+	if fraction := runtime.SetMutexProfileFraction(-1); fraction != 5 {
+		t.Errorf("the configured fraction: %v", fraction)
 	}
 }

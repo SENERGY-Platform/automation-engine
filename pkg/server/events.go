@@ -160,7 +160,7 @@ func (this *EventServer) Run(ctx context.Context) error {
 	}
 	go this.Worker.Run(ctx)
 	go this.Engine.WatchBlocklist(ctx, blocklistInterval)
-	go servePprof(ctx, this.config.PprofPort, this.logger)
+	go servePprof(ctx, this.config.PprofPort, this.config.PprofMutexFraction, this.config.PprofBlockRate, this.logger)
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", this.Metrics.Handler())
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {

@@ -88,6 +88,30 @@ func TestValidatePprofPort(t *testing.T) {
 	}
 }
 
+// The lock profiles are off by default and need the pprof port.
+func TestValidatePprofLockProfiles(t *testing.T) {
+	config := Default()
+	if config.PprofMutexFraction != 0 || config.PprofBlockRate != 0 {
+		t.Fatal("the lock profiles must be off by default")
+	}
+	config.PprofMutexFraction = 5
+	if err := config.validate(); err == nil {
+		t.Error("a mutex fraction without pprof_port is rejected")
+	}
+	config.PprofMutexFraction, config.PprofBlockRate = 0, 1000
+	if err := config.validate(); err == nil {
+		t.Error("a block rate without pprof_port is rejected")
+	}
+	config.PprofPort, config.PprofMutexFraction = 6060, -1
+	if err := config.validate(); err == nil {
+		t.Error("a negative fraction is rejected")
+	}
+	config.PprofMutexFraction = 5
+	if err := config.validate(); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestValidateRejectsVerifyTokensWithoutCertUrl(t *testing.T) {
 	config := Default()
 	config.VerifyTokens = true
