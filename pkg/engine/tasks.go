@@ -112,6 +112,43 @@ func IsPermanent(err error) bool {
 	return errors.As(err, &p)
 }
 
+// ErrorVariables is a task failure that names what failed, e.g. the device of a device command.
+// The error boundary event that catches the failure gets the variables as local variables
+// (BPMN-19); without one they are dropped. It can wrap a PermanentError.
+type ErrorVariables struct {
+	Err       error
+	Variables map[string]any
+}
+
+func (this *ErrorVariables) Error() string {
+	return this.Err.Error()
+}
+
+func (this *ErrorVariables) Unwrap() error {
+	return this.Err
+}
+
+// WithVariables attaches variables for the error boundary event to a task failure.
+func WithVariables(err error, variables map[string]any) error {
+	return &ErrorVariables{Err: err, Variables: variables}
+}
+
+func variablesOf(err error) map[string]any {
+	var v *ErrorVariables
+	if errors.As(err, &v) {
+		return v.Variables
+	}
+	return nil
+}
+
+// FailureVariables is implemented by task types that name what failed when a failure carries
+// no variables itself, e.g. a timeout the engine detects (BPMN-19). The engine calls it only
+// when an error boundary event catches the failure, before it removes the job. It runs inside
+// the transaction of the engine and must use tx instead of opening its own.
+type FailureVariables interface {
+	FailureVariables(tx *store.Tx, job store.Job) (map[string]any, error)
+}
+
 // TimeoutHandler is implemented by task types that decide what a timeout of an asynchronous
 // task means, e.g. a device group command (TASK-06). The engine calls it on every timeout;
 // Task.Attempt > Task.Retries marks the last attempt. A nil result counts the timeout as failed

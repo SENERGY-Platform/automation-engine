@@ -60,6 +60,9 @@ type runner struct {
 type incidentError struct {
 	elementId string
 	err       error
+	// an error boundary event must not catch it: a blocked script (EXPR-03) must not run on, and
+	// a task type this engine lacks is a matter of its version, not of the task (BPMN-19)
+	uncatchable bool
 }
 
 func (this *incidentError) Error() string {
@@ -269,7 +272,9 @@ func (this *runner) eval(element *bpmn.Element, t *store.Token, src string) (any
 		}
 	}
 	if err != nil {
-		return nil, incidentf(element.Id, "script error: %v", err)
+		inc := incidentf(element.Id, "script error: %v", err).(*incidentError)
+		inc.uncatchable = errors.Is(err, script.ErrBlocked)
+		return nil, inc
 	}
 	for _, a := range result.Assignments {
 		if err = this.assign(element, t, a.Name, a.Value); err != nil {
@@ -417,7 +422,7 @@ func (this *runner) execute(t *store.Token) error {
 		return err
 	}
 	switch element.Type {
-	case bpmn.StartEvent, bpmn.EndEvent, bpmn.IntermediateThrowEvent, bpmn.Task:
+	case bpmn.StartEvent, bpmn.EndEvent, bpmn.IntermediateThrowEvent:
 		if err := this.applyInputs(element, t); err != nil {
 			return err
 		}
@@ -425,28 +430,29 @@ func (this *runner) execute(t *store.Token) error {
 			return err
 		}
 		return this.leave(element, t)
-	case bpmn.ScriptTask:
-		if err := this.applyInputs(element, t); err != nil {
-			return err
+	case bpmn.Task:
+		err := this.applyInputs(element, t)
+		if err == nil {
+			err = this.applyOutputs(element, t)
 		}
-		result, err := this.eval(element, t, element.Script)
 		if err != nil {
-			return err
+			return this.catchError(element, t, err)
 		}
-		if element.ResultVariable != "" {
-			if err = this.assign(element, t, element.ResultVariable, result); err != nil {
-				return err
-			}
-		}
-		if err = this.applyOutputs(element, t); err != nil {
-			return err
+		return this.leave(element, t)
+	case bpmn.ScriptTask:
+		if err := this.runScript(element, t); err != nil {
+			return this.catchError(element, t, err)
 		}
 		return this.leave(element, t)
 	case bpmn.ServiceTask:
-		if err := this.applyInputs(element, t); err != nil {
-			return err
+		err := this.applyInputs(element, t)
+		if err == nil {
+			err = this.createJob(element, t)
 		}
-		return this.createJob(element, t)
+		if err != nil {
+			return this.catchError(element, t, err)
+		}
+		return nil
 	case bpmn.IntermediateCatchEvent:
 		if err := this.applyInputs(element, t); err != nil {
 			return err
@@ -480,6 +486,98 @@ func (this *runner) execute(t *store.Token) error {
 
 // messageName is the name a message event waits for: the name of senergy:messageName evaluated
 // in the scope of the token, or the literal or engine-assigned name
+// runScript runs a script task up to its output mappings (BPMN-11)
+func (this *runner) runScript(element *bpmn.Element, t *store.Token) error {
+	if err := this.applyInputs(element, t); err != nil {
+		return err
+	}
+	result, err := this.eval(element, t, element.Script)
+	if err != nil {
+		return err
+	}
+	if element.ResultVariable != "" {
+		if err = this.assign(element, t, element.ResultVariable, result); err != nil {
+			return err
+		}
+	}
+	return this.applyOutputs(element, t)
+}
+
+// catchError continues the token of a task that failed with err at the error boundary event of
+// the task instead of ending the run with an incident (BPMN-19). Without a boundary event, and
+// for an error that is no incident, such as one of the database, or one it must not catch, it
+// returns err unchanged.
+// What the task wrote to instance variables before the error stays.
+func (this *runner) catchError(element *bpmn.Element, t *store.Token, err error) error {
+	var inc *incidentError
+	boundary := element.ErrorBoundary()
+	if boundary == nil || this.halted || !errors.As(err, &inc) || inc.uncatchable {
+		return err
+	}
+	message := inc.err.Error()
+	if err := this.tx.RecordElementError(this.inst.Id, this.inst.Run, element.Id, message, this.now); err != nil {
+		return err
+	}
+	if err := this.log(model.ActivityTaskFailed, element, map[string]any{"error": message, "caught_by": boundary.Id}); err != nil {
+		return err
+	}
+	return this.continueAtBoundary(element, boundary, t, message, nil)
+}
+
+// ErrorMessageVariable is the local variable of an error boundary event with the error message;
+// camunda:errorMessageVariable names an instance variable that gets it too (BPMN-19).
+const ErrorMessageVariable = "error_message"
+
+// continueAtBoundary interrupts the task and moves its token to the error boundary event. The
+// boundary event gets the error message and the variables of the failure as local variables;
+// a device command always has device_id and service_id, null if unknown. Errors of the boundary
+// event itself, e.g. of its mappings, are incidents there.
+func (this *runner) continueAtBoundary(task *bpmn.Element, boundary *bpmn.Element, t *store.Token, message string, variables map[string]any) error {
+	if err := this.tx.DeleteSubscriptionsOfToken(t.Id); err != nil {
+		return err
+	}
+	if err := this.log(model.ActivityElementLeft, task, map[string]any{"interrupted_by": boundary.Id}); err != nil {
+		return err
+	}
+	t.ElementId = boundary.Id
+	t.ArrivedVia = ""
+	t.State = store.TokenReady
+	t.Locals = map[string]any{}
+	if err := this.enter(boundary, t); err != nil {
+		return err
+	}
+	locals := map[string]any{}
+	if task.IsDeviceCommand() {
+		locals["device_id"], locals["service_id"] = nil, nil
+	}
+	for name, value := range variables {
+		normalized, err := script.Normalize(value, this.limits.MaxVariableBytes)
+		if err != nil {
+			return incidentf(boundary.Id, "variable %v of the failure: %v", name, err)
+		}
+		locals[name] = normalized
+	}
+	// the message of the failure, not a variable of the same name
+	locals[ErrorMessageVariable] = message
+	for _, name := range slices.Sorted(maps.Keys(locals)) {
+		if err := this.setLocal(boundary, t, name, locals[name]); err != nil {
+			return err
+		}
+	}
+	if boundary.ErrorMessageVariable != "" {
+		if err := this.setProcessVariable(boundary, boundary.ErrorMessageVariable, message); err != nil {
+			return err
+		}
+	}
+	if err := this.applyInputs(boundary, t); err != nil {
+		return err
+	}
+	if err := this.applyOutputs(boundary, t); err != nil {
+		return err
+	}
+	return this.leave(boundary, t)
+}
+
 func (this *runner) messageName(element *bpmn.Element, t *store.Token) (string, error) {
 	if element.Message == nil || element.Message.Expression == "" {
 		return messageName(this.inst.DeploymentId, element), nil
@@ -601,7 +699,9 @@ func (this *runner) createJob(element *bpmn.Element, t *store.Token) error {
 		return incidentf(element.Id, "task type %q is not allowed in namespace %v", element.TaskType, this.inst.Namespace)
 	}
 	if this.e.config.ExecutesTasks && !this.e.TaskTypeAvailable(element.TaskType) {
-		return incidentf(element.Id, "task type %q is not available", element.TaskType)
+		inc := incidentf(element.Id, "task type %q is not available", element.TaskType).(*incidentError)
+		inc.uncatchable = true
+		return inc
 	}
 	retries := this.e.config.TaskRetries
 	timeout := this.e.config.TaskTimeout
@@ -839,8 +939,9 @@ func reachable(from *bpmn.Element, target *bpmn.Element, visited map[string]bool
 		return false
 	}
 	visited[from.Id] = true
-	for _, flow := range from.Outgoing {
-		if reachable(flow.Target, target, visited) {
+	// with the boundary events: a token in a task can still arrive over its error path
+	for _, next := range from.Successors() {
+		if reachable(next, target, visited) {
 			return true
 		}
 	}
@@ -939,17 +1040,20 @@ func (this *runner) completeTask(job store.Job, output map[string]any) error {
 	if err := this.log(model.ActivityTaskCompleted, element, map[string]any{"job_id": job.Id, "attempt": job.Attempt, "output": this.preview(output)}); err != nil {
 		return err
 	}
-	for name, value := range output {
-		normalized, err := script.Normalize(value, this.limits.MaxVariableBytes)
-		if err != nil {
-			return incidentf(element.Id, "task output %v: %v", name, err)
+	err := func() error {
+		for name, value := range output {
+			normalized, err := script.Normalize(value, this.limits.MaxVariableBytes)
+			if err != nil {
+				return incidentf(element.Id, "task output %v: %v", name, err)
+			}
+			if err = this.setLocal(element, t, name, normalized); err != nil {
+				return err
+			}
 		}
-		if err = this.setLocal(element, t, name, normalized); err != nil {
-			return err
-		}
-	}
-	if err := this.applyOutputs(element, t); err != nil {
-		return err
+		return this.applyOutputs(element, t)
+	}()
+	if err != nil {
+		return this.catchError(element, t, err)
 	}
 	return this.leave(element, t)
 }

@@ -124,7 +124,7 @@ func TestParseRejectsUnsupportedElementsNamingThem(t *testing.T) {
 	for id, fragment := range map[string]string{
 		"user":     "userTask is not supported",
 		"sub":      "subProcess is not supported",
-		"boundary": "boundaryEvent is not supported",
+		"boundary": "boundary event with timer definition is not supported",
 		"end":      "terminateEventDefinition is not supported",
 		"ext":      "camunda:topic",
 		"multi":    "multi-instance",

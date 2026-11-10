@@ -243,9 +243,12 @@ func (this *Engine) claim(ctx context.Context, jobId string, now time.Time) (res
 			if err != nil {
 				return err
 			}
-			retry, err := r.failJob(job, fmt.Sprintf("task timed out after %v", job.Timeout), false)
+			retry, err := r.failJob(job, fmt.Sprintf("task timed out after %v", job.Timeout), false, nil)
 			if err != nil {
-				return err
+				// an incident at the error boundary event the timeout led to
+				if err = r.handle(err); err != nil {
+					return err
+				}
 			}
 			if err = r.finish(); err != nil || !retry {
 				return err
@@ -300,6 +303,19 @@ func taskOf(job store.Job, inst store.Instance, version *cachedVersion) Task {
 // timeoutResult asks the task type what a timeout of an asynchronous task means; nil counts
 // it as failed attempt. Async is only kept for a task that waits for its answer: an execution
 // that ran past its timeout counts as failed attempt.
+// failureVariables asks the task type of a failed job what failed, for the error boundary event
+func (this *Engine) failureVariables(tx *store.Tx, job store.Job) (map[string]any, error) {
+	taskType, ok := this.taskType(job.TaskType)
+	if !ok {
+		return nil, nil
+	}
+	named, ok := taskType.(FailureVariables)
+	if !ok {
+		return nil, nil
+	}
+	return named.FailureVariables(tx, job)
+}
+
 func (this *Engine) timeoutResult(ctx context.Context, tx *store.Tx, inst store.Instance, job store.Job) (*TaskResult, error) {
 	taskType, ok := this.taskType(job.TaskType)
 	if !ok {
@@ -411,7 +427,7 @@ func (this *Engine) finishJob(ctx context.Context, jobId string, lockOwner strin
 			return err
 		}
 		if taskErr != nil {
-			_, err = r.failJob(job, taskErr.Error(), IsPermanent(taskErr))
+			_, err = r.failJob(job, taskErr.Error(), IsPermanent(taskErr), variablesOf(taskErr))
 		} else {
 			if result.Effects != nil {
 				if err = r.applyEffects(*job, *result.Effects); err != nil {
@@ -442,6 +458,13 @@ func (this *Engine) FailTask(ctx context.Context, jobId string, message string) 
 	return this.answer(ctx, jobId, nil, errors.New(message))
 }
 
+// FailTaskError reports the failure of an asynchronous task like FailTask; a PermanentError
+// skips the remaining retries, and variables attached with WithVariables reach the error
+// boundary event that catches the failure (BPMN-19).
+func (this *Engine) FailTaskError(ctx context.Context, jobId string, taskErr error) (bool, error) {
+	return this.answer(ctx, jobId, nil, taskErr)
+}
+
 func (this *Engine) answer(ctx context.Context, jobId string, output map[string]any, taskErr error) (bool, error) {
 	var exists bool
 	err := this.store.Tx(ctx, func(tx *store.Tx) error {
@@ -456,20 +479,41 @@ func (this *Engine) answer(ctx context.Context, jobId string, output map[string]
 	return true, err
 }
 
-// The job is retried after a backoff while retries are left, then the failure becomes an incident.
-// failJob counts a failed attempt; a permanent error skips the remaining retries
-func (this *runner) failJob(job *store.Job, message string, permanent bool) (retry bool, err error) {
+// The job is retried after a backoff while retries are left. Then the token continues at the
+// error boundary event of the task, or the failure becomes an incident (BPMN-19, INC-01).
+// failJob counts a failed attempt; a permanent error skips the remaining retries. variables are
+// those the failure names, for the boundary event.
+func (this *runner) failJob(job *store.Job, message string, permanent bool, variables map[string]any) (retry bool, err error) {
 	element := this.proc.Element(job.ElementId)
 	if element == nil {
 		element = &bpmn.Element{Id: job.ElementId}
 	}
+	last := job.Attempt > job.Retries || permanent
+	boundary := element.ErrorBoundary()
+	t := this.tokens[job.TokenId]
 	if err = this.tx.RecordElementError(this.inst.Id, this.inst.Run, job.ElementId, message, this.now); err != nil {
 		return false, err
 	}
-	if err = this.log(model.ActivityTaskFailed, element, map[string]any{"job_id": job.Id, "attempt": job.Attempt, "error": message}); err != nil {
+	data := map[string]any{"job_id": job.Id, "attempt": job.Attempt, "error": message}
+	caught := last && boundary != nil && t != nil
+	if caught {
+		data["caught_by"] = boundary.Id
+	}
+	if err = this.log(model.ActivityTaskFailed, element, data); err != nil {
 		return false, err
 	}
-	if job.Attempt > job.Retries || permanent {
+	if caught {
+		if variables == nil {
+			if variables, err = this.e.failureVariables(this.tx, *job); err != nil {
+				return false, err
+			}
+		}
+		if err = this.tx.DeleteJob(job.Id); err != nil {
+			return false, err
+		}
+		return false, this.continueAtBoundary(element, boundary, t, message, variables)
+	}
+	if last {
 		return false, this.incident(job.ElementId, message)
 	}
 	job.State = store.JobPending

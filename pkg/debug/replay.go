@@ -162,6 +162,9 @@ func (this *replay) apply(a model.Activity) {
 				s.Waits[i].Task = &task
 			}
 		}
+		// as RecordElementError at every failure; without an incident, e.g. caught by an error
+		// boundary event (BPMN-19), this is where the error shows
+		this.elementError(a.ElementId, message, a.Time)
 	case model.ActivityTaskCompleted:
 		jobId, _ := a.Data["job_id"].(string)
 		s.Waits = slices.DeleteFunc(s.Waits, func(w model.Wait) bool { return w.Task != nil && w.Task.JobId == jobId })
@@ -179,14 +182,17 @@ func (this *replay) apply(a model.Activity) {
 		message, _ := a.Data["message"].(string)
 		s.Incidents = append(s.Incidents, model.Incident{Id: id, Namespace: s.Instance.Namespace, Owner: s.Instance.Owner, InstanceId: s.Instance.Id, Run: a.Run,
 			DeploymentId: s.Instance.DeploymentId, DeploymentVersion: s.Instance.DeploymentVersion, ElementId: a.ElementId, Message: message, Time: a.Time})
-		for i := range s.Elements {
-			if s.Elements[i].ElementId == a.ElementId {
-				at := a.Time
-				s.Elements[i].LastError, s.Elements[i].ErrorAt = message, &at
-			}
-		}
+		this.elementError(a.ElementId, message, a.Time)
 	case model.ActivityRestartScheduled:
 		s.Instance.RestartAt = toTime(a.Data["due"])
+	}
+}
+
+func (this *replay) elementError(elementId string, message string, at time.Time) {
+	for i := range this.state.Elements {
+		if this.state.Elements[i].ElementId == elementId {
+			this.state.Elements[i].LastError, this.state.Elements[i].ErrorAt = message, &at
+		}
 	}
 }
 

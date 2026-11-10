@@ -147,7 +147,26 @@ func Validate(p *Process, rules Rules) (issues []model.Issue) {
 				checkScript(flow.Id, "condition", flow.Condition)
 			}
 		}
+		if e.Kind == EventError && e.Type != BoundaryEvent {
+			add(e.Id, "%v with error definition is not supported; errors are caught by a boundary event on the task", e.Type)
+		}
+		if len(e.Boundaries) > 1 {
+			add(e.Id, "a task supports at most one boundary event")
+		}
 		switch e.Type {
+		case BoundaryEvent:
+			switch {
+			case e.Kind == EventNone:
+				add(e.Id, "boundary event needs an error definition")
+			case e.Kind != EventError:
+				add(e.Id, "boundary event with %v definition is not supported, only error boundary events are", e.Kind)
+			}
+			if e.AttachedTo != nil && !e.AttachedTo.Type.CanCatchErrors() {
+				add(e.Id, "boundary event on %v is not supported; it must be attached to a service task, script task or task", e.AttachedTo.Type)
+			}
+			if len(e.Incoming) > 0 {
+				add(e.Id, "a boundary event must not have incoming flows")
+			}
 		case StartEvent:
 			starts++
 			if e.Kind == EventNone {
@@ -196,7 +215,7 @@ func Validate(p *Process, rules Rules) (issues []model.Issue) {
 				}
 			}
 		}
-		if e.Type != StartEvent && len(e.Incoming) == 0 {
+		if e.Type != StartEvent && e.Type != BoundaryEvent && len(e.Incoming) == 0 {
 			add(e.Id, "%v is not reachable, it has no incoming flow", e.Type)
 		}
 	}
@@ -235,7 +254,8 @@ func valueVariable(e *Element) string {
 }
 
 // Cycles returns one flow per loop of the sequence flow: the flow that leads back to an element
-// on the current path of a depth-first search in document order.
+// on the current path of a depth-first search in document order. A loop may pass a boundary
+// event; it is always closed by a flow, since nothing flows into a boundary event.
 func Cycles(p *Process) (result []*Flow) {
 	const (
 		unvisited = iota
@@ -257,7 +277,19 @@ func Cycles(p *Process) (result []*Flow) {
 				visit(flow.Target)
 			}
 		}
+		for _, boundary := range e.Boundaries {
+			if state[boundary.Id] == unvisited {
+				visit(boundary)
+			}
+		}
 		state[e.Id] = done
+	}
+	for _, id := range p.Order {
+		// a boundary event is visited from its task, so that a loop back to the task is closed
+		// by a flow even when the boundary event comes first in the document
+		if e := p.Element(id); e != nil && state[id] == unvisited && e.AttachedTo == nil {
+			visit(e)
+		}
 	}
 	for _, id := range p.Order {
 		if e := p.Element(id); e != nil && state[id] == unvisited {

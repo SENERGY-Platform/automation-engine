@@ -81,6 +81,16 @@ func Task(id string, mappings ...string) string {
 	return fmt.Sprintf(`<bpmn:task id="%v">%v</bpmn:task>`, id, IO(mappings...))
 }
 
+// ErrorBoundary is an error boundary event on the task attachedTo (BPMN-19); messageVariable
+// is camunda:errorMessageVariable, empty for none.
+func ErrorBoundary(id string, attachedTo string, messageVariable string, mappings ...string) string {
+	definition := `<bpmn:errorEventDefinition/>`
+	if messageVariable != "" {
+		definition = fmt.Sprintf(`<bpmn:errorEventDefinition camunda:errorMessageVariable="%v"/>`, messageVariable)
+	}
+	return fmt.Sprintf(`<bpmn:boundaryEvent id="%v" attachedToRef="%v">%v%v</bpmn:boundaryEvent>`, id, attachedTo, IO(mappings...), definition)
+}
+
 func IO(mappings ...string) string {
 	if len(mappings) == 0 {
 		return ""

@@ -177,10 +177,18 @@ Not present are: boundary events, subprocesses, call activities, user tasks, mul
   - Elements outside the supported set and task types that the namespace does not allow (NS-03, NS-06) are rejected with an error message that names the element.
   - Today process-deployment and the designer let everything through.
   - The modeler in the web-ui is restricted to the same set, per namespace (NS-09, section 21).
+- **BPMN-19 (M)** Error boundary event on a service task, script task or task (SNRGY-5130). Today a task that fails in its last attempt raises an incident and stops the instance, also where only one of several devices in a loop did not answer.
+  - `bpmn:boundaryEvent` with `attachedToRef` and a `bpmn:errorEventDefinition`, interrupting as in the BPMN standard; at most one per task.
+  - It catches every error the task raises while its token is in it: input and output mappings, the script, the job after its last attempt (error answer, timeout, permanent error), a task type the namespace forbids and the limits of LONG-08. Earlier attempts are retried as before. Not caught: conditions of the outgoing flows, the token limit (LONG-16), a script that ended the engine or is blocked for it (EXPR-03), a task type the running engine does not have (a matter of its version during an update) and errors of the boundary event itself; these remain incidents.
+  - Without `errorRef` it catches every error. `errorRef`, `errorCode` and `camunda:errorCodeVariable` are rejected until errors are told apart by code.
+  - Local variables of the boundary event: `error_message`, and for device commands `device_id` and `service_id` of the failed sub-command (null when no single one failed, e.g. a group without any answer). `camunda:errorMessageVariable` names an instance variable that gets the message too, as in Camunda 7.
+  - What the task wrote to instance variables before the error stays.
+  - The history shows `task_failed` with `caught_by` at the task, then the token at the boundary event.
+  - Timer, message and non-interrupting boundary events stay rejected. A task without boundary event behaves as before.
 
 ### Not required
 
-User task, Tasklist, receive task, send task and business rule task; subprocess, call activity, multi-instance; boundary events, signal (throw and catch), link, error, escalation, compensation, terminate and transaction; conditional event in the BPMN sense; execution and task listeners; `camunda:class`/`delegateExpression`; DMN, FEEL, JUEL and Groovy; instance migration between versions; process instance modification; sending mail (`mail-send`).
+User task, Tasklist, receive task, send task and business rule task; subprocess, call activity, multi-instance; boundary events other than the error boundary event (BPMN-19), signal (throw and catch), link, error events other than that one, escalation, compensation, terminate and transaction; conditional event in the BPMN sense; execution and task listeners; `camunda:class`/`delegateExpression`; DMN, FEEL, JUEL and Groovy; instance migration between versions; process instance modification; sending mail (`mail-send`).
 
 On `mail-send`: process-deployment already rejects the connector today (`deploymentmodel/validation.go`). The 10 occurrences are in models that therefore cannot be deployed today anyway.
 

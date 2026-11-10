@@ -71,6 +71,7 @@ type Config struct {
 type Completer interface {
 	CompleteTask(ctx context.Context, jobId string, output map[string]any) (bool, error)
 	FailTask(ctx context.Context, jobId string, message string) (bool, error)
+	FailTaskError(ctx context.Context, jobId string, taskErr error) (bool, error)
 }
 
 // processes gives the element of a job to an answer, which arrives without the task; the
@@ -546,9 +547,7 @@ func (this *Type) HandleResponse(ctx context.Context, raw []byte) error {
 	}
 	output, err := this.output(ctx, msg)
 	if err != nil {
-		jobId := jobIdOf(msg.TaskInfo.TaskId)
-		_, failErr := this.completer.FailTask(ctx, jobId, "unable to unmarshal device response: "+err.Error())
-		return failErr
+		return this.failSubtask(ctx, msg.TaskInfo.TaskId, "unable to unmarshal device response: "+err.Error())
 	}
 	jobId := jobIdOf(msg.TaskInfo.TaskId)
 	var known bool
@@ -610,8 +609,68 @@ func (this *Type) HandleError(ctx context.Context, raw []byte) error {
 		detail = append(detail, key+": "+value)
 	}
 	slices.Sort(detail)
-	_, err := this.completer.FailTask(ctx, jobIdOf(msg.TaskInfo.TaskId), "device command failed: "+strings.Join(detail, ", "))
+	return this.failSubtask(ctx, msg.TaskInfo.TaskId, "device command failed: "+strings.Join(detail, ", "))
+}
+
+// failSubtask fails the task of a sub-task; the error boundary event that catches the failure
+// gets the device and service of the sub-task (BPMN-19)
+func (this *Type) failSubtask(ctx context.Context, subId string, message string) error {
+	var variables map[string]any
+	err := this.store.Tx(ctx, func(tx *store.Tx) error {
+		subtasks, err := tx.ListSubtasks(jobIdOf(subId))
+		for _, s := range subtasks {
+			if s.SubId == subId {
+				variables = failureIds(s)
+			}
+		}
+		return err
+	})
+	if err != nil {
+		// the failure counts more than naming its device
+		this.logger.Warn("unable to read the sub-task of a failed device command", "sub_id", subId, "error", err)
+	}
+	_, err = this.completer.FailTaskError(ctx, jobIdOf(subId), engine.WithVariables(errors.New(message), variables))
 	return err
+}
+
+// failureIds returns device_id and service_id of the command of a sub-task
+func failureIds(s store.Subtask) map[string]any {
+	var command Command
+	if err := json.Unmarshal(s.Command, &command); err != nil {
+		return nil
+	}
+	deviceId, serviceId := command.DeviceId, command.ServiceId
+	if deviceId == "" && command.Device != nil {
+		deviceId = command.Device.Id
+	}
+	if serviceId == "" && command.Service != nil {
+		serviceId = command.Service.Id
+	}
+	result := map[string]any{}
+	if deviceId != "" {
+		result["device_id"] = deviceId
+	}
+	if serviceId != "" {
+		result["service_id"] = serviceId
+	}
+	return result
+}
+
+// FailureVariables names the device and service of a failed device command whose failure
+// carries none, e.g. after a timeout: those of its only sub-task, or of the only one without
+// result. A group with several devices without an answer names none (BPMN-19).
+func (this *Type) FailureVariables(tx *store.Tx, job store.Job) (map[string]any, error) {
+	subtasks, err := tx.ListSubtasks(job.Id)
+	if err != nil {
+		return nil, err
+	}
+	if len(subtasks) > 1 {
+		subtasks = pendingOf(subtasks)
+	}
+	if len(subtasks) != 1 {
+		return nil, nil
+	}
+	return failureIds(subtasks[0]), nil
 }
 
 // OnTimeout handles the timeout of a task with several sub-tasks (TASK-06). One at a time, the

@@ -161,6 +161,16 @@ func (this *parser) process(e *etree.Element) *Process {
 	}
 	for _, id := range result.Order {
 		element := result.Elements[id]
+		if element.Type == BoundaryEvent {
+			ref := element.Attributes["\x00attachedToRef"]
+			delete(element.Attributes, "\x00attachedToRef")
+			if task := result.Elements[ref]; task == nil {
+				this.issue(id, "boundary event is attached to an unknown or unsupported element %q", ref)
+			} else {
+				element.AttachedTo = task
+				task.Boundaries = append(task.Boundaries, element)
+			}
+		}
 		if def := element.Attributes["\x00default"]; def != "" {
 			delete(element.Attributes, "\x00default")
 			flow := result.Flows[def]
@@ -251,6 +261,13 @@ func (this *parser) element(e *etree.Element, elementType ElementType) *Element 
 			result.Attributes[a.Key] = a.Value
 		}
 	}
+	if elementType == BoundaryEvent {
+		// resolved after all elements are known
+		result.Attributes["\x00attachedToRef"] = e.SelectAttrValue("attachedToRef", "")
+		if e.SelectAttrValue("cancelActivity", "true") != "true" {
+			this.issue(result.Id, "non-interrupting boundary events are not supported")
+		}
+	}
 	for _, unsupported := range []string{"class", "delegateExpression", "expression", "type", "topic"} {
 		if v, ok := attr(e, NsCamunda, unsupported); ok {
 			if unsupported == "type" || unsupported == "topic" {
@@ -310,6 +327,9 @@ func (this *parser) element(e *etree.Element, elementType ElementType) *Element 
 		case is(child, NsBpmn, "timerEventDefinition"):
 			this.eventDefinition(result, EventTimer)
 			this.timer(result, child)
+		case is(child, NsBpmn, "errorEventDefinition"):
+			this.eventDefinition(result, EventError)
+			this.errorDefinition(result, child)
 		case child.NamespaceURI() == NsBpmn && strings.HasSuffix(child.Tag, "EventDefinition"):
 			this.issue(result.Id, "%v is not supported", child.Tag)
 		case is(child, NsBpmn, "multiInstanceLoopCharacteristics"), is(child, NsBpmn, "standardLoopCharacteristics"):
@@ -329,6 +349,18 @@ func (this *parser) eventDefinition(e *Element, kind EventKind) {
 		return
 	}
 	e.Kind = kind
+}
+
+// errorDefinition reads an error event definition; every error is caught, error codes are not
+// distinguished yet (BPMN-19)
+func (this *parser) errorDefinition(e *Element, definition *etree.Element) {
+	if ref := definition.SelectAttrValue("errorRef", ""); ref != "" {
+		this.issue(e.Id, "errorRef is not supported; an error event without errorRef catches every error of the task")
+	}
+	if _, ok := attr(definition, NsCamunda, "errorCodeVariable"); ok {
+		this.issue(e.Id, "camunda:errorCodeVariable is not supported, errors have no code")
+	}
+	e.ErrorMessageVariable = attrValue(definition, NsCamunda, "errorMessageVariable")
 }
 
 func (this *parser) message(e *Element, definition *etree.Element) {

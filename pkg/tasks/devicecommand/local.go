@@ -108,8 +108,7 @@ func (this *Type) HandleLocalError(ctx context.Context, topic string, payload []
 	if !ok || this.config.LocalCommandPrefix == "" {
 		return nil
 	}
-	_, err := this.completer.FailTask(ctx, jobIdOf(subId), "device command failed: "+strings.TrimSpace(string(payload)))
-	return err
+	return this.failSubtask(ctx, subId, "device command failed: "+strings.TrimSpace(string(payload)))
 }
 
 func (this *Type) localMessage(ctx context.Context, subId string) (msg ProtocolMsg, found bool, err error) {

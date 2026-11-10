@@ -40,6 +40,8 @@ const (
 	ParallelGateway        ElementType = "parallelGateway"
 	InclusiveGateway       ElementType = "inclusiveGateway"
 	EventBasedGateway      ElementType = "eventBasedGateway"
+	// only with an error definition, attached to a task (BPMN-19)
+	BoundaryEvent ElementType = "boundaryEvent"
 )
 
 var supportedElementTypes = map[string]ElementType{
@@ -54,6 +56,7 @@ var supportedElementTypes = map[string]ElementType{
 	"parallelGateway":        ParallelGateway,
 	"inclusiveGateway":       InclusiveGateway,
 	"eventBasedGateway":      EventBasedGateway,
+	"boundaryEvent":          BoundaryEvent,
 }
 
 // process children that carry no execution semantics and are read and ignored (BPMN-01)
@@ -76,6 +79,7 @@ const (
 	EventNone    EventKind = ""
 	EventMessage EventKind = "message"
 	EventTimer   EventKind = "timer"
+	EventError   EventKind = "error"
 )
 
 func (this ElementType) IsGateway() bool {
@@ -86,9 +90,18 @@ func (this ElementType) IsGateway() bool {
 	return false
 }
 
+// CanCatchErrors reports the tasks an error boundary event may be attached to (BPMN-19).
+func (this ElementType) CanCatchErrors() bool {
+	switch this {
+	case ServiceTask, ScriptTask, Task:
+		return true
+	}
+	return false
+}
+
 func (this ElementType) IsEvent() bool {
 	switch this {
-	case StartEvent, EndEvent, IntermediateCatchEvent, IntermediateThrowEvent:
+	case StartEvent, EndEvent, IntermediateCatchEvent, IntermediateThrowEvent, BoundaryEvent:
 		return true
 	}
 	return false
@@ -164,6 +177,34 @@ type Element struct {
 	Properties map[string]string
 	// id of the lane the element is in; the deploy dialog groups by lane (BPMN-01)
 	Lane string
+	// boundary event: the task it is attached to, and camunda:errorMessageVariable, the instance
+	// variable that receives the error message (BPMN-19)
+	AttachedTo           *Element
+	ErrorMessageVariable string
+	// task: the error boundary events attached to it; validation allows at most one
+	Boundaries []*Element
+}
+
+// ErrorBoundary returns the error boundary event that catches the errors of the task, or nil.
+func (this *Element) ErrorBoundary() *Element {
+	for _, b := range this.Boundaries {
+		if b.Kind == EventError {
+			return b
+		}
+	}
+	return nil
+}
+
+// Successors returns the elements a token can move to from this element: the targets of its
+// flows and its boundary events.
+func (this *Element) Successors() []*Element {
+	result := make([]*Element, 0, len(this.Outgoing)+len(this.Boundaries))
+	for _, flow := range this.Outgoing {
+		if flow.Target != nil {
+			result = append(result, flow.Target)
+		}
+	}
+	return append(result, this.Boundaries...)
 }
 
 // IsDeviceCommand reports a service task that sends device commands (TASK-01).
