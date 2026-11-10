@@ -34,19 +34,20 @@ type Instance struct {
 	SnapshotAt  time.Time
 }
 
-const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at, parent_id, network_id, name, description"
+const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at, parent_id, network_id, name, description, start_value_labels"
 
 func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
-	var state, startVariables string
+	var state, startVariables, startValueLabels string
 	var created, started, lastActivity, snapshotAt int64
 	var ended, restartAt sql.NullInt64
-	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt, &i.ParentId, &i.NetworkId, &i.Name, &i.Description)
+	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt, &i.ParentId, &i.NetworkId, &i.Name, &i.Description, &startValueLabels)
 	if snapshotAt > 0 {
 		i.SnapshotAt = fromMillis(snapshotAt)
 	}
 	i.RestartAt = fromNullMillis(restartAt)
 	i.State = model.InstanceState(state)
 	i.StartVariables = fromJson[map[string]any](startVariables)
+	i.StartValueLabels = fromJson[map[string]string](startValueLabels)
 	i.CreatedAt = fromMillis(created)
 	i.StartedAt = fromMillis(started)
 	i.EndedAt = fromNullMillis(ended)
@@ -55,10 +56,10 @@ func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 }
 
 func (this *Tx) InsertInstance(i Instance) error {
-	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		i.Id, i.Namespace, i.Owner, i.DeploymentId, i.DeploymentName, i.DeploymentVersion, i.ModelId, i.ModelVersion, i.Run, string(i.State), i.EndReason, toJson(i.StartVariables),
 		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.SnapshotSeq, snapshotMillis(i.SnapshotAt), i.ParentId, i.NetworkId,
-		i.Name, i.Description)
+		i.Name, i.Description, toJson(i.StartValueLabels))
 	if err != nil {
 		return err
 	}
@@ -316,8 +317,9 @@ func (this *Tx) DeleteVariable(instanceId string, name string) error {
 	return err
 }
 
-// SetStartVariables replaces the stored start variables, e.g. after a parameter change (SMS-09).
-func (this *Tx) SetStartVariables(instanceId string, variables map[string]any) error {
-	_, err := this.exec("UPDATE instances SET start_variables = ? WHERE id = ?", toJson(variables), instanceId)
+// SetStartVariables replaces the stored start variables with their labels, e.g. after a
+// parameter change (SMS-09, SNRGY-5107).
+func (this *Tx) SetStartVariables(instanceId string, variables map[string]any, labels map[string]string) error {
+	_, err := this.exec("UPDATE instances SET start_variables = ?, start_value_labels = ? WHERE id = ?", toJson(variables), toJson(labels), instanceId)
 	return err
 }

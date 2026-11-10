@@ -12889,6 +12889,13 @@ const docTemplate = `{
                 "run": {
                     "type": "integer"
                 },
+                "start_value_labels": {
+                    "description": "display labels a client gave for start variables, e.g. the names of selected devices;\nreplaced together with the start variables (SNRGY-5107)",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "start_variables": {
                     "type": "object",
                     "additionalProperties": {}
@@ -13833,6 +13840,13 @@ const docTemplate = `{
                     "description": "0 selects the current version of the deployment",
                     "type": "integer"
                 },
+                "value_labels": {
+                    "description": "display labels of variables; they replace the stored ones (SNRGY-5107)",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "variables": {
                     "type": "object",
                     "additionalProperties": {}
@@ -14315,6 +14329,13 @@ const docTemplate = `{
                 },
                 "owner": {
                     "type": "string"
+                },
+                "value_labels": {
+                    "description": "display labels of variables, kept as start_value_labels (SNRGY-5107)",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "variables": {
                     "type": "object",

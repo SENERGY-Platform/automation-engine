@@ -171,7 +171,7 @@ func (this *Controller) UpdateParameters(ctx context.Context, token string, name
 	if variables, err = this.withAutoSelected(ctx, token, deploymentId, input.DeploymentVersion, "", variables); err != nil {
 		return model.Instance{}, err
 	}
-	return this.engine.RestartWith(ctx, id, input.DeploymentVersion, variables, model.CauseParameters)
+	return this.engine.RestartWith(ctx, id, input.DeploymentVersion, variables, input.ValueLabels, model.CauseParameters)
 }
 
 // DeleteVariable removes a variable of an instance (SMS-10).

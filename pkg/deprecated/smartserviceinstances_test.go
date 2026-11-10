@@ -17,6 +17,8 @@
 package deprecated_test
 
 import (
+	"html"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -25,6 +27,7 @@ import (
 
 	b "github.com/SENERGY-Platform/automation-engine/pkg/bpmn/bpmntest"
 	"github.com/SENERGY-Platform/automation-engine/pkg/deprecated"
+	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 )
 
 // infoDesign is a design of the old designer with one info module per entry of moduleTypes;
@@ -166,4 +169,159 @@ func TestModulesAreFoundByKey(t *testing.T) {
 	if got := modulesOf(t, e, "?key=modulekey&module_type=widget"); len(got) != 0 {
 		t.Errorf("key and type together: %v", got)
 	}
+}
+
+// labelledDesign asks for a device, a list of devices, a mode with options and a free room
+// without label
+func labelledDesign() string {
+	return labelledDesignWith("Device")
+}
+
+func labelledDesignWith(deviceLabel string) string {
+	property := func(id string, value string) string {
+		return `<camunda:property id="` + id + `" value="` + html.EscapeString(value) + `"/>`
+	}
+	return b.Process(
+		`<bpmn:startEvent id="start"><bpmn:extensionElements><camunda:formData>`+
+			`<camunda:formField id="device" label="`+deviceLabel+`" type="string"><camunda:properties>`+property("iot", "device")+`</camunda:properties></camunda:formField>`+
+			`<camunda:formField id="devices" label="Devices" type="string"><camunda:properties>`+property("iot", "device")+property("multiple", "true")+`</camunda:properties></camunda:formField>`+
+			`<camunda:formField id="mode" label="Mode" type="string"><camunda:properties>`+property("options", `{"Eco":"eco","Comfort":"comfort"}`)+`</camunda:properties></camunda:formField>`+
+			`<camunda:formField id="room" type="string"/>`+
+			`</camunda:formData></bpmn:extensionElements></bpmn:startEvent>`,
+		b.End("end"), b.Flow("start", "end"),
+	)
+}
+
+// selection is the value of an IoT option, the JSON of the selection with the label it was
+// chosen by, as device-selection offers it
+func selection(deviceId string, label string) string {
+	return `{"device_selection":{"device_id":"` + deviceId + `","service_id":null,"path":null},"label":"` + label + `"}`
+}
+
+type labels struct{ label, valueLabel string }
+
+func parameterLabels(instance deprecated.SmartServiceInstance) map[string]labels {
+	result := map[string]labels{}
+	for _, p := range instance.Parameters {
+		result[p.Id] = labels{p.Label, p.ValueLabel}
+	}
+	return result
+}
+
+// checkLabels compares the labels of the instance in the answer, alone and in the list
+func (this *env) checkLabels(what string, answer deprecated.SmartServiceInstance, want map[string]labels) {
+	this.t.Helper()
+	var single deprecated.SmartServiceInstance
+	this.call(alice, http.MethodGet, "/smart-services/instances/"+url.PathEscape(answer.Id), nil, &single)
+	var list []deprecated.SmartServiceInstance
+	this.call(alice, http.MethodGet, "/smart-services/instances", nil, &list)
+	listed := deprecated.SmartServiceInstance{}
+	for _, i := range list {
+		if i.Id == answer.Id {
+			listed = i
+		}
+	}
+	for source, instance := range map[string]deprecated.SmartServiceInstance{"answer": answer, "instance": single, "list": listed} {
+		if got := parameterLabels(instance); !maps.Equal(got, want) {
+			this.t.Errorf("%v, %v: %v, want %v", what, source, got, want)
+		}
+	}
+}
+
+// An instance shows the title of each form field as label, the id without one, and the
+// value_label the client sent with a value (SNRGY-5107).
+func TestInstanceParametersShowTheFormLabelsAndTheValueLabelsSent(t *testing.T) {
+	e := newEnv(t)
+	release := e.createRelease(alice, e.createDesign(alice, "Labels", labelledDesign()).Id, "labels")
+	var instance deprecated.SmartServiceInstance
+	status, _ := e.call(alice, http.MethodPost, "/smart-services/releases/"+url.PathEscape(release.Id)+"/instances", map[string]any{"name": "Kitchen", "parameters": []map[string]any{
+		{"id": "device", "value": selection("d1", "Lamp"), "label": "sent label", "value_label": "Kitchen lamp"},
+		{"id": "mode", "value": "eco", "value_label": "Saving"},
+		{"id": "room", "value": "kitchen"},
+	}}, &instance)
+	if status != http.StatusOK {
+		t.Fatalf("instance: %v", status)
+	}
+	e.checkLabels("the labels sent", instance, map[string]labels{"device": {"Device", "Kitchen lamp"}, "mode": {"Mode", "Saving"}, "room": {"room", ""}})
+}
+
+// New parameters replace the value labels: a parameter sent without one shows the label of its
+// option, as an instance of the time before the engine kept them; a restart keeps them.
+func TestChangedParametersReplaceTheValueLabels(t *testing.T) {
+	e := newEnv(t)
+	release := e.createRelease(alice, e.createDesign(alice, "Labels", labelledDesign()).Id, "labels")
+	var instance deprecated.SmartServiceInstance
+	e.call(alice, http.MethodPost, "/smart-services/releases/"+url.PathEscape(release.Id)+"/instances", map[string]any{"name": "Kitchen", "parameters": []map[string]any{
+		{"id": "device", "value": selection("d1", "Lamp"), "value_label": "Kitchen lamp"},
+		{"id": "mode", "value": "eco", "value_label": "Saving"},
+	}}, &instance)
+	status, _ := e.call(alice, http.MethodPut, "/smart-services/instances/"+url.PathEscape(instance.Id)+"/parameters", []map[string]any{
+		{"id": "device", "value": selection("d2", "Heater")},
+		{"id": "mode", "value": "comfort", "value_label": "Warm"},
+	}, &instance)
+	if status != http.StatusOK {
+		t.Fatalf("parameters: %v", status)
+	}
+	want := map[string]labels{"device": {"Device", "Heater"}, "mode": {"Mode", "Warm"}}
+	e.checkLabels("new parameters", instance, want)
+	restarted, err := e.srv.Controller.RestartInstance(ctx, alice, "smart-services", instance.Id, model.RestartInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !maps.Equal(restarted.StartValueLabels, map[string]string{"mode": "Warm"}) {
+		t.Errorf("a restart keeps the labels: %v", restarted.StartValueLabels)
+	}
+	e.checkLabels("after a restart", instance, want)
+}
+
+// An instance without value labels, as all instances taken over from smart-service-repository,
+// shows the labels of the options its values hold: an IoT value carries the label it was chosen
+// by, also each of a list, which a string form field keeps as JSON; a free value has none. No
+// device-selection is asked (SNRGY-5107).
+func TestValueLabelsOfInstancesWithoutThemAreTheLabelsOfTheirOptions(t *testing.T) {
+	e := newEnv(t)
+	release := e.createRelease(alice, e.createDesign(alice, "Labels", labelledDesign()).Id, "labels")
+	var instance deprecated.SmartServiceInstance
+	status, _ := e.call(alice, http.MethodPost, "/smart-services/releases/"+url.PathEscape(release.Id)+"/instances", map[string]any{"name": "Kitchen", "parameters": []map[string]any{
+		{"id": "device", "value": selection("d1", "Lamp")},
+		{"id": "devices", "value": []string{selection("d1", "Lamp"), selection("d2", "Heater")}},
+		{"id": "mode", "value": "comfort"},
+		{"id": "room", "value": "kitchen"},
+	}}, &instance)
+	if status != http.StatusOK {
+		t.Fatalf("instance: %v", status)
+	}
+	if stored, err := e.srv.Controller.GetInstance(ctx, alice, "smart-services", instance.Id); err != nil || len(stored.StartValueLabels) != 0 {
+		t.Fatalf("nothing stored: %v %v", stored.StartValueLabels, err)
+	}
+	e.checkLabels("derived", instance, map[string]labels{"device": {"Device", "Lamp"}, "devices": {"Devices", "Lamp, Heater"}, "mode": {"Mode", "Comfort"}, "room": {"room", ""}})
+
+	var other deprecated.SmartServiceInstance
+	e.call(alice, http.MethodPost, "/smart-services/releases/"+url.PathEscape(release.Id)+"/instances", map[string]any{"name": "Hall", "parameters": []map[string]any{
+		{"id": "device", "value": `{"device_selection":{"device_id":"d1"}}`},
+		{"id": "mode", "value": "turbo"},
+	}}, &other)
+	e.checkLabels("values without option", other, map[string]labels{"device": {"Device", ""}, "mode": {"Mode", ""}})
+}
+
+// The label is the title of the form field in the release the instance runs, also after a newer
+// release renamed it, until its parameters move it there.
+func TestInstanceParametersAreLabelledByTheReleaseTheInstanceRuns(t *testing.T) {
+	e := newEnv(t)
+	design := e.createDesign(alice, "Labels", labelledDesign())
+	release := e.createRelease(alice, design.Id, "v1")
+	var instance deprecated.SmartServiceInstance
+	e.call(alice, http.MethodPost, "/smart-services/releases/"+url.PathEscape(release.Id)+"/instances", map[string]any{"name": "Kitchen", "parameters": []map[string]any{
+		{"id": "device", "value": selection("d1", "Lamp")},
+	}}, &instance)
+	e.call(alice, http.MethodPut, "/smart-services/designs/"+url.PathEscape(design.Id), map[string]any{"name": "Labels", "bpmn_xml": labelledDesignWith("Switched device"), "svg_xml": "<svg/>"}, nil)
+	e.createRelease(alice, design.Id, "v2")
+	e.call(alice, http.MethodGet, "/smart-services/instances/"+url.PathEscape(instance.Id), nil, &instance)
+	e.checkLabels("on the older release", instance, map[string]labels{"device": {"Device", "Lamp"}})
+	if status, _ := e.call(alice, http.MethodPut, "/smart-services/instances/"+url.PathEscape(instance.Id)+"/parameters?release_id="+url.QueryEscape(release.Id), []map[string]any{
+		{"id": "device", "value": selection("d1", "Lamp")},
+	}, &instance); status != http.StatusOK {
+		t.Fatalf("parameters: %v", status)
+	}
+	e.checkLabels("on the current release", instance, map[string]labels{"device": {"Switched device", "Lamp"}})
 }

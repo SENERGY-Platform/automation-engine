@@ -17,6 +17,7 @@
 package engine
 
 import (
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -72,10 +73,37 @@ func TestRestartBeginsAtTheStartEventOfTheRun(t *testing.T) {
 			t.Fatal(err)
 		}
 		h.expectVars(byMessage, map[string]any{"path": "message-v2", "level": 3.0})
-		if _, err := h.e.RestartWith(ctx, byMessage, 0, map[string]any{"level": 5}, model.CauseRestart); err != nil {
+		if _, err := h.e.RestartWith(ctx, byMessage, 0, map[string]any{"level": 5}, nil, model.CauseRestart); err != nil {
 			t.Fatal(err)
 		}
 		h.expectVars(byMessage, map[string]any{"path": "message-v2", "level": 5.0})
+	})
+}
+
+// The labels of start variables start with the instance, a restart keeps them and new variables
+// replace them; a label of no variable is dropped (SNRGY-5107).
+func TestValueLabelsGoWithTheStartVariables(t *testing.T) {
+	run(t, func(t *testing.T, h *harness) {
+		d := h.deploy(twoStartsProcess("v1"))
+		inst, _, err := h.e.StartInstance(ctx, StartRequest{DeploymentId: d, Owner: "user", Variables: map[string]any{"level": 4},
+			ValueLabels: map[string]string{"level": "high", "other": "no variable", "empty": ""}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !maps.Equal(inst.StartValueLabels, map[string]string{"level": "high"}) {
+			t.Fatalf("the labels of the variables: %v", inst.StartValueLabels)
+		}
+		restarted, err := h.e.RestartInstance(ctx, inst.Id, 0, model.CauseRestart)
+		if err != nil || !maps.Equal(restarted.StartValueLabels, inst.StartValueLabels) {
+			t.Fatalf("a restart keeps them: %v %v", restarted.StartValueLabels, err)
+		}
+		changed, err := h.e.RestartWith(ctx, inst.Id, 0, map[string]any{"level": 5}, nil, model.CauseParameters)
+		if err != nil || len(changed.StartValueLabels) != 0 {
+			t.Fatalf("new variables without labels have none: %v %v", changed.StartValueLabels, err)
+		}
+		if stored := h.expectState(inst.Id, model.StateRunning); len(stored.StartValueLabels) != 0 {
+			t.Errorf("stored: %v", stored.StartValueLabels)
+		}
 	})
 }
 

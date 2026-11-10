@@ -998,9 +998,167 @@ func variables(parameters []SmartServiceParameter) map[string]any {
 	return result
 }
 
+// valueLabels are the labels the client gave for the values of parameters, which the engine
+// keeps with the instance (SNRGY-5107)
+func valueLabels(parameters []SmartServiceParameter) map[string]string {
+	result := map[string]string{}
+	for _, p := range parameters {
+		if p.ValueLabel != "" {
+			result[p.Id] = p.ValueLabel
+		}
+	}
+	return result
+}
+
+// parameterLabels name the parameters of the instances of one answer as smart-service-repository
+// stored them (SNRGY-5107): the label is the title of the form field in the version the instance
+// runs, the value label the one the client gave. Instances started before the engine kept value
+// labels get the labels of the options their values hold, as the web-ui sends them; an IoT option
+// carries its label in its value, so that its label needs no device-selection.
+type parameterLabels struct {
+	// form fields of the start event by id, per deployment version
+	fields map[string]map[string]bpmn.FormField
+}
+
+func versionKey(deploymentId string, version int) string {
+	return deploymentId + ":v" + strconv.Itoa(version)
+}
+
+// parameterLabels reads the form fields of each version the instances run once: the current
+// versions in one go, an older one on its own; a version that cannot be read has none
+func (this *Handler) parameterLabels(r *http.Request, instances []model.Instance) parameterLabels {
+	result := parameterLabels{fields: map[string]map[string]bpmn.FormField{}}
+	ids := []string{}
+	seen := map[string]bool{}
+	for _, i := range instances {
+		if !seen[i.DeploymentId] {
+			seen[i.DeploymentId] = true
+			ids = append(ids, i.DeploymentId)
+		}
+	}
+	if len(ids) == 0 {
+		return result
+	}
+	current, _, _ := this.c.DeploymentVersions(r.Context(), token(r), smartServices, ids, true, 0, 0)
+	for _, v := range current {
+		result.fields[versionKey(v.DeploymentId, v.Version)] = startFields(v)
+	}
+	for _, i := range instances {
+		key := versionKey(i.DeploymentId, i.DeploymentVersion)
+		if _, ok := result.fields[key]; !ok {
+			v, err := this.c.GetDeploymentVersion(r.Context(), token(r), smartServices, i.DeploymentId, i.DeploymentVersion)
+			if err == nil {
+				result.fields[key] = startFields(v)
+			} else {
+				result.fields[key] = map[string]bpmn.FormField{}
+			}
+		}
+	}
+	return result
+}
+
+// startFields reads the form fields of the start event of a deployment version
+func startFields(v model.DeploymentVersion) map[string]bpmn.FormField {
+	result := map[string]bpmn.FormField{}
+	process, _, err := bpmn.Parse(v.Xml)
+	if err != nil {
+		return result
+	}
+	if start := process.NoneStartEvent(); start != nil {
+		for _, f := range start.FormFields {
+			result[f.Id] = f
+		}
+	}
+	return result
+}
+
+// of names a parameter of an instance: label and value label, which is empty without a stored
+// label and without an option the value holds; free input has none, as in the web-ui
+func (this parameterLabels) of(i model.Instance, name string) (string, string) {
+	field, ok := this.fields[versionKey(i.DeploymentId, i.DeploymentVersion)][name]
+	label := name
+	if ok {
+		label = firstNonEmpty(field.Label, field.Id)
+	}
+	if stored := i.StartValueLabels[name]; stored != "" || !ok {
+		return label, stored
+	}
+	parameter := releaseParameter(field)
+	switch {
+	case parameter.Options != nil:
+		return label, valueLabel(i.StartVariables[name], func(value any) string { return staticLabel(parameter.Options, value) })
+	case parameter.IotDescription != nil:
+		return label, valueLabel(i.StartVariables[name], selectionLabel)
+	}
+	return label, ""
+}
+
+// valueLabel joins the labels of a value, a single one or each of a list, as the web-ui does
+// (parameters.ts valueLabel); elements without label are left out. A string form field keeps a
+// list as its JSON (JsonStringParameters), so a string without label is read as JSON.
+func valueLabel(value any, labelOf func(value any) string) string {
+	if value == nil {
+		return ""
+	}
+	labels := labelsOf(value, labelOf)
+	if text, ok := value.(string); ok && len(labels) == 0 {
+		var parsed any
+		if json.Unmarshal([]byte(text), &parsed) == nil {
+			labels = labelsOf(parsed, labelOf)
+		}
+	}
+	return strings.Join(labels, ", ")
+}
+
+func labelsOf(value any, labelOf func(value any) string) []string {
+	values, ok := value.([]any)
+	if !ok {
+		values = []any{value}
+	}
+	labels := []string{}
+	for _, v := range values {
+		if label := labelOf(v); label != "" {
+			labels = append(labels, label)
+		}
+	}
+	return labels
+}
+
+// staticLabel is the label of the option with the value in the options property of a form field,
+// label to value; values compare by their JSON, which orders the keys of objects. Of two labels
+// of the same value the first in order is taken, so that the answer does not change.
+func staticLabel(options map[string]any, value any) string {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	for _, label := range sortedKeys(options) {
+		if option, err := json.Marshal(options[label]); err == nil && string(option) == string(raw) {
+			return label
+		}
+	}
+	return ""
+}
+
+// selectionLabel is the label an IoT option carries in its value, a JSON string of the selection
+// with the label shown when it was chosen; it is the label of the option (pkg/prepare iotOption)
+func selectionLabel(value any) string {
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	var selection struct {
+		Label string `json:"label"`
+	}
+	if json.Unmarshal([]byte(text), &selection) != nil {
+		return ""
+	}
+	return selection.Label
+}
+
 // smartServiceInstance shows an instance as smart-service-repository did; the deployment
 // gives design and release
-func smartServiceInstance(r *http.Request, i model.Instance, d model.Deployment, rights callerRights) SmartServiceInstance {
+func smartServiceInstance(r *http.Request, i model.Instance, d model.Deployment, rights callerRights, labels parameterLabels) SmartServiceInstance {
 	result := SmartServiceInstance{SmartServiceInstanceInit: SmartServiceInstanceInit{Name: i.Name, Description: i.Description, Parameters: []SmartServiceParameter{}},
 		PermissionsInfo: rights.of(i.Id, i.Owner, instanceRights), Id: i.Id, UserId: i.Owner, DesignId: d.ModelId,
 		ReleaseId: releaseId(i.DeploymentId, i.DeploymentVersion, d.Version), Ready: i.Status == model.StatusReady,
@@ -1012,7 +1170,8 @@ func smartServiceInstance(r *http.Request, i model.Instance, d model.Deployment,
 		result.Error = firstNonEmpty(i.StatusMessage, "error")
 	}
 	for _, name := range sortedKeys(i.StartVariables) {
-		result.Parameters = append(result.Parameters, SmartServiceParameter{Id: name, Value: i.StartVariables[name], Label: name})
+		label, valueLabel := labels.of(i, name)
+		result.Parameters = append(result.Parameters, SmartServiceParameter{Id: name, Value: i.StartVariables[name], Label: label, ValueLabel: valueLabel})
 	}
 	return result
 }
@@ -1063,13 +1222,12 @@ func (this *Handler) createSmartServiceInstance(w http.ResponseWriter, r *http.R
 	}
 	deploymentId, version := parseRelease(r.PathValue("id"))
 	i, err := this.c.StartInstance(r.Context(), token(r), smartServices, model.StartInstanceInput{DeploymentId: deploymentId, DeploymentVersion: version,
-		Variables: variables(init.Parameters), Name: init.Name, Description: init.Description})
+		Variables: variables(init.Parameters), ValueLabels: valueLabels(init.Parameters), Name: init.Name, Description: init.Description})
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	d, err := this.c.GetDeployment(r.Context(), token(r), smartServices, deploymentId)
-	respond(w, smartServiceInstance(r, i, d, this.rightsOn(r, model.KindInstance, []string{i.Id})), err)
+	this.smartServiceInstanceById(w, r, i, nil)
 }
 
 // listSmartServiceInstances godoc
@@ -1118,7 +1276,8 @@ func (this *Handler) listSmartServiceInstances(w http.ResponseWriter, r *http.Re
 		}
 	}
 	rights := this.rightsOn(r, model.KindInstance, ids)
-	result := make([]SmartServiceInstance, 0, len(instances))
+	shown := make([]model.Instance, 0, len(ids))
+	deployments := make([]model.Deployment, 0, len(ids))
 	for _, i := range instances {
 		if i.ParentId != "" {
 			// a running maintenance procedure belongs to its instance
@@ -1129,7 +1288,13 @@ func (this *Handler) listSmartServiceInstances(w http.ResponseWriter, r *http.Re
 			writeError(w, err)
 			return
 		}
-		result = append(result, smartServiceInstance(r, i, d, rights))
+		shown = append(shown, i)
+		deployments = append(deployments, d)
+	}
+	labels := this.parameterLabels(r, shown)
+	result := make([]SmartServiceInstance, 0, len(shown))
+	for n, i := range shown {
+		result = append(result, smartServiceInstance(r, i, deployments[n], rights, labels))
 	}
 	w.Header().Set("X-Total-Count", strconv.Itoa(total))
 	w.Header().Set("Access-Control-Expose-Headers", "X-Total-Count")
@@ -1142,7 +1307,11 @@ func (this *Handler) smartServiceInstanceById(w http.ResponseWriter, r *http.Req
 		return
 	}
 	d, err := this.c.GetDeployment(r.Context(), token(r), smartServices, i.DeploymentId)
-	respond(w, smartServiceInstance(r, i, d, this.rightsOn(r, model.KindInstance, []string{i.Id})), err)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJson(w, http.StatusOK, smartServiceInstance(r, i, d, this.rightsOn(r, model.KindInstance, []string{i.Id}), this.parameterLabels(r, []model.Instance{i})))
 }
 
 // getSmartServiceInstance godoc
@@ -1230,7 +1399,7 @@ func (this *Handler) updateSmartServiceInstanceParameters(w http.ResponseWriter,
 		writeError(w, err)
 		return
 	}
-	input := model.ParametersInput{Variables: variables(parameters)}
+	input := model.ParametersInput{Variables: variables(parameters), ValueLabels: valueLabels(parameters)}
 	if target := r.URL.Query().Get("release_id"); target != "" {
 		i, err := this.c.GetInstance(r.Context(), token(r), smartServices, r.PathValue("id"))
 		if err != nil {

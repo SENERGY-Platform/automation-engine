@@ -302,8 +302,8 @@ func (this *Tx) ForgetEndedInstance(networkId string, id string) error {
 	return err
 }
 
-// UpsertReplicatedInstance writes the state of an instance as its gateway reported it; name and
-// description belong to the cloud and stay; an
+// UpsertReplicatedInstance writes the state of an instance as its gateway reported it; name,
+// description and the labels of the start variables belong to the cloud and stay; an
 // instance of a deployment the cloud no longer has is skipped. restart_at only shows when the
 // gateway restarts it; DueRestarts leaves instances of gateways out (FOG-07). The owner is that
 // of the deployment, the owner of the network, also when a gateway that does not know it yet
@@ -316,13 +316,13 @@ func (this *Tx) UpsertReplicatedInstance(networkId string, i model.Instance) err
 	if err != nil {
 		return err
 	}
-	_, err = this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, 0, 0, ?, ?, ?, ?) "+
+	_, err = this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, 0, 0, ?, ?, ?, ?, ?) "+
 		"ON CONFLICT (id) DO UPDATE SET deployment_version = excluded.deployment_version, deployment_name = excluded.deployment_name, run = excluded.run, state = excluded.state, "+
 		"end_reason = excluded.end_reason, start_variables = excluded.start_variables, started_at = excluded.started_at, ended_at = excluded.ended_at, "+
 		"last_activity_at = excluded.last_activity_at, restart_at = excluded.restart_at, owner = excluded.owner, "+
 		"perm_registered = CASE WHEN instances.owner <> excluded.owner THEN 0 ELSE instances.perm_registered END",
 		i.Id, i.Namespace, i.Owner, i.DeploymentId, i.DeploymentName, i.DeploymentVersion, i.ModelId, i.ModelVersion, i.Run, string(i.State), i.EndReason, toJson(i.StartVariables),
-		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), nullMillis(i.RestartAt), i.ParentId, networkId, i.Name, i.Description)
+		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), nullMillis(i.RestartAt), i.ParentId, networkId, i.Name, i.Description, toJson(i.StartValueLabels))
 	if err != nil {
 		return err
 	}

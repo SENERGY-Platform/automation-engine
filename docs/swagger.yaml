@@ -1649,6 +1649,13 @@ definitions:
         type: string
       run:
         type: integer
+      start_value_labels:
+        additionalProperties:
+          type: string
+        description: |-
+          display labels a client gave for start variables, e.g. the names of selected devices;
+          replaced together with the start variables (SNRGY-5107)
+        type: object
       start_variables:
         additionalProperties: {}
         type: object
@@ -2318,6 +2325,11 @@ definitions:
       deployment_version:
         description: 0 selects the current version of the deployment
         type: integer
+      value_labels:
+        additionalProperties:
+          type: string
+        description: display labels of variables; they replace the stored ones (SNRGY-5107)
+        type: object
       variables:
         additionalProperties: {}
         type: object
@@ -2653,6 +2665,11 @@ definitions:
         type: string
       owner:
         type: string
+      value_labels:
+        additionalProperties:
+          type: string
+        description: display labels of variables, kept as start_value_labels (SNRGY-5107)
+        type: object
       variables:
         additionalProperties: {}
         type: object

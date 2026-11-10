@@ -2119,6 +2119,12 @@
                     "run": {
                         "type": "integer"
                     },
+                    "start_value_labels": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": "object"
+                    },
                     "start_variables": {
                         "additionalProperties": {},
                         "type": "object"

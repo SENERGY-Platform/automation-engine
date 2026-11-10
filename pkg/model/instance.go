@@ -60,9 +60,12 @@ type Instance struct {
 	State             InstanceState  `json:"state"`
 	EndReason         string         `json:"end_reason,omitempty"`
 	StartVariables    map[string]any `json:"start_variables,omitempty"`
-	CreatedAt         time.Time      `json:"created_at"`
-	StartedAt         time.Time      `json:"started_at"`
-	EndedAt           *time.Time     `json:"ended_at,omitempty"`
+	// display labels a client gave for start variables, e.g. the names of selected devices;
+	// replaced together with the start variables (SNRGY-5107)
+	StartValueLabels map[string]string `json:"start_value_labels,omitempty"`
+	CreatedAt        time.Time         `json:"created_at"`
+	StartedAt        time.Time         `json:"started_at"`
+	EndedAt          *time.Time        `json:"ended_at,omitempty"`
 	// last time an element was entered or left (LONG-13)
 	LastActivityAt time.Time `json:"last_activity_at"`
 	// an automatic restart after an incident is due at this time (INC-02)
@@ -92,9 +95,11 @@ type StartInstanceInput struct {
 	// 0 selects the current version
 	DeploymentVersion int            `json:"deployment_version,omitempty"`
 	Variables         map[string]any `json:"variables,omitempty"`
-	Owner             string         `json:"owner,omitempty"`
-	Name              string         `json:"name,omitempty"`
-	Description       string         `json:"description,omitempty"`
+	// display labels of variables, kept as start_value_labels (SNRGY-5107)
+	ValueLabels map[string]string `json:"value_labels,omitempty"`
+	Owner       string            `json:"owner,omitempty"`
+	Name        string            `json:"name,omitempty"`
+	Description string            `json:"description,omitempty"`
 }
 
 // InstanceInfoInput changes name and description of an instance.

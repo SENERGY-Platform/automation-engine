@@ -46,6 +46,9 @@ type StartRequest struct {
 	InstanceId string
 	Owner      string
 	Variables  map[string]any
+	// display labels of variables, kept with the instance; no part of the idempotency check
+	// (SNRGY-5107)
+	ValueLabels map[string]string
 	// start event; empty selects the start event without definition
 	StartElementId string
 	// local variables of the start event, e.g. of a message start
@@ -130,7 +133,8 @@ func (this *Engine) startInstance(tx *store.Tx, request StartRequest, cause mode
 		Instance: model.Instance{
 			Id: id, Namespace: deployment.Namespace, Owner: request.Owner, DeploymentId: deployment.Id, DeploymentName: deployment.Name,
 			DeploymentVersion: version, ModelId: deployment.ModelId, ModelVersion: deployment.ModelVersion, Run: 0, State: model.StateRunning,
-			StartVariables: variables, CreatedAt: now, StartedAt: now, LastActivityAt: now, ParentId: request.ParentId, Name: request.Name, Description: request.Description,
+			StartVariables: variables, StartValueLabels: valueLabels(request.ValueLabels, variables), CreatedAt: now, StartedAt: now, LastActivityAt: now, ParentId: request.ParentId,
+			Name: request.Name, Description: request.Description,
 		},
 		ActivityMinSeq: 1,
 	}
@@ -188,6 +192,17 @@ func startVariables(start *bpmn.Element, given map[string]any, maxBytes int, jso
 		result[name] = normalized
 	}
 	return result, nil
+}
+
+// valueLabels keeps the non-empty labels of variables the instance starts with (SNRGY-5107)
+func valueLabels(given map[string]string, variables map[string]any) map[string]string {
+	result := map[string]string{}
+	for name, label := range given {
+		if _, ok := variables[name]; ok && label != "" {
+			result[name] = label
+		}
+	}
+	return result
 }
 
 func typedDefault(field bpmn.FormField) any {
@@ -369,12 +384,13 @@ func (this *Engine) stopInstance(tx *store.Tx, instanceId string, reason string)
 // RestartInstance starts a new run of the instance with its stored start variables; a running
 // run is stopped first. version 0 selects the current deployment version (RUN-11).
 func (this *Engine) RestartInstance(ctx context.Context, instanceId string, version int, cause model.RunCause) (result model.Instance, err error) {
-	return this.RestartWith(ctx, instanceId, version, nil, cause)
+	return this.RestartWith(ctx, instanceId, version, nil, nil, cause)
 }
 
 // RestartWith restarts with new start variables, e.g. after a parameter change of a smart
-// service (SMS-09); nil keeps the stored ones.
-func (this *Engine) RestartWith(ctx context.Context, instanceId string, version int, variables map[string]any, cause model.RunCause) (result model.Instance, err error) {
+// service (SMS-09); nil keeps the stored ones. New variables replace the labels with the given
+// ones, also by none (SNRGY-5107).
+func (this *Engine) RestartWith(ctx context.Context, instanceId string, version int, variables map[string]any, labels map[string]string, cause model.RunCause) (result model.Instance, err error) {
 	err = this.store.Tx(ctx, func(tx *store.Tx) error {
 		inst, err := tx.GetInstance(instanceId, true)
 		if err != nil {
@@ -389,7 +405,8 @@ func (this *Engine) RestartWith(ctx context.Context, instanceId string, version 
 			if inst.StartVariables, err = startVariables(start, variables, this.config.MaxVariableBytes, ns.JsonStringParameters); err != nil {
 				return err
 			}
-			if err = tx.SetStartVariables(inst.Id, inst.StartVariables); err != nil {
+			inst.StartValueLabels = valueLabels(labels, inst.StartVariables)
+			if err = tx.SetStartVariables(inst.Id, inst.StartVariables, inst.StartValueLabels); err != nil {
 				return err
 			}
 		}

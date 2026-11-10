@@ -92,7 +92,7 @@ func (this *Controller) startInstance(ctx context.Context, token string, namespa
 	}
 	result, _, err := this.engine.StartInstance(ctx, engine.StartRequest{
 		DeploymentId: input.DeploymentId, DeploymentVersion: input.DeploymentVersion, InstanceId: id, Owner: instanceOwner, Variables: variables,
-		Name: input.Name, Description: input.Description,
+		ValueLabels: input.ValueLabels, Name: input.Name, Description: input.Description,
 	})
 	if err == nil {
 		// marks the span of the request with the new instance; its later work carries the id

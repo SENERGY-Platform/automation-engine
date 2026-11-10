@@ -119,6 +119,8 @@ type WatchRequest struct {
 // the modules of the previous run are removed (SMS-09).
 type ParametersInput struct {
 	Variables map[string]any `json:"variables"`
+	// display labels of variables; they replace the stored ones (SNRGY-5107)
+	ValueLabels map[string]string `json:"value_labels,omitempty"`
 	// 0 selects the current version of the deployment
 	DeploymentVersion int `json:"deployment_version,omitempty"`
 }
