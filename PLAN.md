@@ -93,7 +93,7 @@ Rejected: taking `DefaultPermissions` literally, because then a grant applies to
 
 **Internal calls (SEC-03)** to permissions-v2 run with client credentials (`AUTH_ENDPOINT`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`). The client needs the realm role `admin`, because it creates topics and sets initial rights. Without `PERMISSIONS_V2_URL` only owner and admin role apply.
 
-**Metrics** on a separate port (since M3 `INTERNAL_PORT`, before `METRICS_PORT`, default 8081), so that Kong does not route them: `automation_engine_runs_started_total`, `_runs_ended_total`, `_incidents_total`, `_automatic_restarts_total`, `_correlations_total{result}` (EVT-08), `_task_executions_total`, `_task_execution_seconds`, `_timer_delay_seconds`, `_storage_rows`, `_database_bytes`, `_stalled_instances` (LONG-13, `STALLED_AFTER`), `_instance_activities_top` (LONG-14).
+**Metrics** on a separate port (since M3 `INTERNAL_PORT`, before `METRICS_PORT`, default 8081), so that Kong does not route them: `automation_engine_runs_started_total`, `_runs_ended_total`, `_incidents_total`, `_automatic_restarts_total`, `_correlations_total{result}` (EVT-08), `_task_executions_total` and `_task_execution_time_seconds_total` (both per `namespace` and `user_id` since SNRGY-3077, for the cost share per user), `_task_execution_seconds` (histogram per task type only), `_timer_delay_seconds`, `_storage_rows`, `_database_bytes`, `_stalled_instances` (LONG-13, `STALLED_AFTER`), `_instance_activities_top` (LONG-14).
 
 ## M2: Gaps
 

@@ -41,6 +41,7 @@ type Metrics struct {
 	restarts       *prometheus.CounterVec
 	correlations   *prometheus.CounterVec
 	tasks          *prometheus.CounterVec
+	taskSeconds    *prometheus.CounterVec
 	taskDuration   *prometheus.HistogramVec
 	timerDelay     prometheus.Histogram
 	storageRows    *prometheus.GaugeVec
@@ -80,8 +81,10 @@ func NewMetrics(stalledAfter time.Duration) *Metrics {
 			[]string{"namespace", "deployment_id", "performed"}),
 		correlations: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "correlations_total", Help: "message correlations by result: matched, unmatched, duplicate"},
 			[]string{"result"}),
-		tasks: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "task_executions_total", Help: "task executions by task type and result"},
-			[]string{"task_type", "result"}),
+		tasks: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "task_executions_total", Help: "task executions by task type, result, namespace and owner"},
+			[]string{"task_type", "result", "namespace", "user_id"}),
+		taskSeconds: prometheus.NewCounterVec(prometheus.CounterOpts{Name: metricsPrefix + "task_execution_time_seconds_total", Help: "time spent executing tasks, by task type, namespace and owner; divided by task_executions_total, the mean duration per owner"},
+			[]string{"task_type", "namespace", "user_id"}),
 		taskDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: metricsPrefix + "task_execution_seconds", Help: "duration of task executions", Buckets: prometheus.DefBuckets},
 			[]string{"task_type"}),
 		timerDelay: prometheus.NewHistogram(prometheus.HistogramOpts{Name: metricsPrefix + "timer_delay_seconds", Help: "delay between due time and firing of timers",
@@ -107,7 +110,7 @@ func NewMetrics(stalledAfter time.Duration) *Metrics {
 			[]string{"route"}),
 	}
 	m.instanceId, _ = os.Hostname()
-	m.registry.MustRegister(m.started, m.ended, m.incidents, m.restarts, m.correlations, m.tasks, m.taskDuration, m.timerDelay,
+	m.registry.MustRegister(m.started, m.ended, m.incidents, m.restarts, m.correlations, m.tasks, m.taskSeconds, m.taskDuration, m.timerDelay,
 		m.storageRows, m.storageBytes, m.databaseBytes, m.stalled, m.topActivities, m.networkContact, m.networkBacklog, m.commandSent, m.marshallingLatency, m.deprecated,
 		prometheus.NewGoCollector(), prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
 	return m
@@ -146,8 +149,12 @@ func (this *Metrics) Correlation(result string) {
 	this.correlations.WithLabelValues(result).Inc()
 }
 
-func (this *Metrics) Task(taskType string, result string, duration time.Duration) {
-	this.tasks.WithLabelValues(taskType, result).Inc()
+// Task counts a task execution and its time per owner, so that the cost of task execution can be
+// shared by user (SNRGY-3077). The histogram has no owner label: per owner it would hold a series
+// per bucket.
+func (this *Metrics) Task(taskType string, result string, namespace string, owner string, duration time.Duration) {
+	this.tasks.WithLabelValues(taskType, result, namespace, owner).Inc()
+	this.taskSeconds.WithLabelValues(taskType, namespace, owner).Add(duration.Seconds())
 	this.taskDuration.WithLabelValues(taskType).Observe(duration.Seconds())
 }
 

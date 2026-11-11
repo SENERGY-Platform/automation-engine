@@ -361,7 +361,7 @@ func (this *Engine) execute(ctx context.Context, c claimed) (err error) {
 	case result.Async:
 		outcome = "async"
 	}
-	this.metrics.Task(c.job.TaskType, outcome, time.Since(started))
+	this.metrics.Task(c.job.TaskType, outcome, c.task.Namespace, c.task.Owner, time.Since(started))
 	if ctx.Err() != nil {
 		// the engine shuts down; the lock expires and the job is retried
 		return nil

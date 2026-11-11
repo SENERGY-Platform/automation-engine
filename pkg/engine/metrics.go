@@ -30,7 +30,9 @@ type Metrics interface {
 	Restart(namespace, deploymentId string, performed bool)
 	// result is matched, unmatched or duplicate (EVT-08)
 	Correlation(result string)
-	Task(taskType string, result string, duration time.Duration)
+	// per namespace and owner, for the share of each user in the cost of the task execution
+	// (SNRGY-3077)
+	Task(taskType string, result string, namespace string, owner string, duration time.Duration)
 	// delay between due time and firing of a timer
 	TimerDelay(delay time.Duration)
 }
@@ -42,5 +44,5 @@ func (NoMetrics) InstanceEnded(string, string, string, model.InstanceState) {}
 func (NoMetrics) Incident(string, string, string)                           {}
 func (NoMetrics) Restart(string, string, bool)                              {}
 func (NoMetrics) Correlation(string)                                        {}
-func (NoMetrics) Task(string, string, time.Duration)                        {}
+func (NoMetrics) Task(string, string, string, string, time.Duration)        {}
 func (NoMetrics) TimerDelay(time.Duration)                                  {}
