@@ -312,7 +312,9 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	c.SetParameters(prepare.NewDescriber(selection, characteristics), userToken)
 	runtime.AddProcessModules(c, registry)
 	runtime.AddWatcher(c, httpCalls, modules.WatcherSettings{AllowGenericRequests: config.AllowGenericWatchRequests,
-		MinInterval: configuration.Duration(config.WatcherMinInterval), DefaultInterval: configuration.Duration(config.WatcherDefaultInterval)})
+		MinInterval: configuration.Duration(config.WatcherMinInterval), DefaultInterval: configuration.Duration(config.WatcherDefaultInterval),
+		DeviceGroupEvents:  config.KafkaUrl != "" && config.DeviceGroupTopic != "" && config.DeviceTopic != "",
+		DeviceGroupRecheck: configuration.Duration(config.WatcherDeviceGroupRecheck)})
 	runtime.Register(e, moduleSettings)
 	runtime.SetAdminToken(adminToken)
 	c.SetIo(io)
@@ -512,18 +514,19 @@ func (this *Server) startKafka(ctx context.Context) error {
 		}
 	}
 	group := this.kafkaConfig(this.config.KafkaConsumerGroup, kafka.LastOffset)
-	// a changed device group changes the event descriptions of deployments that select it (DEP-08)
 	err := kafka.NewConsumer(ctx, group, this.config.DeviceGroupTopic, func(delivery []byte) error {
-		var msg struct {
-			Id string `json:"id"`
-		}
-		if json.Unmarshal(delivery, &msg) != nil || msg.Id == "" {
-			return nil
-		}
-		return this.Controller.RecomputeDeviceGroup(ctx, msg.Id)
+		return this.HandleDeviceGroupMessage(ctx, delivery)
 	})
 	if err != nil {
 		return err
+	}
+	if this.config.DeviceTopic != "" {
+		err = kafka.NewConsumer(ctx, group, this.config.DeviceTopic, func(delivery []byte) error {
+			return this.HandleDeviceMessage(ctx, delivery)
+		})
+		if err != nil {
+			return err
+		}
 	}
 	if this.config.UserTopic != "" {
 		// fallback for users deleted outside of user-management (SEC-14)
@@ -564,6 +567,37 @@ func (this *Server) startKafka(ctx context.Context) error {
 		}
 	}
 	return invalidator.StartKnownCacheInvalidators(ctx, all, invalidator.KnownTopics{DeviceTopic: this.config.DeviceTopic, DeviceGroupTopic: this.config.DeviceGroupTopic}, nil)
+}
+
+// HandleDeviceGroupMessage reacts to a device group that device-repository wrote or deleted: the
+// event descriptions of deployments that select it change (DEP-08), and the watches of the
+// group are checked (SNRGY-5132). An error repeats the message.
+func (this *Server) HandleDeviceGroupMessage(ctx context.Context, delivery []byte) error {
+	var msg struct {
+		Id string `json:"id"`
+	}
+	if json.Unmarshal(delivery, &msg) != nil || msg.Id == "" {
+		return nil
+	}
+	// the watches first: a cheap update that a failing recomputation would otherwise hold up
+	if err := this.Modules.DeviceGroupChanged(ctx, msg.Id); err != nil {
+		return err
+	}
+	return this.Controller.RecomputeDeviceGroup(ctx, msg.Id)
+}
+
+// HandleDeviceMessage reacts to a device that device-repository deleted: the watches of the
+// device groups it was in are checked, since the groups keep it without an announcement of
+// their own (SNRGY-5132). An error repeats the message.
+func (this *Server) HandleDeviceMessage(ctx context.Context, delivery []byte) error {
+	var msg struct {
+		Command string `json:"command"`
+		Id      string `json:"id"`
+	}
+	if json.Unmarshal(delivery, &msg) != nil || msg.Command != "DELETE" || msg.Id == "" {
+		return nil
+	}
+	return this.Modules.DeviceDeleted(ctx, msg.Id)
 }
 
 // Version is the version of the engine from the build: the module version of a release, else

@@ -23,6 +23,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -53,6 +54,13 @@ type WatcherSettings struct {
 	AllowGenericRequests bool
 	MinInterval          time.Duration
 	DefaultInterval      time.Duration
+	// device-repository announces changes of device groups and deletions of devices to the
+	// engine (Kafka), so a watch of a device group is checked on those instead of by interval
+	// (SNRGY-5132)
+	DeviceGroupEvents bool
+	// with announcements, a watch of a device group is still checked after this time since its
+	// last check, in case an announcement was missed; 24 h if not positive
+	DeviceGroupRecheck time.Duration
 }
 
 // AddWatcher registers the watcher task type (TASK-27): instead of an own database and API, the
@@ -109,15 +117,32 @@ func (this *watcher) Do(ctx context.Context, task Task) (modules []model.Module,
 	if hashType == "" {
 		hashType = "md5"
 	}
-	request, err := this.request(task)
-	if err != nil {
-		return nil, nil, err
-	}
 	id := task.ModuleId()
 	now := this.runtime.now()
+	w := store.Watch{Id: id, InstanceId: root.Id, Namespace: root.Namespace, Owner: root.Owner, Procedure: procedure, Parameters: parameters,
+		HashType: hashType, Interval: interval, NextAt: now, CreatedAt: now}
+	var members []string
+	if w.DeviceGroupId, err = this.deviceGroup(task); err != nil {
+		return nil, nil, err
+	}
+	if w.DeviceGroupId != "" {
+		// the baseline is the group as it is now, so that a change before the first announcement
+		// counts; a group the owner cannot read fails the task instead of every check. The watch
+		// is still checked once at once, for a change announced before it was stored.
+		var message string
+		w.LastHash, members, message, _ = this.checkDeviceGroup(ctx, w)
+		if message != "" {
+			return nil, nil, errors.New(message)
+		}
+		w.HashType = hashTypeDeviceIds
+	} else if w.Request, err = this.request(task); err != nil {
+		return nil, nil, err
+	}
 	err = this.runtime.store.Tx(ctx, func(tx *store.Tx) error {
-		return tx.SaveWatch(store.Watch{Id: id, InstanceId: root.Id, Namespace: root.Namespace, Owner: root.Owner, Procedure: procedure, Parameters: parameters,
-			Request: request, HashType: hashType, Interval: interval, NextAt: now, CreatedAt: now})
+		if err := tx.SaveWatch(w); err != nil {
+			return err
+		}
+		return tx.SetWatchDevices(id, members)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -125,6 +150,58 @@ func (this *watcher) Do(ctx context.Context, task Task) (modules []model.Module,
 	modules = []model.Module{{Id: id, ModuleType: TypeWatcher, Data: map[string]any{"watcher_id": id}, Keys: []string{},
 		DeleteInfo: &model.ModuleDeleteInfo{UserId: root.Owner, Resource: &model.ResourceRef{Kind: model.ResourceWatch, Namespace: root.Namespace, Id: id}}}}
 	return modules, map[string]any{"watcher_id": id}, nil
+}
+
+const hashTypeDeviceIds = "deviceids"
+
+// recheck is the time after which a parked watch of a device group is checked anyway
+func (this *watcher) recheck() time.Duration {
+	if this.settings.DeviceGroupRecheck <= 0 {
+		return 24 * time.Hour
+	}
+	return this.settings.DeviceGroupRecheck
+}
+
+// deviceGroup reads the device group to watch (SNRGY-5132): its id, as text or JSON string, or
+// the IoT option of a device group as the start form gives it. Empty without the variable or
+// when one of the criteria comes first, which wins as with the worker.
+func (this *watcher) deviceGroup(task Task) (string, error) {
+	for _, name := range []string{"watch_devices_by_criteria", "watch_modified_devices_by_criteria"} {
+		if _, ok := input(task, watchPrefix+name); ok {
+			return "", nil
+		}
+	}
+	raw, ok := input(task, watchPrefix+"watch_device_group")
+	if !ok {
+		return "", nil
+	}
+	raw = strings.TrimSpace(raw)
+	var id string
+	switch {
+	case strings.HasPrefix(raw, "{"):
+		var option struct {
+			DeviceGroupSelection *struct {
+				Id string `json:"id"`
+			} `json:"device_group_selection"`
+		}
+		if err := json.Unmarshal([]byte(raw), &option); err != nil {
+			return "", fmt.Errorf("invalid %vwatch_device_group: %w", watchPrefix, err)
+		}
+		if option.DeviceGroupSelection == nil {
+			return "", fmt.Errorf("invalid %vwatch_device_group: the option selects no device group", watchPrefix)
+		}
+		id = option.DeviceGroupSelection.Id
+	case strings.HasPrefix(raw, `"`):
+		if err := json.Unmarshal([]byte(raw), &id); err != nil {
+			return "", fmt.Errorf("invalid %vwatch_device_group: %w", watchPrefix, err)
+		}
+	default:
+		id = raw
+	}
+	if id = strings.TrimSpace(id); id == "" {
+		return "", fmt.Errorf("invalid %vwatch_device_group: empty device group id", watchPrefix)
+	}
+	return id, nil
 }
 
 // request reads what to watch: devices matching criteria through device-selection, or a
@@ -195,7 +272,14 @@ func (this *Runtime) CheckWatches(ctx context.Context) error {
 			return err
 		}
 		for _, w := range due {
-			hash, message := this.watcher.check(ctx, w)
+			var hash, message string
+			var members []string
+			gone := false
+			if w.DeviceGroupId != "" {
+				hash, members, message, gone = this.watcher.checkDeviceGroup(ctx, w)
+			} else {
+				hash, message = this.watcher.check(ctx, w)
+			}
 			if message == "" && hash != w.LastHash && w.LastHash != "" {
 				// a change starts the procedure; the first check only sets the baseline
 				if _, err := this.watcher.maintenance.StartMaintenanceInternal(ctx, w.InstanceId, w.Procedure, w.Parameters); err != nil {
@@ -206,8 +290,24 @@ func (this *Runtime) CheckWatches(ctx context.Context) error {
 			if message != "" {
 				hash = w.LastHash
 			}
+			// once checked, the watch of a device group waits for the next announcement, or the
+			// recheck for a missed one; so does that of a deleted group, whose recreation would be
+			// announced. Other failures, a failed trigger among them, are retried after the
+			// interval.
+			park := w.DeviceGroupId != "" && this.watcher.settings.DeviceGroupEvents && (message == "" || gone)
 			err = this.store.Tx(ctx, func(tx *store.Tx) error {
-				return tx.UpdateWatch(w.Id, hash, message)
+				if err := tx.UpdateWatch(w.Id, hash, message); err != nil {
+					return err
+				}
+				if members != nil {
+					if err := tx.SetWatchDevices(w.Id, members); err != nil {
+						return err
+					}
+				}
+				if park {
+					return tx.ParkWatch(w.Id, w.NextAt, this.now().Add(this.watcher.recheck()))
+				}
+				return nil
 			})
 			if err != nil {
 				return err
@@ -254,6 +354,52 @@ func (this *watcher) check(ctx context.Context, w store.Watch) (hash string, mes
 		return "", fmt.Sprintf("%v %v: %v", w.Request.Method, w.Request.Endpoint, resp.Status)
 	}
 	return hashOf(w.HashType, body), ""
+}
+
+// checkDeviceGroup reads the device group of a watch with the token of the owner, uncached, and
+// hashes its sorted device ids as the deviceids hash does an answer (SNRGY-5132). device-repository
+// leaves out the devices the owner may not execute, as for the read of the generic watch it
+// replaces. message reports a failure, gone that the group does not exist.
+func (this *watcher) checkDeviceGroup(ctx context.Context, w store.Watch) (hash string, members []string, message string, gone bool) {
+	token, err := this.runtime.token(w.Owner)
+	if err != nil {
+		return "", nil, "token: " + err.Error(), false
+	}
+	group, err, code := this.runtime.iot.ReadDeviceGroup(ctx, w.DeviceGroupId, token, false)
+	if code == http.StatusNotFound {
+		return "", nil, fmt.Sprintf("device group %v not found", w.DeviceGroupId), true
+	}
+	if err != nil {
+		return "", nil, fmt.Sprintf("device group %v: %v", w.DeviceGroupId, err), false
+	}
+	members = slices.Clone(group.DeviceIds)
+	if members == nil {
+		members = []string{}
+	}
+	slices.Sort(members)
+	members = slices.Compact(members)
+	raw, _ := json.Marshal(members)
+	sum := md5.Sum(raw)
+	return hex.EncodeToString(sum[:]), members, "", false
+}
+
+// DeviceGroupChanged makes the watches of a device group due, after device-repository announced
+// that the group was written or deleted (SNRGY-5132).
+func (this *Runtime) DeviceGroupChanged(ctx context.Context, groupId string) error {
+	return this.store.Tx(ctx, func(tx *store.Tx) error {
+		_, err := tx.DueWatchesOfDeviceGroup(groupId, this.now())
+		return err
+	})
+}
+
+// DeviceDeleted makes the watches due whose device group contained a device that
+// device-repository announced as deleted: it leaves the device in the stored group, which
+// therefore announces no change, but no longer returns it (SNRGY-5132).
+func (this *Runtime) DeviceDeleted(ctx context.Context, deviceId string) error {
+	return this.store.Tx(ctx, func(tx *store.Tx) error {
+		_, err := tx.DueWatchesOfDevice(deviceId, this.now())
+		return err
+	})
 }
 
 var deviceIdPattern = regexp.MustCompile(`urn:infai:ses:device:[0-9a-x-]{36}`)

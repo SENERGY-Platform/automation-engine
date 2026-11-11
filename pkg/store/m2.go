@@ -363,7 +363,7 @@ func (this *Tx) ConsecutiveIncidentRuns(instanceId string) (int, error) {
 // StorageCategories assigns the tables of instances to the parts of the storage report
 // (LONG-14): runtime state, history, outboxes and IO values.
 var StorageCategories = map[string][]string{
-	"runtime": {"instances", "tokens", "subscriptions", "jobs", "variables", "command_subtasks", "instance_messages", "message_receipts", "modules", "module_keys", "watches"},
+	"runtime": {"instances", "tokens", "subscriptions", "jobs", "variables", "command_subtasks", "instance_messages", "message_receipts", "modules", "module_keys", "watches", "watch_devices"},
 	"history": {"activities", "incidents", "runs", "element_stats", "history_snapshots"},
 	"outbox":  {"changes", "notifications", "permission_removals", "module_removals"},
 	"io":      {"io_values"},

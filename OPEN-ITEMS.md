@@ -158,6 +158,13 @@ Feature branches, each forked from the default branch. Since 2026-10-22 all of t
 - [x] **Task:** Switch the widgets `data-table` and `device-status`, which today create hidden deployments (`source=generated`), over to the new API.
 - [ ] **Note:** `POST /namespaces/{ns}/prepared-deployments` with `network_id` offers only the devices of the hub of that gateway, as process-fog-deployment did (`25d45ad`); the deploy dialog of a gateway should pass it.
 
+### Smart services in platform-content (SNRGY-5132)
+
+- [ ] **Task:** Switch Batterieüberwachung, Anomaly-Detection, Thermostatsteuerung nach Lüftungsverhalten and Surplus Charging from the generic `watcher.watch_request` on `device-repository/device-groups/{id}` to `watcher.watch_device_group` with the IoT parameter of the group (engine and web-ui designer option "Watch Device Group" since 2026-11-11, see PLAN.md).
+- [ ] **Task (operations):** Afterwards close the HTTP policy of `smart-services` again (`allow_hosts: ["api.senergy.infai.org"]`, `allow_ports: [443]` since 2026-11-10, only in the engine database), unless another generic watch still needs it.
+- [ ] **Note:** The watch "Neue Vorschläge melden" of the automation suggestions requests `timescale-wrapper.timescale:8080` internally and stays blocked by that policy either way.
+- [ ] **Note (operations):** The engine consumer group now also reads `devices`; alerts on consumer lag of that group see one topic more.
+
 ### dashboard
 
 - [ ] **Task:** Adapt stored widget types with a process reference to the new API.

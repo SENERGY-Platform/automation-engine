@@ -126,6 +126,9 @@ type Config struct {
 	AllowGenericWatchRequests bool   `json:"allow_generic_watch_requests" env_var:"ALLOW_GENERIC_WATCH_REQUESTS"`
 	WatcherMinInterval        string `json:"watcher_min_interval" env_var:"WATCHER_MIN_INTERVAL"`
 	WatcherDefaultInterval    string `json:"watcher_default_interval" env_var:"WATCHER_DEFAULT_INTERVAL"`
+	// a watch of a device group is checked on announcements of device-repository and, in case
+	// one was missed, after this time since its last check (SNRGY-5132)
+	WatcherDeviceGroupRecheck string `json:"watcher_device_group_recheck" env_var:"WATCHER_DEVICE_GROUP_RECHECK"`
 	// interval of the health checks of modules (SMS-11), and of the check that confirms or clears
 	// a finding
 	ModuleHealthCheckInterval   string `json:"module_health_check_interval" env_var:"MODULE_HEALTH_CHECK_INTERVAL"`
@@ -322,6 +325,7 @@ func Default() Config {
 		ResourceCheckCycle:             "1h",
 		WatcherMinInterval:             "1m",
 		WatcherDefaultInterval:         "1h",
+		WatcherDeviceGroupRecheck:      "24h",
 		Namespaces:                     DefaultNamespaces(),
 	}
 }

@@ -407,21 +407,27 @@ type Watch struct {
 	NextAt     time.Time
 	LastError  string
 	CreatedAt  time.Time
+	// the device group whose members are watched instead of Request (SNRGY-5132)
+	DeviceGroupId string
 }
 
-const watchColumns = "id, instance_id, namespace, owner, procedure_name, parameters, request, hash_type, interval_ms, last_hash, next_at, last_error, created_at"
+const watchColumns = "id, instance_id, namespace, owner, procedure_name, parameters, request, hash_type, interval_ms, last_hash, next_at, last_error, created_at, device_group_id"
 
-// SaveWatch creates or replaces a watch; a replaced one starts over with a new baseline.
+// SaveWatch creates or replaces a watch; a replaced one starts over with the baseline LastHash,
+// empty unless the caller already read the watched resource.
 func (this *Tx) SaveWatch(w Watch) error {
-	_, err := this.exec("INSERT INTO watches ("+watchColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, '', ?) "+
+	_, err := this.exec("INSERT INTO watches ("+watchColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?) "+
 		"ON CONFLICT (id) DO UPDATE SET procedure_name = excluded.procedure_name, parameters = excluded.parameters, request = excluded.request, "+
-		"hash_type = excluded.hash_type, interval_ms = excluded.interval_ms, last_hash = '', next_at = excluded.next_at, last_error = ''",
-		w.Id, w.InstanceId, w.Namespace, w.Owner, w.Procedure, toJson(w.Parameters), toJson(w.Request), w.HashType, w.Interval.Milliseconds(), millis(w.NextAt), millis(w.CreatedAt))
+		"hash_type = excluded.hash_type, interval_ms = excluded.interval_ms, last_hash = excluded.last_hash, next_at = excluded.next_at, last_error = '', "+
+		"device_group_id = excluded.device_group_id",
+		w.Id, w.InstanceId, w.Namespace, w.Owner, w.Procedure, toJson(w.Parameters), toJson(w.Request), w.HashType, w.Interval.Milliseconds(), w.LastHash, millis(w.NextAt), millis(w.CreatedAt),
+		w.DeviceGroupId)
 	return err
 }
 
 // ClaimDueWatches returns the watches due at now and moves their next check one interval past
-// now, so that each is checked once per interval by one replica.
+// now, so that each is checked once per interval by one replica. NextAt of the result is that
+// next check, which ParkWatch expects.
 func (this *Tx) ClaimDueWatches(now time.Time, limit int) (result []Watch, err error) {
 	rows, err := this.query("SELECT "+watchColumns+" FROM watches WHERE next_at <= ? ORDER BY next_at LIMIT ?"+this.forUpdate(true), millis(now), limit)
 	if err != nil {
@@ -431,7 +437,7 @@ func (this *Tx) ClaimDueWatches(now time.Time, limit int) (result []Watch, err e
 		var w Watch
 		var parameters, request string
 		var interval, next, created int64
-		if err = rows.Scan(&w.Id, &w.InstanceId, &w.Namespace, &w.Owner, &w.Procedure, &parameters, &request, &w.HashType, &interval, &w.LastHash, &next, &w.LastError, &created); err != nil {
+		if err = rows.Scan(&w.Id, &w.InstanceId, &w.Namespace, &w.Owner, &w.Procedure, &parameters, &request, &w.HashType, &interval, &w.LastHash, &next, &w.LastError, &created, &w.DeviceGroupId); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -443,12 +449,54 @@ func (this *Tx) ClaimDueWatches(now time.Time, limit int) (result []Watch, err e
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	for _, w := range result {
-		if _, err = this.exec("UPDATE watches SET next_at = ? WHERE id = ?", millis(now.Add(w.Interval)), w.Id); err != nil {
+	for i, w := range result {
+		result[i].NextAt = now.Add(w.Interval)
+		if _, err = this.exec("UPDATE watches SET next_at = ? WHERE id = ?", millis(result[i].NextAt), w.Id); err != nil {
 			return nil, err
 		}
 	}
 	return result, nil
+}
+
+// ParkWatch lets a claimed watch wait for an announcement until instead of its interval.
+// claimed is its NextAt from ClaimDueWatches: a watch made due again during its check keeps
+// that, so the announcement is not lost.
+func (this *Tx) ParkWatch(id string, claimed time.Time, until time.Time) error {
+	_, err := this.exec("UPDATE watches SET next_at = ? WHERE id = ? AND next_at = ?", millis(until), id, millis(claimed))
+	return err
+}
+
+// SetWatchDevices replaces the devices a watch of a device group found at its last check.
+func (this *Tx) SetWatchDevices(id string, deviceIds []string) error {
+	if _, err := this.exec("DELETE FROM watch_devices WHERE watch_id = ?", id); err != nil {
+		return err
+	}
+	for _, deviceId := range deviceIds {
+		if _, err := this.exec("INSERT INTO watch_devices (watch_id, device_id) VALUES (?, ?) ON CONFLICT DO NOTHING", id, deviceId); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DueWatchesOfDeviceGroup makes the watches of a device group due at now; one already due keeps
+// its time. It returns how many it changed.
+func (this *Tx) DueWatchesOfDeviceGroup(groupId string, now time.Time) (int64, error) {
+	result, err := this.exec("UPDATE watches SET next_at = ? WHERE device_group_id = ? AND next_at > ?", millis(now), groupId, millis(now))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// DueWatchesOfDevice makes the watches due at now whose device group contained the device at
+// their last check; one already due keeps its time. It returns how many it changed.
+func (this *Tx) DueWatchesOfDevice(deviceId string, now time.Time) (int64, error) {
+	result, err := this.exec("UPDATE watches SET next_at = ? WHERE next_at > ? AND id IN (SELECT watch_id FROM watch_devices WHERE device_id = ?)", millis(now), millis(now), deviceId)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // UpdateWatch stores the result of a check.

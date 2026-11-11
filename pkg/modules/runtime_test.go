@@ -430,6 +430,87 @@ func TestWatcherStartsTheMaintenanceProcedureOnChange(t *testing.T) {
 	}
 }
 
+// A watch of a device group reads the group from device-repository with the owner's token and
+// is checked when the consumers of device-groups and devices announce a change (SNRGY-5132).
+func TestWatcherOfADeviceGroupStartsTheMaintenanceProcedureOnAnnouncedChanges(t *testing.T) {
+	var members atomic.Value
+	members.Store([]string{"dev1", "dev2"})
+	repository := &recorder{}
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		repository.mux.Lock()
+		repository.requests = append(repository.requests, r.Method+" "+r.URL.Path+" "+tokenOf(r.Header.Get("Authorization")))
+		repository.mux.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "g1", "name": "batteries", "device_ids": members.Load()})
+	}))
+	t.Cleanup(fake.Close)
+	srv := newServer(t, func(c *configuration.Config) { c.DeviceSelectionUrl, c.DeviceRepositoryUrl = fake.URL, fake.URL })
+	c := srv.Controller
+	d, err := c.CreateDeployment(ctx, alice, "smart-services", model.DeploymentInput{Xml: b.Process(
+		b.Message("m", "members_changed"),
+		b.Start("start"),
+		b.Service("watch", "watcher",
+			b.InText("watcher.maintenance_procedure", "members_changed"),
+			b.InText("watcher.watch_device_group", `{"device_group_selection":{"id":"g1"}}`)),
+		b.End("end"),
+		`<bpmn:startEvent id="changed"><bpmn:messageEventDefinition messageRef="m"/></bpmn:startEvent>`,
+		b.Service("note", "info", b.InText("info.module_type", "note"), b.InText("info.module_data", "{}")),
+		b.End("noted"),
+		b.Flow("start", "watch"), b.Flow("watch", "end"), b.Flow("changed", "note"), b.Flow("note", "noted"),
+	)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := c.StartInstance(ctx, alice, "smart-services", model.StartInstanceInput{DeploymentId: d.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the smart service", func() bool {
+		current, _ := c.GetInstance(ctx, alice, "smart-services", inst.Id)
+		return current.Status == model.StatusReady
+	})
+	if requests := repository.all(); len(requests) == 0 || requests[0] != "GET /device-groups/g1 token of alice" {
+		t.Fatalf("the task reads the group with the owner's token: %v", requests)
+	}
+	notes := func() int {
+		page, _ := c.ListModules(ctx, alice, "smart-services", model.ModuleListOptions{InstanceId: inst.Id, ModuleType: "note"})
+		return page.Total
+	}
+	check := func() {
+		t.Helper()
+		if err := srv.Modules.CheckWatches(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check()
+	if notes() != 0 {
+		t.Fatal("the group as the task read it is the baseline")
+	}
+	members.Store([]string{"dev1", "dev2", "dev3"})
+	check()
+	if notes() != 0 {
+		t.Fatal("without an announcement the watch waits for its interval")
+	}
+	if err = srv.HandleDeviceGroupMessage(ctx, []byte(`{"command":"PUT","id":"g1","device_group":{"id":"g1","device_ids":["dev1","dev2","dev3"]}}`)); err != nil {
+		t.Fatal(err)
+	}
+	check()
+	waitFor(t, "the maintenance procedure", func() bool { return notes() == 1 })
+	members.Store([]string{"dev1", "dev3"})
+	if err = srv.HandleDeviceMessage(ctx, []byte(`{"command":"PUT","id":"dev2"}`)); err != nil {
+		t.Fatal(err)
+	}
+	check()
+	time.Sleep(50 * time.Millisecond)
+	if notes() != 1 {
+		t.Fatal("a written device announces no change of its groups")
+	}
+	if err = srv.HandleDeviceMessage(ctx, []byte(`{"command":"DELETE","id":"dev2"}`)); err != nil {
+		t.Fatal(err)
+	}
+	check()
+	waitFor(t, "the procedure after the deletion of a member", func() bool { return notes() == 2 })
+}
+
 func TestStartParametersOfSmartServicesWithOptionsAndAutoSelection(t *testing.T) {
 	selection := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`[{"device_group":{"id":"g1","name":"lamps"}},{"device_group":{"id":"g2","name":"heaters"}}]`))

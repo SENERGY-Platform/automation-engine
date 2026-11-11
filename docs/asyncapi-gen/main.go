@@ -148,11 +148,13 @@ func main() {
 
 	// platform signals
 	g.operation(receive, g.channel("deviceGroups", config.DeviceGroupTopic,
-		"DEVICE_GROUP_TOPIC; a changed device group changes the event descriptions of deployments that select it (DEP-08) "+
+		"DEVICE_GROUP_TOPIC; a changed device group changes the event descriptions of deployments that select it (DEP-08), "+
+			"makes the watches of the group due, read in the consumer group KAFKA_CONSUMER_GROUP (SNRGY-5132), "+
 			"and clears its cache entry in every replica.", kafka),
 		new(invalidator.Command), "DeviceGroupCommand", "recompute event descriptions")
 	g.operation(receive, g.channel("devices", config.DeviceTopic,
-		"DEVICE_TOPIC; clears the cache entry of the device in every replica.", kafka),
+		"DEVICE_TOPIC; a DELETE makes the watches due whose device group contained the device, read in the consumer group "+
+			"KAFKA_CONSUMER_GROUP (SNRGY-5132); any message clears the cache entry of the device in every replica.", kafka),
 		new(invalidator.Command), "DeviceCommand", "clear the device cache")
 	for _, topic := range config.CacheInvalidationAllTopics {
 		g.operation(receive, g.channel(camel(topic), topic,
