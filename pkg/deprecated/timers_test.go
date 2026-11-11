@@ -124,6 +124,8 @@ func timerExpressionModel(kind string, definition string) string {
 func TestDeployKeepsATimerExpressionThePreparedDeploymentOffered(t *testing.T) {
 	for name, xml := range map[string]string{
 		"date as JUEL":           timerExpressionModel("timeDate", `>${date}`),
+		"duration as JUEL":       timerExpressionModel("timeDuration", `>${duration}`),
+		"cycle as JUEL":          timerExpressionModel("timeCycle", `>${cron_0}`),
 		"date as JavaScript":     timerExpressionModel("timeDate", ` language="javascript">date`),
 		"cycle as JavaScript":    timerExpressionModel("timeCycle", ` language="javascript">cycle`),
 		"duration as JavaScript": timerExpressionModel("timeDuration", ` language="javascript">duration`),
