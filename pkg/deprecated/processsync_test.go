@@ -190,3 +190,32 @@ func TestFogViewsOfTheWebUi(t *testing.T) {
 		t.Error("deleted")
 	}
 }
+
+// The copy in the web-ui reads a deployment of a gateway as process-deployment did and deploys it
+// to the gateway again; process-deployment knew no deployments of gateways, so copying one failed
+// with "Probably old version" (SNRGY-3346).
+func TestADeploymentOfAGatewayIsCopied(t *testing.T) {
+	e := newFogEnv(t)
+	var prepared models.Deployment
+	if status, _ := e.call(alice, http.MethodPost, "/fog-deployment/prepared-deployments/"+hub, map[string]string{"xml": waitingProcess(), "svg": "<svg/>"}, &prepared); status != http.StatusOK {
+		t.Fatal(status)
+	}
+	prepared.Name = "Fog"
+	var deployed models.Deployment
+	if status, _ := e.call(alice, http.MethodPost, "/fog-deployment/deployments/"+hub+"?source=sepl", prepared, &deployed); status != http.StatusOK {
+		t.Fatal(status)
+	}
+	var copied models.Deployment
+	if status, _ := e.call(alice, http.MethodGet, "/deployment/v3/deployments/"+deployed.Id, nil, &copied); status != http.StatusOK || copied.Name != "Fog" || copied.Diagram.XmlDeployed == "" {
+		t.Fatalf("the deployment of the gateway is read for the copy: %v %+v", status, copied)
+	}
+	copied.Id, copied.Name = "", "Fog copy"
+	var second models.Deployment
+	if status, _ := e.call(alice, http.MethodPost, "/fog-deployment/deployments/"+hub+"?source=sepl", copied, &second); status != http.StatusOK || second.Id == "" || second.Id == deployed.Id {
+		t.Fatalf("the copy is a new deployment on the gateway: %v %+v", status, second)
+	}
+	got, err := e.srv.Controller.GetDeployment(ctx, alice, "processes", second.Id)
+	if err != nil || got.NetworkId != hub || got.Name != "Fog copy" {
+		t.Fatalf("the copy runs on the gateway: %+v %v", got, err)
+	}
+}
