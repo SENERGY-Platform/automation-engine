@@ -25,9 +25,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
+	"github.com/google/uuid"
 )
 
 // Check examines the resource of a module. A non-empty problem becomes the module error once
@@ -94,7 +96,11 @@ func (this *Runtime) CheckModules(ctx context.Context, interval time.Duration, r
 					if undecided {
 						return tx.SetModuleChecked(m.Id, at)
 					}
-					return tx.SetModuleCheck(m.Id, problem, at, at.Add(-recheck))
+					confirmed, err := tx.SetModuleCheck(m.Id, problem, at, at.Add(-recheck))
+					if err != nil || !confirmed {
+						return err
+					}
+					return this.notifyModuleError(tx, m, problem, at)
 				})
 				if err != nil {
 					return err
@@ -103,6 +109,27 @@ func (this *Runtime) CheckModules(ctx context.Context, interval time.Duration, r
 		}
 	}
 	return nil
+}
+
+// notifyModuleError tells the owner of the instance about a confirmed module error, once per
+// error, as smart-service-repository did; the notifier sends developer-notifications a copy, so
+// that errors of smart services reach the developers also when they are no incident (SNRGY-4537).
+func (this *Runtime) notifyModuleError(tx *store.Tx, m model.Module, problem string, at time.Time) error {
+	inst, err := tx.GetInstance(m.InstanceId, false)
+	if err != nil {
+		return err
+	}
+	name := inst.Name
+	if name == "" {
+		name = inst.DeploymentName
+	}
+	title := "Module Error in " + name
+	if m.Namespace == "smart-services" {
+		title = "Smart-Service-Module Error in " + name
+	}
+	message := fmt.Sprintf("Instance-Name: %v\nInstance-ID: %v\nModule-ID: %v\nModule-Type: %v\nError: %v", name, inst.Id, m.Id, m.ModuleType, problem)
+	return tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: inst.Owner, Title: title, Message: message,
+		Topic: engine.NotificationTopic, Namespace: m.Namespace, CreatedAt: at})
 }
 
 // addExternalChecks are the checks of the reused workers: the resource exists, and a pipeline runs

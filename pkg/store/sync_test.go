@@ -18,6 +18,7 @@ package store_test
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -159,7 +160,7 @@ func TestModuleCheckedAtTheCutoffIsDue(t *testing.T) {
 			if err := tx.UpsertModule(model.Module{Id: "m1", Namespace: "processes", InstanceId: "i1", Owner: "alice", ModuleType: "analytics", CreatedAt: t0, UpdatedAt: t0}); err != nil {
 				return err
 			}
-			if err := tx.SetModuleCheck("m1", "not running", t0, t0); err != nil {
+			if _, err := tx.SetModuleCheck("m1", "not running", t0, t0); err != nil {
 				return err
 			}
 			due, err := tx.ModulesToCheck("analytics", t0, t0, 10)
@@ -221,8 +222,13 @@ func TestModuleFindingIsConfirmedByALaterCheck(t *testing.T) {
 			}
 			recheck := 5 * time.Minute
 			hourly := t0.Add(-time.Hour) // the regular interval makes nothing due below
+			var confirmations []time.Time
 			check := func(finding string, at time.Time) error {
-				return tx.SetModuleCheck("m1", finding, at, at.Add(-recheck))
+				confirmed, err := tx.SetModuleCheck("m1", finding, at, at.Add(-recheck))
+				if confirmed {
+					confirmations = append(confirmations, at)
+				}
+				return err
 			}
 			shown := func() string {
 				errs, err := tx.ModuleErrors([]string{"i1"})
@@ -277,6 +283,19 @@ func TestModuleFindingIsConfirmedByALaterCheck(t *testing.T) {
 			}
 			if shown() != "" {
 				return fmt.Errorf("a finding after a recovery is suspected anew: %q", shown())
+			}
+			if err := check("not running", first.Add(4*recheck)); err != nil {
+				return err
+			}
+			if err := check("still not running", first.Add(5*recheck)); err != nil {
+				return err
+			}
+			if shown() != "still not running" {
+				return fmt.Errorf("a later finding replaces the text of the error: %q", shown())
+			}
+			// the notification of a module error goes out once per error (SNRGY-4537)
+			if expected := []time.Time{first.Add(recheck), first.Add(4 * recheck)}; !slices.Equal(confirmations, expected) {
+				return fmt.Errorf("confirmed at %v, want %v", confirmations, expected)
 			}
 			return nil
 		})

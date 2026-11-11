@@ -986,7 +986,7 @@ Today the smart-service-repository (Mongo, 1 replica) stores designs, releases, 
 - **SMS-08 (M)** Start parameters when creating an instance. The basis are the form fields: type, options, multiple selection, characteristic, device selection criteria, order (today `releaseinfo.go`). Selectable options are resolved for the user, e.g. devices via device-selection.
 - **SMS-09 (M)** Change parameters of a running instance. This triggers the update choice from SMS-03 (today `PUT /instances/{id}/parameters`).
 - **SMS-10 (M)** Read, set and delete variables of an instance. They are the process variables of the instance (RUN-05); a separate store as in the repository today is dropped.
-- **SMS-11 (M)** Status of an instance: ready, running, error, with an error message. It is derived from the run state and incidents, instead of being reported by the workers as today.
+- **SMS-11 (M)** Status of an instance: ready, running, error, with an error message. It is derived from the run state and incidents, instead of being reported by the workers as today. A module error found by the health check is reported to the owner once, as smart-service-repository did, and copied to developer-notifications like incidents (SNRGY-4537).
 - **SMS-12 (M)** Modules: resources that an instance creates through a task type (deployment, import, analytics pipeline, device group ...), with type, data and delete reference.
   - They can be retrieved per instance and collectively.
   - When the instance is deleted, they are deleted as well, also deployments on gateways.

@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -200,11 +201,14 @@ func TestHealthChecksMarkStoppedPipelinesInTheStatus(t *testing.T) {
 	running.Store(true)
 	flowEngine := &recorder{answer: func(r *http.Request) any { return map[string]any{"id": "p1", "running": running.Load()} }}
 	flowUrl := flowEngine.server(t).URL
+	notifier, developers := &recorder{}, &recorder{}
+	notifierUrl, developersUrl := notifier.server(t).URL, developers.server(t).URL
 	srv := newServer(t, func(c *configuration.Config) {
 		c.FlowEngineUrl, c.FlowParserUrl, c.DeviceRepositoryUrl = flowUrl, flowUrl, flowUrl
+		c.NotifierUrl, c.DeveloperNotificationsUrl = notifierUrl, developersUrl
 	})
 	c := srv.Controller
-	d, err := c.CreateDeployment(ctx, alice, "smart-services", model.DeploymentInput{Xml: b.Process(
+	d, err := c.CreateDeployment(ctx, alice, "smart-services", model.DeploymentInput{Name: "Ventilation", Xml: b.Process(
 		b.Start("start"),
 		b.Service("describe", "info", b.InText("info.module_type", "analytics"), b.InText("info.module_data", `{"pipeline_id":"p1"}`)),
 		b.End("end"), b.Flow("start", "describe"), b.Flow("describe", "end"),
@@ -240,6 +244,25 @@ func TestHealthChecksMarkStoppedPipelinesInTheStatus(t *testing.T) {
 	}
 	if requests := flowEngine.all()[before:]; len(requests) == 0 || slices.ContainsFunc(requests, func(r string) bool { return r != "GET /pipeline/p1 "+"token of alice" }) {
 		t.Fatalf("the check asks with the owner's token: %v", requests)
+	}
+	// the confirmed error goes to the owner and, as a copy, to the developers (SNRGY-4537), once:
+	// a further check that still finds it sends nothing
+	if err = srv.Modules.CheckModules(ctx, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err = srv.Engine.ProcessNotifications(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the developer copy", func() bool { return len(developers.all()) > 0 })
+	notifier.mux.Lock()
+	sent, bodies := append([]string{}, notifier.requests...), append([]map[string]any{}, notifier.bodies...)
+	notifier.mux.Unlock()
+	if len(sent) != 1 || bodies[0]["userId"] != "alice" || bodies[0]["title"] != "Smart-Service-Module Error in Ventilation" ||
+		!strings.Contains(fmt.Sprint(bodies[0]["message"]), "Module-Type: analytics\nError: analytics: pipeline p1 is not running") {
+		t.Fatalf("one notification of the module error to the owner: %v %v", sent, bodies)
+	}
+	if copies := developers.all(); len(copies) != 1 || !strings.HasPrefix(copies[0], "POST /messages ") {
+		t.Fatalf("one copy to developer-notifications: %v", copies)
 	}
 	running.Store(true)
 	if err = srv.Modules.CheckModules(ctx, 0, 0); err != nil {

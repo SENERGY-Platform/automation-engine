@@ -241,19 +241,29 @@ func (this *Tx) ModulesToCheck(moduleType string, before time.Time, recheckBefor
 // SetModuleCheck stores the result of a health check; an empty finding clears error and suspicion.
 // A finding becomes the error when the module has one or was suspected at or before confirmBefore,
 // otherwise it is suspected from at. A suspicion younger than confirmBefore stays as it is, so a
-// second replica checking at the same time does not confirm it.
-func (this *Tx) SetModuleCheck(id string, finding string, at time.Time, confirmBefore time.Time) error {
+// second replica checking at the same time does not confirm it. confirmed reports that this check
+// turned a suspicion into the error, which happens once per error even when two replicas check
+// the module at once: the second one waits for the row and then finds the error set.
+func (this *Tx) SetModuleCheck(id string, finding string, at time.Time, confirmBefore time.Time) (confirmed bool, err error) {
 	if finding == "" {
-		_, err := this.exec("UPDATE modules SET error = '', suspected_at = 0, checked_at = ? WHERE id = ?", millis(at), id)
-		return err
+		_, err = this.exec("UPDATE modules SET error = '', suspected_at = 0, checked_at = ? WHERE id = ?", millis(at), id)
+		return false, err
+	}
+	result, err := this.exec("UPDATE modules SET error = ?, suspected_at = 0, checked_at = ? WHERE id = ? AND error = '' AND suspected_at > 0 AND suspected_at <= ?",
+		finding, millis(at), id, millis(confirmBefore))
+	if err != nil {
+		return false, err
+	}
+	if n, err := result.RowsAffected(); err != nil || n > 0 {
+		return n > 0, err
 	}
 	// every expression reads the row as it was before the update, in Postgres and SQLite
-	_, err := this.exec("UPDATE modules SET "+
+	_, err = this.exec("UPDATE modules SET "+
 		"error = CASE WHEN error <> '' OR (suspected_at > 0 AND suspected_at <= ?) THEN ? ELSE error END, "+
 		"suspected_at = CASE WHEN error <> '' OR (suspected_at > 0 AND suspected_at <= ?) THEN 0 WHEN suspected_at > 0 THEN suspected_at ELSE ? END, "+
 		"checked_at = ? WHERE id = ?",
 		millis(confirmBefore), finding, millis(confirmBefore), millis(at), millis(at), id)
-	return err
+	return false, err
 }
 
 // SetModuleError sets an error that needs no confirmation, one taken over from the old workers.
