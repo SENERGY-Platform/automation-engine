@@ -273,6 +273,58 @@ func TestHealthChecksMarkStoppedPipelinesInTheStatus(t *testing.T) {
 	}
 }
 
+// An import whose container stopped running shows as module error once the recheck still finds
+// it, with the reason import-deploy gives; before, the check only asked whether it existed
+// (SNRGY-4539).
+func TestHealthChecksMarkStoppedImportsInTheStatus(t *testing.T) {
+	var running atomic.Bool
+	running.Store(true)
+	importDeploy := &recorder{answer: func(r *http.Request) any {
+		if r.Method == http.MethodPost {
+			return map[string]any{"id": "imp-1"}
+		}
+		return map[string]any{"id": "imp-1", "restart": true, "status": map[string]any{"running": running.Load(), "transitioning": !running.Load(), "message": map[bool]string{true: "", false: "Deployment does not have minimum availability."}[running.Load()]}}
+	}}
+	importUrl := importDeploy.server(t).URL
+	srv := newServer(t, func(c *configuration.Config) { c.ImportDeployUrl = importUrl })
+	c := srv.Controller
+	d, err := c.CreateDeployment(ctx, alice, "smart-services", model.DeploymentInput{Xml: b.Process(
+		b.Start("start"),
+		b.Service("load", "import", b.InText("import.request", `{"name":"kitchen import","import_type_id":"urn:type","configs":[]}`)),
+		b.End("end"), b.Flow("start", "load"), b.Flow("load", "end"),
+	)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := c.StartInstance(ctx, alice, "smart-services", model.StartInstanceInput{DeploymentId: d.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := func() model.Instance {
+		current, _ := c.GetInstance(ctx, alice, "smart-services", inst.Id)
+		return current
+	}
+	waitFor(t, "the smart service", func() bool { return status().Status == model.StatusReady })
+	if err = srv.Modules.CheckModules(ctx, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if current := status(); current.Status != model.StatusReady {
+		t.Fatalf("a running import is healthy: %+v", current)
+	}
+	running.Store(false)
+	for _, recheck := range []time.Duration{time.Hour, 0} {
+		if err = srv.Modules.CheckModules(ctx, 0, recheck); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if current := status(); current.Status != model.StatusError || !strings.HasSuffix(current.StatusMessage, "error = import: import imp-1 is not running: Deployment does not have minimum availability.") {
+		t.Fatalf("a stopped import shows as module error with the reason of import-deploy: %+v", current)
+	}
+	if requests := importDeploy.all(); requests[len(requests)-1] != "GET /instances/imp-1 token of alice" {
+		t.Fatalf("the check reads the instance with the owner's token: %v", requests)
+	}
+}
+
 func TestSmartServicesDeployAndStartManagedProcesses(t *testing.T) {
 	srv := newServer(t, func(*configuration.Config) {})
 	c := srv.Controller

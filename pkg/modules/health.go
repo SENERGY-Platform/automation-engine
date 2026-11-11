@@ -132,7 +132,8 @@ func (this *Runtime) notifyModuleError(tx *store.Tx, m model.Module, problem str
 		Topic: engine.NotificationTopic, Namespace: m.Namespace, CreatedAt: at})
 }
 
-// addExternalChecks are the checks of the reused workers: the resource exists, and a pipeline runs
+// addExternalChecks are the checks of the reused workers: the resource exists, a pipeline runs, and
+// since SNRGY-4539 the container of an import runs or, run once, did not fail
 func (this *Runtime) addExternalChecks() {
 	client := &http.Client{Timeout: 30 * time.Second}
 	get := func(ctx context.Context, owner string, target string, result any) (int, error) {
@@ -176,7 +177,21 @@ func (this *Runtime) addExternalChecks() {
 		}
 	}
 	if this.settings.ImportDeployUrl != "" {
-		this.AddCheck(TypeImport, exists(this.settings.ImportDeployUrl+"/instances", func(m model.Module) string { return field(m.Data, "import", "id") }))
+		this.AddCheck(TypeImport, func(ctx context.Context, m model.Module) (string, error) {
+			id := field(m.Data, "import", "id")
+			if id == "" {
+				return "module data names no resource", nil
+			}
+			var instance importInstance
+			status, err := get(ctx, m.Owner, this.settings.ImportDeployUrl+"/instances/"+url.PathEscape(id), &instance)
+			switch {
+			case err != nil:
+				return "", err
+			case status >= 300:
+				return fmt.Sprintf("%v not found (%v)", id, status), nil
+			}
+			return importProblem(id, instance), nil
+		})
 	}
 	if this.settings.ServingServiceUrl != "" {
 		this.AddCheck(TypeExport, exists(this.settings.ServingServiceUrl+"/instance", func(m model.Module) string { return field(m.Data, "export", "ID") }))
@@ -205,6 +220,47 @@ func (this *Runtime) addExternalChecks() {
 			return "", nil
 		})
 	}
+}
+
+// importInstance is the part of an import instance of import-deploy (since v0.1.0) the health
+// check reads: the status of its container, filled on read, and whether it restarts
+type importInstance struct {
+	Restart *bool `json:"restart"`
+	Status  *struct {
+		Running       bool   `json:"running"`
+		Transitioning bool   `json:"transitioning"`
+		Message       string `json:"message"`
+	} `json:"status"`
+}
+
+// importProblem judges the container of an import instance (SNRGY-4539). An import that restarts
+// runs as a deployment and has to run, also while it restarts in a loop. One that does not
+// restart runs once as a job and is fine running, starting or done; done is "completed" on
+// Kubernetes and "exited" on Docker, which does not tell success from failure. A short stop, such
+// as a rollout, is no error: a finding counts only when the recheck still has it. Without a
+// status, as from a backend that has none, the instance only has to exist.
+func importProblem(id string, instance importInstance) string {
+	status := instance.Status
+	reason := func(text string) string {
+		if status.Message == "" || status.Message == "failed" {
+			return text
+		}
+		return text + ": " + status.Message
+	}
+	switch {
+	case status == nil:
+		return ""
+	case status.Message == "not deployed":
+		return fmt.Sprintf("import %v is not deployed", id)
+	case instance.Restart != nil && !*instance.Restart:
+		if status.Running || status.Transitioning || status.Message == "completed" || status.Message == "exited" {
+			return ""
+		}
+		return reason(fmt.Sprintf("import %v failed", id))
+	case !status.Running:
+		return reason(fmt.Sprintf("import %v is not running", id))
+	}
+	return ""
 }
 
 // field reads a string at a path of nested maps
