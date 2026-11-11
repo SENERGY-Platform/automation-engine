@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
@@ -165,8 +166,8 @@ type Engine struct {
 	retentionCursor string
 	modelCursor     string
 
-	// replaced in tests
-	now func() time.Time
+	// replaced in tests, also while the engine runs; see now
+	clock atomic.Pointer[func() time.Time]
 }
 
 const maxCachedProcesses = 1000
@@ -182,7 +183,7 @@ func New(s *store.Store, config Config, namespaces Namespaces, logger *slog.Logg
 	sandbox.Timeout = config.ScriptTimeout
 	sandbox.MaxResultBytes = config.MaxVariableBytes
 	sandbox.Blocklist = script.NewBlocklist()
-	return &Engine{
+	result := &Engine{
 		store:      s,
 		config:     config,
 		sandbox:    sandbox,
@@ -193,8 +194,9 @@ func New(s *store.Store, config Config, namespaces Namespaces, logger *slog.Logg
 		tasks:      map[string]TaskType{},
 		cache:      map[string]*cachedVersion{},
 		wake:       make(chan struct{}, 1),
-		now:        func() time.Time { return time.Now().UTC() },
 	}
+	result.SetClock(func() time.Time { return time.Now().UTC() })
+	return result
 }
 
 func (this *Engine) SetMetrics(metrics Metrics) {
@@ -246,9 +248,13 @@ func (this *Engine) Now() time.Time {
 	return this.now()
 }
 
-// SetClock replaces the time source; for tests.
+// SetClock replaces the time source; for tests. It may be called while the engine runs.
 func (this *Engine) SetClock(now func() time.Time) {
-	this.now = now
+	this.clock.Store(&now)
+}
+
+func (this *Engine) now() time.Time {
+	return (*this.clock.Load())()
 }
 
 func (this *Engine) Store() *store.Store {
