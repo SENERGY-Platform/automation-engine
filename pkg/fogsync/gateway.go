@@ -231,14 +231,21 @@ func (this *Gateway) Handle(ctx context.Context, topic string, payload []byte) e
 }
 
 // acknowledged takes the position the cloud reports as taken; it may also go back, when the
-// cloud lost the state of the network, and the gateway then sends from there
+// cloud lost the state of the network, and the gateway then sends from there at once: the
+// batch in flight went with that state, waiting for its resend time would only delay the stream
 func (this *Gateway) acknowledged(ctx context.Context, acked int64) error {
-	err := this.store.Tx(ctx, func(tx *store.Tx) error { return tx.SetSyncPosition(positionAcked, acked) })
+	var previous int64
+	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+		if previous, err = tx.SyncPosition(positionAcked); err != nil {
+			return err
+		}
+		return tx.SetSyncPosition(positionAcked, acked)
+	})
 	if err != nil {
 		return err
 	}
 	this.mux.Lock()
-	if acked >= this.inflightUpto {
+	if acked >= this.inflightUpto || acked < previous {
 		this.inflightUpto, this.inflightAt, this.resendAfter = 0, time.Time{}, this.settings.ResendAfter
 	}
 	this.mux.Unlock()

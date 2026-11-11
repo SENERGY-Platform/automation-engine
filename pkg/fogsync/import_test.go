@@ -50,6 +50,20 @@ var operator = client.TestToken("ops", "admin")
 // connection to the new cloud.
 func (this *env) replaceCloud(connected bool) (*server.Server, *atomic.Bool) {
 	this.t.Helper()
+	// the first cloud has taken the change stream before it is cut off: a batch still in flight
+	// would reach the new cloud only after the resend time of the gateway, 30 s by default,
+	// which a slow run (-race) hits; what the new cloud lacks it asks for by going back
+	this.waitFor("the change stream of the gateway taken by the first cloud", func() bool {
+		var acked, latest int64
+		_ = this.gateway.Store.Tx(ctx, func(tx *store.Tx) (err error) {
+			if acked, err = tx.SyncPosition(store.PositionUpAcked); err != nil {
+				return err
+			}
+			latest, err = tx.LatestChangeSeq()
+			return err
+		})
+		return acked == latest
+	})
 	ctx, cancel := context.WithCancel(ctx)
 	this.t.Cleanup(cancel)
 	this.online.Store(false)
@@ -174,7 +188,12 @@ func TestImportTakesOverTheDeploymentsOfAGateway(t *testing.T) {
 	}
 
 	fresh, _ := e.replaceCloud(true)
-	// the gateway reports to the new cloud, which drops the instance of the unknown deployment
+	// the gateway reports to the new cloud with its next status, which the test does not wait
+	// for; the new cloud goes back to the start of the change stream and drops the instance of
+	// the unknown deployment
+	if err = e.gateway.Sync.SendStatus(ctx); err != nil {
+		t.Fatal(err)
+	}
 	e.waitFor("the change stream taken by the new cloud", func() bool {
 		n, found := networkOn(fresh)
 		return found && n.Latest > 0 && n.Acked == n.Latest

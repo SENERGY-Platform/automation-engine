@@ -247,6 +247,38 @@ func TestChangeStreamIsFoldedAcknowledgedAndSentAgain(t *testing.T) {
 	}
 }
 
+// A cloud that lost the state of the network, e.g. a new one after a move (SNRGY-5066),
+// acknowledges a position behind the gateway's; the gateway sends from there at once, not
+// after the resend time of the batch in flight, which the cloud has lost with its state.
+func TestAPositionTheCloudGoesBackToIsSentAtOnce(t *testing.T) {
+	e := newGatewayEnv(t)
+	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: envelope(), Resources: []fogsync.Resource{deployment("d1", 1, waitProcess()), start("i1", "d1", 1), start("i2", "d1", 1)}})
+	e.tick()
+	first := received[fogsync.Changes](e, fogsync.KindChanges)[0]
+	e.send(fogsync.KindUpAck, fogsync.UpAck{Envelope: envelope(), Acked: first.Upto})
+	if _, err := e.srv.Engine.Correlate(ctx, engine.CorrelationRequest{MessageInput: model.MessageInput{Name: "go", InstanceId: "i1"}}); err != nil {
+		t.Fatal(err)
+	}
+	e.tick()
+	if batches := received[fogsync.Changes](e, fogsync.KindChanges); len(batches) != 2 || batches[1].After != first.Upto {
+		t.Fatalf("the next batch is in flight: %+v", batches)
+	}
+
+	e.send(fogsync.KindUpAck, fogsync.UpAck{Envelope: envelope(), Acked: 0})
+	e.tick()
+	batches := received[fogsync.Changes](e, fogsync.KindChanges)
+	if len(batches) != 3 || batches[2].After != 0 || len(batches[2].Instances) != 2 {
+		t.Fatalf("the whole stream goes again without waiting for the resend time: %+v", batches)
+	}
+
+	// a repeated acknowledgement of the position the gateway already has is no going back
+	e.send(fogsync.KindUpAck, fogsync.UpAck{Envelope: envelope(), Acked: 0})
+	e.tick()
+	if n := len(received[fogsync.Changes](e, fogsync.KindChanges)); n != 3 {
+		t.Fatalf("the batch in flight waits for its resend time: %v", n)
+	}
+}
+
 func TestPurgedChangesAreReplacedByASnapshot(t *testing.T) {
 	e := newGatewayEnv(t)
 	e.send(fogsync.KindDesired, fogsync.Desired{Envelope: envelope(), Resources: []fogsync.Resource{deployment("d1", 1, waitProcess()), start("i1", "d1", 1)}})
