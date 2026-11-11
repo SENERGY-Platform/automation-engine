@@ -179,6 +179,10 @@ func (this *Engine) ResetRestarts(tx *store.Tx, deploymentId string) error {
 	return tx.ResumeEventDescriptions(deploymentId)
 }
 
+// notificationClaim is how long a replica holds a notification it sends, well above the timeout of
+// the notifier (10 s); a replica that ends while sending leaves it due again after this time
+const notificationClaim = 2 * time.Minute
+
 // ProcessNotifications sends queued notifications; failures are retried with backoff and
 // dropped after a day, so that a notifier outage does not fill the database. Without answer from
 // the notifier, the notifications due after the failed one wait as long as it does, instead of
@@ -195,6 +199,15 @@ func (this *Engine) ProcessNotifications(ctx context.Context) error {
 	}
 	var errs []error
 	for i, n := range due {
+		var claimed bool
+		if err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+			claimed, err = tx.ClaimNotification(n.Id, n.DueAt, now.Add(notificationClaim))
+			return err
+		}); err != nil || !claimed {
+			// another replica sends it
+			errs = append(errs, err)
+			continue
+		}
 		var sendErr error
 		if this.notifier != nil {
 			sendErr = this.notifier.Notify(ctx, n)
@@ -211,7 +224,7 @@ func (this *Engine) ProcessNotifications(ctx context.Context) error {
 			}
 			// not attempted, so without counting an attempt
 			for _, rest := range due[i+1:] {
-				if err := tx.PostponeNotification(rest.Id, retryAt); err != nil {
+				if err := tx.PostponeNotification(rest.Id, retryAt, now); err != nil {
 					return err
 				}
 			}

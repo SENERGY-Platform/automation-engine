@@ -218,6 +218,62 @@ func TestNotificationsAreAllTriedWhenTheNotifierRefusesThem(t *testing.T) {
 	})
 }
 
+// Every replica sends the due notifications; one that another replica is sending is left to it,
+// so that the owner and developer-notifications get it once. A replica that ends while sending
+// leaves it due again once its claim runs out.
+func TestANotificationIsSentByOneReplica(t *testing.T) {
+	run(t, func(t *testing.T, h *harness) {
+		h.queueNotifications(1)
+		h.notifier.hang, h.notifier.hanging = true, make(chan struct{}, 1)
+		sending, stop := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- h.e.ProcessNotifications(sending) }()
+		<-h.notifier.hanging
+
+		other := h.replica()
+		otherNotifier := &fakeNotifier{}
+		other.SetNotifier(otherNotifier)
+		if err := other.ProcessNotifications(ctx); err != nil || otherNotifier.attempted() != 0 {
+			t.Fatalf("the other replica leaves the notification being sent: %v, %v attempts", err, otherNotifier.attempted())
+		}
+
+		stop()
+		<-done
+	})
+}
+
+// A replica that ends while sending leaves its claim; the notification is due again once the
+// claim runs out, and not before.
+func TestANotificationClaimedByAnEndedReplicaIsSentAfterTheClaim(t *testing.T) {
+	run(t, func(t *testing.T, h *harness) {
+		h.queueNotifications(1)
+		err := h.s.Tx(ctx, func(tx *store.Tx) error {
+			due, err := tx.DueNotifications(h.now(), 10)
+			if err != nil || len(due) != 1 {
+				return fmt.Errorf("due: %v %v", due, err)
+			}
+			if claimed, err := tx.ClaimNotification(due[0].Id, due[0].DueAt, h.now().Add(notificationClaim)); err != nil || !claimed {
+				return fmt.Errorf("claim: %v %v", claimed, err)
+			}
+			if claimed, err := tx.ClaimNotification(due[0].Id, due[0].DueAt, h.now().Add(notificationClaim)); err != nil || claimed {
+				return fmt.Errorf("a claimed notification is claimed once: %v %v", claimed, err)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.advance(notificationClaim - time.Second)
+		if n := h.notifier.attempted(); n != 0 {
+			t.Fatalf("sent while claimed: %v attempts", n)
+		}
+		h.advance(time.Second)
+		if sent := h.notifier.messages(); len(sent) != 1 {
+			t.Fatalf("sent once the claim ran out: %v", sent)
+		}
+	})
+}
+
 // Timers and jobs do not wait for the notifier (SNRGY-5064).
 func TestProcessDueSendsNoNotifications(t *testing.T) {
 	run(t, func(t *testing.T, h *harness) {

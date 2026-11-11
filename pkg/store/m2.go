@@ -227,6 +227,8 @@ type Notification struct {
 	// of the resource the notification is about; empty for none, e.g. the storage budget
 	Namespace string
 	Attempts  int
+	// when it is due; ClaimNotification takes it only at this value
+	DueAt     time.Time
 	CreatedAt time.Time
 }
 
@@ -237,18 +239,18 @@ func (this *Tx) InsertNotification(n Notification) error {
 }
 
 func (this *Tx) DueNotifications(now time.Time, limit int) (result []Notification, err error) {
-	rows, err := this.query("SELECT id, user_id, title, message, topic, namespace, attempts, created_at FROM notifications WHERE due_at <= ? ORDER BY due_at LIMIT ?", millis(now), limit)
+	rows, err := this.query("SELECT id, user_id, title, message, topic, namespace, attempts, due_at, created_at FROM notifications WHERE due_at <= ? ORDER BY due_at LIMIT ?", millis(now), limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var n Notification
-		var created int64
-		if err = rows.Scan(&n.Id, &n.UserId, &n.Title, &n.Message, &n.Topic, &n.Namespace, &n.Attempts, &created); err != nil {
+		var due, created int64
+		if err = rows.Scan(&n.Id, &n.UserId, &n.Title, &n.Message, &n.Topic, &n.Namespace, &n.Attempts, &due, &created); err != nil {
 			return nil, err
 		}
-		n.CreatedAt = fromMillis(created)
+		n.DueAt, n.CreatedAt = fromMillis(due), fromMillis(created)
 		result = append(result, n)
 	}
 	return result, rows.Err()
@@ -264,9 +266,23 @@ func (this *Tx) RetryNotification(id string, due time.Time, message string) erro
 	return err
 }
 
+// ClaimNotification takes a due notification for sending until the given time, if it is still due
+// at dueAt as read: another replica that read it as well finds it claimed and leaves it, so that
+// it is sent once. Sending ends the claim by deleting the notification or setting its retry; a
+// replica that ends while sending leaves it to be sent again once the claim runs out.
+func (this *Tx) ClaimNotification(id string, dueAt time.Time, until time.Time) (bool, error) {
+	result, err := this.exec("UPDATE notifications SET due_at = ? WHERE id = ? AND due_at = ?", millis(until), id, millis(dueAt))
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n > 0, err
+}
+
 // PostponeNotification moves a notification that was not attempted, without counting an attempt.
-func (this *Tx) PostponeNotification(id string, due time.Time) error {
-	_, err := this.exec("UPDATE notifications SET due_at = ? WHERE id = ?", millis(due), id)
+// One that another replica claimed is not due at now and keeps its claim.
+func (this *Tx) PostponeNotification(id string, due time.Time, now time.Time) error {
+	_, err := this.exec("UPDATE notifications SET due_at = ? WHERE id = ? AND due_at <= ?", millis(due), id, millis(now))
 	return err
 }
 
