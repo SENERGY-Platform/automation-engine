@@ -246,22 +246,37 @@ func TestHealthChecksMarkStoppedPipelinesInTheStatus(t *testing.T) {
 		t.Fatalf("the check asks with the owner's token: %v", requests)
 	}
 	// the confirmed error goes to the owner and, as a copy, to the developers (SNRGY-4537), once:
-	// a further check that still finds it sends nothing
+	// a further check that still finds it queues nothing. Notifications go out in the order they
+	// were queued, so once a marker queued after that check has arrived, so has everything before.
 	if err = srv.Modules.CheckModules(ctx, 0, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err = srv.Engine.ProcessNotifications(ctx); err != nil {
+	if err = srv.Engine.QueueNotification(ctx, "alice", "", "marker", "queued after the checks"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "the developer copy", func() bool { return len(developers.all()) > 0 })
-	notifier.mux.Lock()
-	sent, bodies := append([]string{}, notifier.requests...), append([]map[string]any{}, notifier.bodies...)
-	notifier.mux.Unlock()
-	if len(sent) != 1 || bodies[0]["userId"] != "alice" || bodies[0]["title"] != "Smart-Service-Module Error in Ventilation" ||
-		!strings.Contains(fmt.Sprint(bodies[0]["message"]), "Module-Type: analytics\nError: analytics: pipeline p1 is not running") {
-		t.Fatalf("one notification of the module error to the owner: %v %v", sent, bodies)
+	moduleErrors := func(r *recorder, field string) (result []map[string]any, marker bool) {
+		r.mux.Lock()
+		defer r.mux.Unlock()
+		for _, body := range r.bodies {
+			text := fmt.Sprint(body[field])
+			marker = marker || strings.Contains(text, "marker")
+			if strings.Contains(text, "Smart-Service-Module Error") {
+				result = append(result, body)
+			}
+		}
+		return result, marker
 	}
-	if copies := developers.all(); len(copies) != 1 || !strings.HasPrefix(copies[0], "POST /messages ") {
+	waitFor(t, "the marker and its developer copy", func() bool {
+		_, toOwner := moduleErrors(notifier, "title")
+		_, toDevelopers := moduleErrors(developers, "body")
+		return toOwner && toDevelopers
+	})
+	sent, _ := moduleErrors(notifier, "title")
+	if len(sent) != 1 || sent[0]["userId"] != "alice" || sent[0]["title"] != "Smart-Service-Module Error in Ventilation" ||
+		!strings.Contains(fmt.Sprint(sent[0]["message"]), "Module-Type: analytics\nError: analytics: pipeline p1 is not running") {
+		t.Fatalf("one notification of the module error to the owner: %v", sent)
+	}
+	if copies, _ := moduleErrors(developers, "body"); len(copies) != 1 {
 		t.Fatalf("one copy to developer-notifications: %v", copies)
 	}
 	running.Store(true)
