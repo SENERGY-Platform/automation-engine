@@ -5432,7 +5432,7 @@ const docTemplate = `{
                 "deprecated": true,
                 "parameters": [
                     {
-                        "description": "design_id, optional name and description",
+                        "description": "design_id, optional name, description and update_of",
                         "name": "release",
                         "in": "body",
                         "required": true,
@@ -11384,6 +11384,10 @@ const docTemplate = `{
                 "new_release_id": {
                     "type": "string"
                 },
+                "update_of": {
+                    "description": "UpdateOf is read on creation only: the current release that the new one updates, also when\nit was released from another design (SNRGY-4535)",
+                    "type": "string"
+                },
                 "usable": {
                     "type": "boolean"
                 }
@@ -11429,6 +11433,10 @@ const docTemplate = `{
                     "$ref": "#/definitions/deprecated.PermissionsInfo"
                 },
                 "svg_xml": {
+                    "type": "string"
+                },
+                "update_of": {
+                    "description": "UpdateOf is read on creation only: the current release that the new one updates, also when\nit was released from another design (SNRGY-4535)",
                     "type": "string"
                 },
                 "usable": {

@@ -406,3 +406,74 @@ func TestProcessListOfASharedUserCarriesTheContent(t *testing.T) {
 		t.Errorf("bob lists the current version of the shared model: %v %+v %v", status, list, header.Get("X-Total-Count"))
 	}
 }
+
+// A design deleted and built again from its release has a new id; released with update_of, it
+// continues the release, and its instances are offered the update (SNRGY-4535). Further releases
+// of the new design go on the same release.
+func TestAReleaseUpdatesTheReleaseItNames(t *testing.T) {
+	e := newEnv(t)
+	original := e.createDesign(alice, "Room info", smartServiceDesign("widget"))
+	first := e.createRelease(alice, original.Id, "v1")
+	instance := e.createInstance(alice, first.Id, "running")
+	if status, _ := e.call(alice, http.MethodDelete, "/smart-services/designs/"+original.Id, nil, nil); status != http.StatusOK {
+		t.Fatalf("delete design: %v", status)
+	}
+	rebuilt := e.createDesign(alice, "Room info", smartServiceDesign("tile"))
+
+	var second deprecated.SmartServiceRelease
+	status, _ := e.call(alice, http.MethodPost, "/smart-services/releases", map[string]any{"design_id": rebuilt.Id, "name": "v2", "update_of": first.Id}, &second)
+	if status != http.StatusOK || second.Id != first.Id || second.DesignId != rebuilt.Id || second.Name != "v2" {
+		t.Fatalf("the release is the next version of the one it updates: %v %+v", status, second)
+	}
+	var older deprecated.SmartServiceRelease
+	if e.call(alice, http.MethodGet, "/smart-services/releases/"+url.PathEscape(first.Id+":v1"), nil, &older); older.NewReleaseId != first.Id {
+		t.Errorf("the older version points to the new one: %+v", older)
+	}
+	var read deprecated.SmartServiceInstance
+	if e.call(alice, http.MethodGet, "/smart-services/instances/"+instance.Id, nil, &read); read.ReleaseId != first.Id+":v1" || read.NewReleaseId != first.Id {
+		t.Errorf("the instance is offered the update: %+v", read)
+	}
+
+	third := e.createRelease(alice, rebuilt.Id, "v3")
+	var all []deprecated.SmartServiceRelease
+	e.call(alice, http.MethodGet, "/smart-services/releases", nil, &all)
+	if expected := []string{first.Id, first.Id + ":v2", first.Id + ":v1"}; third.Id != first.Id || !slices.Equal(releaseIds(all), expected) {
+		t.Errorf("a further release of the design goes on the same release: %v %v, want %v", third.Id, releaseIds(all), expected)
+	}
+}
+
+// update_of names a current release the caller may write, and no design takes over a second
+// release besides its own; a refused request changes nothing. A release the caller cannot read
+// is not found, as everywhere in the engine.
+func TestUpdateOfIsRefusedWhereItWouldNotBeAnUpdate(t *testing.T) {
+	e := newEnv(t)
+	target := e.createRelease(alice, e.createDesign(alice, "Target", smartServiceDesign("widget")).Id, "v1")
+	released := e.createDesign(alice, "Released", smartServiceDesign("widget"))
+	own := e.createRelease(alice, released.Id, "own")
+	fresh := e.createDesign(alice, "Fresh", smartServiceDesign("tile"))
+
+	for name, c := range map[string]struct {
+		token  string
+		body   map[string]any
+		status int
+	}{
+		"older version":            {alice, map[string]any{"design_id": fresh.Id, "update_of": target.Id + ":v1"}, http.StatusBadRequest},
+		"unknown release":          {alice, map[string]any{"design_id": fresh.Id, "update_of": "unknown"}, http.StatusNotFound},
+		"design with own release":  {alice, map[string]any{"design_id": released.Id, "update_of": target.Id}, http.StatusBadRequest},
+		"together with an id":      {alice, map[string]any{"design_id": fresh.Id, "update_of": target.Id, "id": "chosen"}, http.StatusBadRequest},
+		"release of another owner": {bob, map[string]any{"design_id": e.createDesign(bob, "Bob", smartServiceDesign("tile")).Id, "update_of": target.Id}, http.StatusNotFound},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if status, _ := e.call(c.token, http.MethodPost, "/smart-services/releases", c.body, nil); status != c.status {
+				t.Errorf("status %v, want %v", status, c.status)
+			}
+		})
+	}
+	var read deprecated.SmartServiceRelease
+	if e.call(alice, http.MethodGet, "/smart-services/releases/"+url.PathEscape(target.Id), nil, &read); read.Name != "v1" || read.NewReleaseId != "" {
+		t.Errorf("the target is unchanged: %+v", read)
+	}
+	if status, _ := e.call(alice, http.MethodPost, "/smart-services/releases", map[string]any{"design_id": released.Id, "update_of": own.Id, "name": "own v2"}, &read); status != http.StatusOK || read.Id != own.Id {
+		t.Errorf("update_of may name the design's own release: %v %+v", status, read)
+	}
+}

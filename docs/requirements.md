@@ -977,6 +977,8 @@ Today the smart-service-repository (Mongo, 1 replica) stores designs, releases, 
   - for the deployments that these instances manage in other namespaces (NS-08). They receive the strategy when the module redeploys them.
 
   Today a new release replaces the older ones of the same design, also across owners, and deletes their deployments (vault: "Creating a release rewrites the releases before it"). This behaviour is not taken over implicitly.
+
+  A release can name the release it updates (`update_of` under `deprecated/`, natively a `PUT` of the deployment with the new `model_id`). It becomes the next version of that deployment, which from then on belongs to the new design, so that instances are offered the update even after the original design was deleted and built again from the release (SNRGY-4535). A design that already has a release of its own cannot take over another one.
 - **SMS-04 (M)** The completion of a deployment that a module created is reported directly to the managing instance. Today the worker sends `deployment_done_<id>` 5 s after the deploy.
 - **SMS-05 (K)** Clarify the catch `permission_done_*`: there is no sender in the workspace, it is probably dead.
 - **SMS-06 (M)** There are no orphaned instances any more, because everything is in the same database and is deleted together. Today's cleanup (`smart-service-repository/pkg/controller/cleanup.go`) is dropped.

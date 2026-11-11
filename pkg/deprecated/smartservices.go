@@ -59,6 +59,9 @@ type SmartServiceRelease struct {
 	Creator          string                  `json:"creator"`
 	Usable           *bool                   `json:"usable,omitempty"`
 	ChangedResources []model.ChangedResource `json:"changed_resources,omitempty"`
+	// UpdateOf is read on creation only: the current release that the new one updates, also when
+	// it was released from another design (SNRGY-4535)
+	UpdateOf string `json:"update_of,omitempty"`
 }
 
 type ResourceUsage struct {
@@ -523,14 +526,16 @@ func (this *Handler) deploymentOfDesign(r *http.Request, designId string) (model
 
 // createRelease releases the current version of a design: the first release creates the
 // deployment, every further one a new version of it, which running instances keep until
-// their parameters move them (drain, SMS-03)
+// their parameters move them (drain, SMS-03). With update_of, the release becomes a new version
+// of that release instead, which from then on belongs to this design, e.g. after its own design
+// was deleted and built again from the release (SNRGY-4535).
 //
 //	@Summary		release a design: a new deployment or a new version of it
 //	@Tags		deprecated-smart-services
 //	@Deprecated
 //	@Security	Bearer
 //	@Produce	json
-//	@Param		release	body	SmartServiceRelease	true	"design_id, optional name and description"
+//	@Param		release	body	SmartServiceRelease	true	"design_id, optional name, description and update_of"
 //	@Success	200	{object}	SmartServiceRelease
 //	@Failure	400,403,404	{string}	string
 //	@Router		/deprecated/smart-services/releases [post]
@@ -557,6 +562,14 @@ func (this *Handler) createRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	if request.UpdateOf != "" {
+		existing, err = this.releaseToUpdate(r, request, existing, found)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		found = true
+	}
 	var d model.Deployment
 	switch {
 	case found:
@@ -573,6 +586,28 @@ func (this *Handler) createRelease(w http.ResponseWriter, r *http.Request) {
 		d, err = this.c.CreateDeployment(r.Context(), token(r), smartServices, input)
 	}
 	respond(w, release(d, d.Version, d.UpdatedAt.Unix(), nil), err)
+}
+
+// releaseToUpdate reads the deployment that update_of names. It has to be a current release; a
+// design whose releases are another deployment cannot take over a second one, since every
+// further release of the design would update only one of them.
+func (this *Handler) releaseToUpdate(r *http.Request, request SmartServiceRelease, ofDesign model.Deployment, designReleased bool) (model.Deployment, error) {
+	if request.Id != "" {
+		return model.Deployment{}, model.BadRequest("id and update_of exclude each other")
+	}
+	deploymentId, version := parseRelease(request.UpdateOf)
+	if version != 0 {
+		return model.Deployment{}, model.BadRequest("%v is an older version of release %v; only the current release can be updated", request.UpdateOf, deploymentId)
+	}
+	if designReleased && ofDesign.Id != deploymentId {
+		return model.Deployment{}, model.BadRequest("the design %v already has its own release %v, which a release of it updates", request.DesignId, ofDesign.Id)
+	}
+	// without this read, the PUT that follows would create a deployment under an unknown id
+	target, err := this.c.GetDeployment(r.Context(), token(r), smartServices, deploymentId)
+	if errors.Is(err, model.ErrNotFound) {
+		return target, model.NotFound("release %v to update not found", request.UpdateOf)
+	}
+	return target, err
 }
 
 // deleteRelease godoc
