@@ -949,7 +949,7 @@ Today both services depend on Camunda internals: Postgres triggers on `ACT_RU_EX
   - offline since.
 
   It replaces `/networks`, `last_network_contact` and the self-test via `processes/ping`, which today ends process-sync with a fatal error after 10 min without a ping. In the future this is a metric with an alert.
-- **SYNC-13 (M)** Desired and actual state per deployment and gateway are visible: pending, applied or failed with an error message. This replaces `state/error` and the query via `/metadata`.
+- **SYNC-13 (M)** Desired and actual state per deployment and gateway are visible: pending, applied or failed with an error message. This replaces `state/error` and the query via `/metadata`. A start the gateway refuses, e.g. because it lacks the deployment, ends the instance in the cloud with an incident naming the gateway and the error, and with `notify` the owner is told; the instance would otherwise stay pending, and a smart service that started it would never learn of the failure through its health check (SNRGY-3689, 2026-11-12).
 
 ---
 

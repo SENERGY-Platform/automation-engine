@@ -20,11 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/mqtt"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
@@ -216,16 +219,26 @@ func forgetInstancesOf(tx *store.Tx, networkId string, deploymentId string) erro
 
 // settle ends an instance that is still pending in the cloud when the gateway applied its stop:
 // the gateway either stopped it or never got its start and will not run it; the change stream
-// corrects the state if the instance ended otherwise. Its start is done then.
+// corrects the state if the instance ended otherwise. Its start is done then. A start the
+// gateway refused ends the instance as well, see failStart.
 func (this *Cloud) settle(tx *store.Tx, networkId string, d store.Desired) error {
-	if d.Kind != ResourceInstance || d.Deleted || d.AppliedVersion < d.Version || d.Error != "" || len(d.Spec) == 0 {
+	if d.Kind != ResourceInstance || d.Deleted || d.AppliedVersion < d.Version || len(d.Spec) == 0 {
 		return nil
 	}
 	var spec Resource
 	if err := json.Unmarshal(d.Spec, &spec); err != nil {
 		return err
 	}
-	if spec.Instance == nil || !spec.Instance.Stopped {
+	if spec.Instance == nil {
+		return nil
+	}
+	if d.Error != "" {
+		if spec.Instance.Stopped {
+			return nil
+		}
+		return this.failStart(tx, networkId, d)
+	}
+	if !spec.Instance.Stopped {
 		return nil
 	}
 	inst, err := tx.GetInstance(d.Id, true)
@@ -243,6 +256,46 @@ func (this *Cloud) settle(tx *store.Tx, networkId string, d store.Desired) error
 	if err = tx.UpsertReplicatedInstance(networkId, inst.Instance); err != nil {
 		return err
 	}
+	return tx.ForgetEndedInstance(networkId, d.Id)
+}
+
+// failStart ends an instance with an incident whose start the gateway refused, e.g. because it
+// lacks the deployment (SNRGY-3689). The gateway never ran it, so neither its change stream nor
+// its incident handling will report it; without this, the instance would stay pending in the
+// cloud and a smart service that started it would never learn of the failure. With notify on the
+// deployment, the owner gets the notification the gateway would have sent. The start is done.
+func (this *Cloud) failStart(tx *store.Tx, networkId string, d store.Desired) error {
+	inst, err := tx.GetInstance(d.Id, true)
+	if errors.Is(err, model.ErrNotFound) {
+		return tx.ForgetEndedInstance(networkId, d.Id)
+	}
+	if err != nil {
+		return err
+	}
+	if inst.NetworkId != networkId || inst.State != model.StatePending {
+		return tx.ForgetEndedInstance(networkId, d.Id)
+	}
+	now := this.now().UTC()
+	reason := fmt.Sprintf("start on gateway %v failed: %v", networkId, d.Error)
+	inst.State, inst.EndReason, inst.EndedAt, inst.LastActivityAt = model.StateIncident, reason, &now, now
+	if err = tx.UpsertReplicatedInstance(networkId, inst.Instance); err != nil {
+		return err
+	}
+	if err = tx.ReplaceReplicatedIncidents(inst.Id, inst.Run, []model.Incident{{Id: uuid.NewString(), Namespace: inst.Namespace, Owner: inst.Owner,
+		DeploymentId: inst.DeploymentId, DeploymentVersion: inst.DeploymentVersion, Message: reason, Time: now}}); err != nil {
+		return err
+	}
+	handling, err := tx.GetIncidentHandling(inst.DeploymentId, inst.DeploymentVersion)
+	if err != nil && !errors.Is(err, model.ErrNotFound) {
+		return err
+	}
+	if handling.Notify && inst.Owner != "" {
+		if err = tx.InsertNotification(store.Notification{Id: "start-failed-" + inst.Id + "-" + strconv.Itoa(inst.Run), UserId: inst.Owner,
+			Title: "Process-Incident in " + inst.DeploymentName, Message: reason, Topic: engine.NotificationTopic, Namespace: inst.Namespace, CreatedAt: now}); err != nil {
+			return err
+		}
+	}
+	this.logger.Warn("start refused by the gateway", "network_id", networkId, "instance_id", inst.Id, "deployment_id", inst.DeploymentId, "error", d.Error)
 	return tx.ForgetEndedInstance(networkId, d.Id)
 }
 
