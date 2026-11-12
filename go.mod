@@ -7,14 +7,14 @@ require (
 	github.com/SENERGY-Platform/developer-notifications v0.0.6
 	github.com/SENERGY-Platform/device-repository/v3 v3.9.0
 	github.com/SENERGY-Platform/device-selection/v2 v2.2.0
-	github.com/SENERGY-Platform/gin-middleware v0.14.3
+	github.com/SENERGY-Platform/gin-middleware v0.14.4
 	github.com/SENERGY-Platform/go-env-loader v0.5.3
 	github.com/SENERGY-Platform/go-service-base/config-hdl v1.2.0
 	github.com/SENERGY-Platform/go-service-base/struct-logger v0.8.2
 	github.com/SENERGY-Platform/marshaller v0.4.0
 	github.com/SENERGY-Platform/models/go v0.0.0-20260911075423-f01521c01da2
 	github.com/SENERGY-Platform/permissions-v2 v1.0.0
-	github.com/SENERGY-Platform/service-commons v0.0.0-20261028091432-9301a6bf13f8
+	github.com/SENERGY-Platform/service-commons v0.0.0-20261112092203-c8689838acc5
 	github.com/beevik/etree v1.8.1
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20261011204819-0c9fae1b959d
@@ -88,6 +88,7 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/pprof v0.0.0-20260802141513-ef3492d7dac3 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
