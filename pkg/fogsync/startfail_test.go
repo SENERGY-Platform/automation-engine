@@ -75,7 +75,7 @@ func TestAStartTheGatewayRefusesEndsTheInstanceInTheCloud(t *testing.T) {
 	// a second one would go out with the next pass of the notification loop
 	time.Sleep(1500 * time.Millisecond)
 	sent := notifier.messages()
-	if len(sent) != 1 || sent[0].UserId != inst.Owner || sent[0].Title != "Process-Incident in "+inst.DeploymentName || sent[0].Message != inst.EndReason {
+	if len(sent) != 1 || sent[0].UserId != inst.Owner || sent[0].Title != "Process-Incident in "+inst.DeploymentName || sent[0].Message != inst.EndReason || sent[0].DuplicateWindow != store.DefaultDuplicateWindow {
 		t.Errorf("with notify, the owner is told once, as the gateway would have: %+v", sent)
 	}
 }

@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
@@ -413,6 +414,15 @@ func (this *rewriter) connector(e *etree.Element, ext *etree.Element, connector 
 			if text, ok := payload[key].(string); ok {
 				this.value(add("inputParameter", key, text), id, key)
 			}
+		}
+		// the duplicate window the web-ui writes into the payload (SNRGY-3911)
+		switch window := payload["ignore_duplicates_within_seconds"].(type) {
+		case string:
+			if strings.TrimSpace(window) != "" {
+				this.value(add("inputParameter", "ignore_duplicates_within_seconds", window), id, "ignore_duplicates_within_seconds")
+			}
+		case float64:
+			add("inputParameter", "ignore_duplicates_within_seconds", strconv.FormatFloat(window, 'f', -1, 64))
 		}
 		e.CreateAttr(this.senergy+":taskType", "notification")
 		this.rewritten(id, "http-connector to the notifier became task type notification")

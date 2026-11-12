@@ -61,3 +61,31 @@ func TestANotificationIsClaimedOnceAndKeepsItsClaim(t *testing.T) {
 		})
 	})
 }
+
+// While engines with and without the column run side by side, a notification an engine without it
+// queued keeps the hour every notification had before (SNRGY-3911).
+func TestANotificationQueuedWithoutTheWindowColumnKeepsAnHour(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		tx(t, s, func(tx *store.Tx) error {
+			// the column list of migration 23
+			if err := store.ExecForTest(tx, "INSERT INTO notifications (id, user_id, title, message, topic, namespace, due_at, created_at) VALUES ('old', 'alice', 't', 'm', 'processes', 'processes', 0, 0)"); err != nil {
+				return err
+			}
+			if err := tx.InsertNotification(store.Notification{Id: "new", UserId: "alice", Title: "t", CreatedAt: t0}); err != nil {
+				return err
+			}
+			due, err := tx.DueNotifications(t0, 10)
+			if err != nil || len(due) != 2 {
+				return fmt.Errorf("both due: %+v %v", due, err)
+			}
+			windows := map[string]int64{}
+			for _, n := range due {
+				windows[n.Id] = n.DuplicateWindow
+			}
+			if windows["old"] != store.DefaultDuplicateWindow || windows["new"] != 0 {
+				return fmt.Errorf("the old one keeps an hour, the new one its own window: %v", windows)
+			}
+			return nil
+		})
+	})
+}

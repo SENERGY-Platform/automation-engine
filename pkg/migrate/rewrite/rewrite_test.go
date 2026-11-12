@@ -108,6 +108,33 @@ func TestNotificationConnectorBecomesNotificationTask(t *testing.T) {
 	}
 }
 
+// SNRGY-3911: the web-ui writes the duplicate window into the payload, as text or as number
+func TestNotificationConnectorKeepsTheDuplicateWindow(t *testing.T) {
+	for payload, want := range map[string]string{
+		`{"message":"m","title":"t","ignore_duplicates_within_seconds":600}`:   "600",
+		`{"message":"m","title":"t","ignore_duplicates_within_seconds":"600"}`: "600",
+		`{"message":"m","title":"t","ignore_duplicates_within_seconds":""}`:    "",
+		`{"message":"m","title":"t"}`:                                          "",
+	} {
+		p, report := rewrite(t, definitions(around("n", `<bpmn:serviceTask id="n"><bpmn:extensionElements><camunda:connector><camunda:inputOutput>`+
+			`<camunda:inputParameter name="payload">`+payload+`</camunda:inputParameter>`+
+			`<camunda:inputParameter name="deploymentIdentifier">notification</camunda:inputParameter></camunda:inputOutput>`+
+			`<camunda:connectorId>http-connector</camunda:connectorId></camunda:connector></bpmn:extensionElements></bpmn:serviceTask>`)))
+		var window *bpmn.Value
+		for _, m := range p.Elements["n"].Inputs {
+			if m.Name == "ignore_duplicates_within_seconds" {
+				window = &m.Value
+			}
+		}
+		if want == "" && window != nil || want != "" && (window == nil || window.Text != want) {
+			t.Errorf("%v: %+v", payload, window)
+		}
+		if !report.Complete() {
+			t.Errorf("%v: %+v", payload, report)
+		}
+	}
+}
+
 func TestHttpConnectorBecomesHttpTask(t *testing.T) {
 	p, report := rewrite(t, definitions(around("h", `<bpmn:serviceTask id="h"><bpmn:extensionElements><camunda:connector><camunda:inputOutput>`+
 		`<camunda:inputParameter name="url">http://${ip}/cm</camunda:inputParameter><camunda:inputParameter name="method">POST</camunda:inputParameter>`+

@@ -226,21 +226,28 @@ type Notification struct {
 	Topic   string
 	// of the resource the notification is about; empty for none, e.g. the storage budget
 	Namespace string
-	Attempts  int
+	// seconds within which the notifier drops it if the user already has one with the same title,
+	// message and topic; 0 for none (SNRGY-3911)
+	DuplicateWindow int64
+	Attempts        int
 	// when it is due; ClaimNotification takes it only at this value
 	DueAt     time.Time
 	CreatedAt time.Time
 }
 
+// DefaultDuplicateWindow is the window of the notifications the engine sends on its own, e.g. of
+// incidents, as process-incident-api had: a repeated incident is reported once an hour.
+const DefaultDuplicateWindow = 3600
+
 // InsertNotification queues a notification; a queued one with the same id stays as it is.
 func (this *Tx) InsertNotification(n Notification) error {
-	_, err := this.exec("INSERT INTO notifications (id, user_id, title, message, topic, namespace, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
-		n.Id, n.UserId, n.Title, n.Message, n.Topic, n.Namespace, millis(n.CreatedAt), millis(n.CreatedAt))
+	_, err := this.exec("INSERT INTO notifications (id, user_id, title, message, topic, namespace, duplicate_window, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
+		n.Id, n.UserId, n.Title, n.Message, n.Topic, n.Namespace, n.DuplicateWindow, millis(n.CreatedAt), millis(n.CreatedAt))
 	return err
 }
 
 func (this *Tx) DueNotifications(now time.Time, limit int) (result []Notification, err error) {
-	rows, err := this.query("SELECT id, user_id, title, message, topic, namespace, attempts, due_at, created_at FROM notifications WHERE due_at <= ? ORDER BY due_at LIMIT ?", millis(now), limit)
+	rows, err := this.query("SELECT id, user_id, title, message, topic, namespace, duplicate_window, attempts, due_at, created_at FROM notifications WHERE due_at <= ? ORDER BY due_at LIMIT ?", millis(now), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +255,7 @@ func (this *Tx) DueNotifications(now time.Time, limit int) (result []Notificatio
 	for rows.Next() {
 		var n Notification
 		var due, created int64
-		if err = rows.Scan(&n.Id, &n.UserId, &n.Title, &n.Message, &n.Topic, &n.Namespace, &n.Attempts, &due, &created); err != nil {
+		if err = rows.Scan(&n.Id, &n.UserId, &n.Title, &n.Message, &n.Topic, &n.Namespace, &n.DuplicateWindow, &n.Attempts, &due, &created); err != nil {
 			return nil, err
 		}
 		n.DueAt, n.CreatedAt = fromMillis(due), fromMillis(created)

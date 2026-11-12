@@ -129,7 +129,7 @@ func (this *Runtime) notifyModuleError(tx *store.Tx, m model.Module, problem str
 	}
 	message := fmt.Sprintf("Instance-Name: %v\nInstance-ID: %v\nModule-ID: %v\nModule-Type: %v\nError: %v", name, inst.Id, m.Id, m.ModuleType, problem)
 	return tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: inst.Owner, Title: title, Message: message,
-		Topic: engine.NotificationTopic, Namespace: m.Namespace, CreatedAt: at})
+		Topic: engine.NotificationTopic, Namespace: m.Namespace, DuplicateWindow: store.DefaultDuplicateWindow, CreatedAt: at})
 }
 
 // addExternalChecks are the checks of the reused workers: the resource exists, a pipeline runs, and

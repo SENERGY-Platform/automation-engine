@@ -47,7 +47,7 @@ func TestNotifyPostsTheNotifierFormatWithDuplicateWindow(t *testing.T) {
 	}))
 	defer server.Close()
 	n := New(server.URL, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
-	err := n.Notify(context.Background(), store.Notification{UserId: "u", Title: "Process-Incident in x", Message: "boom", Topic: "incident"})
+	err := n.Notify(context.Background(), store.Notification{UserId: "u", Title: "Process-Incident in x", Message: "boom", Topic: "incident", DuplicateWindow: 3600})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +56,15 @@ func TestNotifyPostsTheNotifierFormatWithDuplicateWindow(t *testing.T) {
 	}
 	if query != "ignore_duplicates_within_seconds=3600" {
 		t.Errorf("unexpected query %v", query)
+	}
+
+	// SNRGY-3911: without a window the notifier delivers every notification
+	query = "unset"
+	if err = n.Notify(context.Background(), store.Notification{UserId: "u", Title: "hot", Topic: Topic}); err != nil {
+		t.Fatal(err)
+	}
+	if query != "" {
+		t.Errorf("a notification without a window is sent without one: %q", query)
 	}
 }
 

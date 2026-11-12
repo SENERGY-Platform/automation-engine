@@ -291,7 +291,7 @@ func (this *Cloud) failStart(tx *store.Tx, networkId string, d store.Desired) er
 	}
 	if handling.Notify && inst.Owner != "" {
 		if err = tx.InsertNotification(store.Notification{Id: "start-failed-" + inst.Id + "-" + strconv.Itoa(inst.Run), UserId: inst.Owner,
-			Title: "Process-Incident in " + inst.DeploymentName, Message: reason, Topic: engine.NotificationTopic, Namespace: inst.Namespace, CreatedAt: now}); err != nil {
+			Title: "Process-Incident in " + inst.DeploymentName, Message: reason, Topic: engine.NotificationTopic, Namespace: inst.Namespace, DuplicateWindow: store.DefaultDuplicateWindow, CreatedAt: now}); err != nil {
 			return err
 		}
 	}

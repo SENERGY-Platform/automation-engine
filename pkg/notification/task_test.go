@@ -20,10 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -59,6 +62,7 @@ func (this *cloudNotifier) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var body map[string]string
 	_ = json.NewDecoder(r.Body).Decode(&body)
+	body["query"] = r.URL.RawQuery
 	this.mu.Lock()
 	this.received = append(this.received, body)
 	this.mu.Unlock()
@@ -134,6 +138,50 @@ func TestAProcessNotificationOnAGatewayWithoutCloudDoesNotFailTheProcess(t *test
 	if n := developerCopies.Load(); n != 0 {
 		t.Errorf("a notification of a process gets no copy to developer-notifications, as before: %v", n)
 	}
+	if sent[0]["query"] != "" {
+		t.Errorf("without a window in the model the notifier delivers every notification, as before (SNRGY-3911): %q", sent[0]["query"])
+	}
+}
+
+// SNRGY-3911: the window given in the model reaches the notifier
+func TestAProcessNotificationCarriesTheDuplicateWindowOfTheModel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	notifier := &cloudNotifier{}
+	notifierServer := httptest.NewServer(notifier)
+	t.Cleanup(notifierServer.Close)
+	config := configuration.Default()
+	config.SqlitePath = storetest.MemoryDsn()
+	config.Mode, config.MqttBroker = "fog", "memory"
+	config.NotifierUrl = notifierServer.URL
+	srv, err := server.New(ctx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), server.Dependencies{Broker: mqtt.NewMemory()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Start(ctx)
+	c := srv.Controller
+	alice := client.TestToken("alice")
+
+	xml := b.Process(
+		b.Start("start"),
+		b.Service("notify", "notification", b.InText("title", "hot"), b.InText(notification.DuplicateWindowInput, "600")),
+		b.End("end"), b.Flow("start", "notify"), b.Flow("notify", "end"),
+	)
+	d, err := c.CreateDeployment(ctx, alice, "processes", model.DeploymentInput{Xml: xml})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = c.StartInstance(ctx, alice, "processes", model.StartInstanceInput{DeploymentId: d.Id}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for len(notifier.messages()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	sent := notifier.messages()
+	if len(sent) != 1 || sent[0]["title"] != "hot" || sent[0]["query"] != "ignore_duplicates_within_seconds=600" {
+		t.Fatalf("the notifier gets the window of the model: %v", sent)
+	}
 }
 
 func TestANotificationTaskQueuesOncePerJob(t *testing.T) {
@@ -155,7 +203,7 @@ func TestANotificationTaskQueuesOncePerJob(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if len(due) != 1 || due[0].UserId != "alice" || due[0].Title != "hot" || due[0].Message != "21" || due[0].Topic != notification.Topic || due[0].Namespace != "processes" {
+		if len(due) != 1 || due[0].UserId != "alice" || due[0].Title != "hot" || due[0].Message != "21" || due[0].Topic != notification.Topic || due[0].Namespace != "processes" || due[0].DuplicateWindow != 0 {
 			t.Fatalf("one queued notification per job: %+v", due)
 		}
 
@@ -163,6 +211,49 @@ func TestANotificationTaskQueuesOncePerJob(t *testing.T) {
 		var permanent *engine.PermanentError
 		if !errors.As(err, &permanent) {
 			t.Fatalf("a notification without title and message is a permanent error: %v", err)
+		}
+	})
+}
+
+// SNRGY-3911: the task takes the window within which the notifier drops a repeated notification
+// in whole seconds, as text from the model or as number from a script
+func TestANotificationTaskTakesTheDuplicateWindow(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		task := notification.NewTask(s)
+		for i, window := range []any{"600", 600.0, " 600 "} {
+			job := engine.Task{JobId: fmt.Sprint("ok-", i), Owner: "alice", Input: map[string]any{"title": "hot", notification.DuplicateWindowInput: window}}
+			if _, err := task.Execute(ctx, job); err != nil {
+				t.Fatalf("%#v: %v", window, err)
+			}
+		}
+		for i, window := range []any{"", nil} {
+			job := engine.Task{JobId: fmt.Sprint("none-", i), Owner: "alice", Input: map[string]any{"title": "hot", notification.DuplicateWindowInput: window}}
+			if _, err := task.Execute(ctx, job); err != nil {
+				t.Fatalf("%#v: %v", window, err)
+			}
+		}
+		var due []store.Notification
+		if err := s.Tx(ctx, func(tx *store.Tx) (err error) {
+			due, err = tx.DueNotifications(time.Now().Add(time.Hour), 10)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		windows := map[string]int64{}
+		for _, n := range due {
+			windows[n.Id] = n.DuplicateWindow
+		}
+		if !maps.Equal(windows, map[string]int64{"task-ok-0": 600, "task-ok-1": 600, "task-ok-2": 600, "task-none-0": 0, "task-none-1": 0}) {
+			t.Errorf("the window as given, none without: %v", windows)
+		}
+
+		for _, window := range []any{"-1", -1.0, "1.5", "an hour", true} {
+			_, err := task.Execute(ctx, engine.Task{JobId: "bad", Owner: "alice", Input: map[string]any{"title": "hot", notification.DuplicateWindowInput: window}})
+			var permanent *engine.PermanentError
+			if !errors.As(err, &permanent) || !strings.Contains(err.Error(), notification.DuplicateWindowInput) {
+				t.Errorf("%#v is a permanent error naming the input: %v", window, err)
+			}
 		}
 	})
 }

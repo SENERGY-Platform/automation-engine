@@ -114,7 +114,7 @@ func (this *Controller) DeleteUserData(ctx context.Context, userId string) error
 			} else if strings.Contains(d.Reason, "manages it") {
 				message = fmt.Sprintf("Your instance %v in %v was deleted because the account that owned the instance managing its deployment was deleted (%v).", d.Id, d.Namespace, d.Reason)
 			}
-			if err = tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: d.Owner, Title: title, Message: message, Topic: "deletion", Namespace: d.Namespace, CreatedAt: now}); err != nil {
+			if err = tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: d.Owner, Title: title, Message: message, Topic: "deletion", Namespace: d.Namespace, DuplicateWindow: store.DefaultDuplicateWindow, CreatedAt: now}); err != nil {
 				return err
 			}
 		}

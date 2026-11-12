@@ -87,6 +87,9 @@ func TestIncidentWithRestartStartsNewRunAfterGrowingBackoff(t *testing.T) {
 		if len(sent) != 2 || sent[0].UserId != "user" || sent[0].Title != "Process-Incident in test" || !strings.Contains(sent[0].Message, "process will be restarted") {
 			t.Fatalf("unexpected notifications %+v", sent)
 		}
+		if sent[0].DuplicateWindow != store.DefaultDuplicateWindow {
+			t.Errorf("a repeated incident is reported once an hour, as before (SNRGY-3911): %v", sent[0].DuplicateWindow)
+		}
 	})
 }
 

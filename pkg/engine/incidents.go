@@ -78,7 +78,7 @@ func (this *Engine) QueueNotification(ctx context.Context, userId string, namesp
 }
 
 func (this *Engine) queueNotification(tx *store.Tx, userId string, namespace string, title string, message string) error {
-	return tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: userId, Title: title, Message: message, Topic: NotificationTopic, Namespace: namespace, CreatedAt: this.now()})
+	return tx.InsertNotification(store.Notification{Id: uuid.NewString(), UserId: userId, Title: title, Message: message, Topic: NotificationTopic, Namespace: namespace, DuplicateWindow: store.DefaultDuplicateWindow, CreatedAt: this.now()})
 }
 
 // processRestarts restarts instances whose restart after an incident is due. It counts

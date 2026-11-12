@@ -27,6 +27,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
@@ -78,7 +79,11 @@ func (this *Notifier) Send(ctx context.Context, n store.Notification) error {
 		if err != nil {
 			return err
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, this.notifierUrl+"/notifications?ignore_duplicates_within_seconds=3600", bytes.NewReader(body))
+		url := this.notifierUrl + "/notifications"
+		if n.DuplicateWindow > 0 {
+			url += "?ignore_duplicates_within_seconds=" + strconv.FormatInt(n.DuplicateWindow, 10)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return err
 		}
