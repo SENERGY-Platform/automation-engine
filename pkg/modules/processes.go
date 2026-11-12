@@ -30,6 +30,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/models/go/models"
+	"github.com/google/uuid"
 )
 
 const (
@@ -180,14 +181,6 @@ func (this *deployHandler) Do(ctx context.Context, task Task) (modules []model.M
 	if err != nil {
 		return nil, nil, err
 	}
-	if prefer, ok := boolInput(task, deployPrefix+"prefer_fog_deployment"); ok && prefer {
-		if target, _ := this.namespaces.Get(p.namespace); target.CloudOnly {
-			// a preference, not a demand: the deployment stays in the cloud (NS-10)
-			this.runtime.logger.InfoContext(ctx, "a process deployment stays in the cloud, its namespace runs only there", "namespace", p.namespace)
-		} else if deployment.NetworkId, err = this.gatewayFor(ctx, p.token, deployment.Selections, runtimeDevices); err != nil {
-			return nil, nil, err
-		}
-	}
 
 	moduleData := map[string]any{}
 	if raw, ok := input(task, deployPrefix+"module_data"); ok {
@@ -215,14 +208,46 @@ func (this *deployHandler) Do(ctx context.Context, task Task) (modules []model.M
 			}
 		}
 	}
+	// the deployment of the key, read before the gateway choice, which keeps its gateway
+	var current *model.Deployment
 	if existing != "" {
+		if current, err = this.deploymentOf(ctx, existing); err != nil {
+			return nil, nil, err
+		}
+	}
+	if prefer, ok := boolInput(task, deployPrefix+"prefer_fog_deployment"); ok && prefer {
+		if target, _ := this.namespaces.Get(p.namespace); target.CloudOnly {
+			// a preference, not a demand: the deployment stays in the cloud (NS-10)
+			this.runtime.logger.InfoContext(ctx, "a process deployment stays in the cloud, its namespace runs only there", "namespace", p.namespace)
+		} else {
+			currentNetwork := ""
+			if current != nil {
+				currentNetwork = current.NetworkId
+			}
+			if deployment.NetworkId, err = this.gatewayFor(ctx, p.token, deployment.Selections, runtimeDevices, currentNetwork); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	if existing != "" {
+		putId, replaced, err := this.replacementOf(ctx, p, existing, current, deployment.NetworkId)
+		if err != nil {
+			return nil, nil, err
+		}
 		strategy, _ := input(task, deployPrefix+"update_strategy")
 		if strategy == "" {
 			strategy = string(model.UpdateRestart)
 		}
+		// the controller reads the strategy only when the id exists, so a replacement is created
+		// without it on the first run and updated with it on a retry
 		deployment.UpdateStrategy = model.UpdateStrategy(strategy)
-		if result, err = this.processes.PutDeployment(ctx, p.token, p.namespace, existing, deployment); err != nil {
+		if result, err = this.processes.PutDeployment(ctx, p.token, p.namespace, putId, deployment); err != nil {
 			return nil, nil, err
+		}
+		if replaced {
+			if err = this.processes.RemoveResource(ctx, model.ResourceRef{Kind: model.ResourceDeployment, Namespace: p.namespace, Id: existing}); err != nil {
+				return nil, nil, fmt.Errorf("remove deployment %v after its replacement %v: %w", existing, putId, err)
+			}
 		}
 	} else if result, err = this.processes.CreateDeployment(ctx, p.token, p.namespace, deployment); err != nil {
 		return nil, nil, err
@@ -239,6 +264,53 @@ func (this *deployHandler) Do(ctx context.Context, task Task) (modules []model.M
 	modules = []model.Module{{Id: moduleId, ModuleType: TypeProcessDeployment, Data: moduleData, Keys: keys,
 		DeleteInfo: &model.ModuleDeleteInfo{UserId: p.owner, Resource: &model.ResourceRef{Kind: model.ResourceDeployment, Namespace: p.namespace, Id: result.Id}}}}
 	return modules, map[string]any{"process_deployment_id": result.Id, "done_event": done, "is_fog_deployment": result.NetworkId != "", "fog_hub": result.NetworkId}, nil
+}
+
+// replacementNamespace derives the ids of replacement deployments
+var replacementNamespace = uuid.MustParse("f40a301c-b1db-4f63-8fac-a3beee7cdd11")
+
+// replacementId is the id of the deployment that replaces existing on the network networkId. It is
+// derived, so that a retry puts the same deployment, and differs from every earlier id, so that a
+// deleted id is never put again.
+func replacementId(existing string, networkId string) string {
+	return uuid.NewSHA1(replacementNamespace, []byte(existing+"/"+networkId)).String()
+}
+
+// deploymentOf reads a deployment of the engine; nil if it does not exist
+func (this *deployHandler) deploymentOf(ctx context.Context, id string) (*model.Deployment, error) {
+	var result model.Deployment
+	err := this.runtime.store.Tx(ctx, func(tx *store.Tx) (err error) {
+		result, err = tx.GetDeployment(id, false)
+		return err
+	})
+	if errors.Is(err, model.ErrNotFound) {
+		return nil, nil
+	}
+	return &result, err
+}
+
+// replacementOf gives the id to put the deployment of a key under and whether existing is removed
+// after: a network cannot change, so one on another network is replaced, except in another or a
+// cloud-only namespace or when switched off, where the controller's refusal is kept rather than a
+// replacement that runs; a missing one gets the derived id too, since a deleted id has its rights
+// queued for removal.
+func (this *deployHandler) replacementOf(ctx context.Context, p processTask, existing string, current *model.Deployment, networkId string) (id string, remove bool, err error) {
+	if current == nil {
+		id = replacementId(existing, networkId)
+		this.runtime.logger.InfoContext(ctx, "the process deployment of a key no longer exists and is put under a new id",
+			"old_deployment_id", existing, "new_deployment_id", id)
+		return id, false, nil
+	}
+	if current.NetworkId == networkId {
+		return existing, false, nil
+	}
+	if target, _ := this.namespaces.Get(p.namespace); target.CloudOnly || current.Disabled || current.Namespace != p.namespace {
+		return existing, false, nil
+	}
+	id = replacementId(existing, networkId)
+	this.runtime.logger.InfoContext(ctx, "a process deployment moves to another network and is replaced",
+		"old_deployment_id", existing, "old_network_id", current.NetworkId, "new_deployment_id", id, "new_network_id", networkId)
+	return id, true, nil
 }
 
 // devicesInput reads the devices a process finds only at runtime, e.g. targets of commands whose
@@ -260,8 +332,9 @@ func devicesInput(task Task) ([]string, error) {
 // selected groups, as smart-service-module-worker-process did, and the devices the process finds
 // at runtime (SNRGY-5060); without devices, with imports or without such gateway the deployment
 // stays in the cloud (TASK-20, DEP-09); so does one with analytics events, whose operators the
-// gateway cannot read (SNRGY-5113)
-func (this *processModules) gatewayFor(ctx context.Context, token string, selections map[string]model.Selection, runtimeDevices []string) (string, error) {
+// gateway cannot read (SNRGY-5113). The current gateway of the deployment comes first, so that a
+// gateway listed before it does not move a deployment it still fits (SNRGY-5137).
+func (this *processModules) gatewayFor(ctx context.Context, token string, selections map[string]model.Selection, runtimeDevices []string, current string) (string, error) {
 	selected := slices.Clone(runtimeDevices)
 	for _, s := range selections {
 		if s.ImportId != "" || s.PipelineId != "" {
@@ -285,6 +358,9 @@ func (this *processModules) gatewayFor(ctx context.Context, token string, select
 	networks, err := this.processes.ListNetworks(ctx, token)
 	if err != nil {
 		return "", err
+	}
+	if i := slices.IndexFunc(networks, func(n model.Network) bool { return current != "" && n.Id == current }); i > 0 {
+		networks = slices.Concat(networks[i:i+1], networks[:i], networks[i+1:])
 	}
 	for _, network := range networks {
 		if !network.Compatible {
