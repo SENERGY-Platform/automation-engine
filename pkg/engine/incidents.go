@@ -183,8 +183,12 @@ func (this *Engine) ResetRestarts(tx *store.Tx, deploymentId string) error {
 // the notifier (10 s); a replica that ends while sending leaves it due again after this time
 const notificationClaim = 2 * time.Minute
 
-// ProcessNotifications sends queued notifications; failures are retried with backoff and
-// dropped after a day, so that a notifier outage does not fill the database. Without answer from
+// notificationMaxAge is how long a notification is retried; a failed attempt after it discards
+// the notification with an error log
+const notificationMaxAge = 24 * time.Hour
+
+// ProcessNotifications sends queued notifications; failures are retried with backoff, each with a
+// warning from the loop, and dropped after a day with an error log, so that a notifier outage does not fill the database. Without answer from
 // the notifier, the notifications due after the failed one wait as long as it does, instead of
 // each running into the same timeout (SNRGY-5064).
 func (this *Engine) ProcessNotifications(ctx context.Context) error {
@@ -214,8 +218,9 @@ func (this *Engine) ProcessNotifications(ctx context.Context) error {
 		}
 		var unreachable *NotifierUnreachableError
 		postpone := errors.As(sendErr, &unreachable)
+		discard := sendErr != nil && now.Sub(n.CreatedAt) > notificationMaxAge
 		errs = append(errs, this.store.Tx(ctx, func(tx *store.Tx) error {
-			if sendErr == nil || now.Sub(n.CreatedAt) > 24*time.Hour {
+			if sendErr == nil || discard {
 				return tx.DeleteNotification(n.Id)
 			}
 			retryAt := now.Add(time.Duration(min(1<<min(n.Attempts, 10), 3600)) * time.Second)
@@ -230,8 +235,14 @@ func (this *Engine) ProcessNotifications(ctx context.Context) error {
 			}
 			return nil
 		}))
-		if sendErr != nil {
-			errs = append(errs, fmt.Errorf("notification %v: %w", n.Id, sendErr))
+		if discard {
+			// the owner never learns of it; someone has to look at the notifier or the way to it
+			this.logger.Error("notification discarded without delivery", "notification_id", n.Id, "user_id", n.UserId,
+				"namespace", n.Namespace, "topic", n.Topic, "title", n.Title, "attempts", n.Attempts+1,
+				"created_at", n.CreatedAt, "error", sendErr)
+		} else if sendErr != nil {
+			// logged as a warning by the loop, one per failed attempt
+			errs = append(errs, fmt.Errorf("notification %v (attempt %v, discarded after %v): %w", n.Id, n.Attempts+1, n.CreatedAt.Add(notificationMaxAge).Format(time.RFC3339), sendErr))
 		}
 		if postpone {
 			break

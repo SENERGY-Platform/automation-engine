@@ -59,15 +59,19 @@ type message struct {
 }
 
 // Notify returns an error if the notifier did not accept the message, so that it is retried.
-// developer-notifications gets a copy, best effort.
+// developer-notifications gets a copy, best effort, except of the notifications a process sends
+// (BPMN-09): they are what the owner asked for, not a fault.
 func (this *Notifier) Notify(ctx context.Context, n store.Notification) error {
 	if err := this.Send(ctx, n); err != nil {
 		return err
 	}
+	if n.Topic == Topic {
+		return nil
+	}
 	return this.copyToDevelopers(n)
 }
 
-// Send delivers to the notifier only, e.g. for notifications a process sends (BPMN-09).
+// Send delivers to the notifier only.
 func (this *Notifier) Send(ctx context.Context, n store.Notification) error {
 	if this.notifierUrl != "" {
 		body, err := json.Marshal(message{UserId: n.UserId, Title: n.Title, Message: n.Message, Topic: n.Topic})

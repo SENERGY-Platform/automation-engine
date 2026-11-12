@@ -232,8 +232,9 @@ type Notification struct {
 	CreatedAt time.Time
 }
 
+// InsertNotification queues a notification; a queued one with the same id stays as it is.
 func (this *Tx) InsertNotification(n Notification) error {
-	_, err := this.exec("INSERT INTO notifications (id, user_id, title, message, topic, namespace, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := this.exec("INSERT INTO notifications (id, user_id, title, message, topic, namespace, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
 		n.Id, n.UserId, n.Title, n.Message, n.Topic, n.Namespace, millis(n.CreatedAt), millis(n.CreatedAt))
 	return err
 }

@@ -23,7 +23,6 @@ import (
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
-	"github.com/google/uuid"
 )
 
 const TaskType = "notification"
@@ -31,18 +30,17 @@ const TaskType = "notification"
 // Topic of process notifications in the notifier, as before.
 const Topic = "processes"
 
-type Sender interface {
-	Send(ctx context.Context, n store.Notification) error
-}
-
 // Task is the task type "notification" (BPMN-09): it sends a notification to the owner of the
-// instance, which process-deployment did by filling an http-connector.
+// instance, which process-deployment did by filling an http-connector. The notification goes into
+// the queue of the engine that also carries the incident notifications, so that a notifier out of
+// reach, e.g. the cloud behind the cloud-proxy of an offline gateway, delays it instead of ending
+// the process with an incident (FOG-05). The queue retries for a day.
 type Task struct {
-	sender Sender
+	store *store.Store
 }
 
-func NewTask(sender Sender) *Task {
-	return &Task{sender: sender}
+func NewTask(s *store.Store) *Task {
+	return &Task{store: s}
 }
 
 func text(input map[string]any, name string) string {
@@ -56,13 +54,14 @@ func text(input map[string]any, name string) string {
 	}
 }
 
-// Execute sends title and message; a failed delivery is retried by the engine.
+// Execute queues title and message. The id follows from the job, so that executing the job again,
+// after a completion that did not reach the database, queues nothing a second time.
 func (this *Task) Execute(ctx context.Context, task engine.Task) (engine.TaskResult, error) {
-	n := store.Notification{Id: uuid.NewString(), UserId: task.Owner, Title: text(task.Input, "title"), Message: text(task.Input, "message"), Topic: Topic, Namespace: task.Namespace, CreatedAt: time.Now()}
+	n := store.Notification{Id: "task-" + task.JobId, UserId: task.Owner, Title: text(task.Input, "title"), Message: text(task.Input, "message"), Topic: Topic, Namespace: task.Namespace, CreatedAt: time.Now()}
 	if n.Title == "" && n.Message == "" {
 		return engine.TaskResult{}, &engine.PermanentError{Message: "notification needs the input title or message"}
 	}
-	if err := this.sender.Send(ctx, n); err != nil {
+	if err := this.store.Tx(ctx, func(tx *store.Tx) error { return tx.InsertNotification(n) }); err != nil {
 		return engine.TaskResult{}, err
 	}
 	return engine.TaskResult{Output: map[string]any{}}, nil

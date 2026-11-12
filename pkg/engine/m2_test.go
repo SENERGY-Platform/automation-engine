@@ -19,7 +19,9 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -422,6 +424,73 @@ func TestOldModelVersionsAreTrimmedUnlessDeployed(t *testing.T) {
 		}
 		if len(kept) != 3 || kept[0] != 5 || kept[1] != 4 || kept[2] != 1 {
 			t.Fatalf("expected the newest two versions and the deployed 1, got %v", kept)
+		}
+	})
+}
+
+// records the log records of the engine
+type logRecorder struct {
+	mux     sync.Mutex
+	records []slog.Record
+}
+
+func (this *logRecorder) Enabled(context.Context, slog.Level) bool { return true }
+func (this *logRecorder) WithAttrs([]slog.Attr) slog.Handler       { return this }
+func (this *logRecorder) WithGroup(string) slog.Handler            { return this }
+func (this *logRecorder) Handle(_ context.Context, r slog.Record) error {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	this.records = append(this.records, r)
+	return nil
+}
+
+func (this *logRecorder) at(level slog.Level) (result []slog.Record) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	for _, r := range this.records {
+		if r.Level == level {
+			result = append(result, r)
+		}
+	}
+	return result
+}
+
+// The owner never learns of a notification the outbox gives up on, so it has to reach whoever
+// watches the error logs; until then every failed attempt says when that will happen.
+func TestANotificationDiscardedAfterADayIsLoggedAsError(t *testing.T) {
+	run(t, func(t *testing.T, h *harness) {
+		logs := &logRecorder{}
+		h.e.logger = slog.New(logs)
+		h.notifier.unreachable = true
+		h.queueNotifications(1)
+		err := h.e.ProcessNotifications(ctx)
+		if err == nil || !strings.Contains(err.Error(), "attempt 1, discarded after") {
+			t.Fatalf("a failed attempt names the attempt and when the notification is discarded: %v", err)
+		}
+		if errs := logs.at(slog.LevelError); len(errs) != 0 {
+			t.Fatalf("no error before the notification is discarded: %v", errs)
+		}
+		h.mux.Lock()
+		h.clock = h.clock.Add(25 * time.Hour)
+		h.mux.Unlock()
+		if err := h.e.ProcessNotifications(ctx); err != nil {
+			t.Fatalf("the discarded notification is reported by the error log, not again as a warning: %v", err)
+		}
+		errs := logs.at(slog.LevelError)
+		if len(errs) != 1 || errs[0].Message != "notification discarded without delivery" {
+			t.Fatalf("one error log for the discarded notification: %v", errs)
+		}
+		attrs := map[string]string{}
+		errs[0].Attrs(func(a slog.Attr) bool { attrs[a.Key] = a.Value.String(); return true })
+		if attrs["user_id"] != "alice" || attrs["title"] != "title 0" || attrs["attempts"] != "2" || attrs["error"] == "" {
+			t.Fatalf("the log names whom it was for, what it was and why: %v", attrs)
+		}
+		h.notifier.unreachable = false
+		h.mux.Lock()
+		h.clock = h.clock.Add(time.Hour)
+		h.mux.Unlock()
+		if err := h.e.ProcessNotifications(ctx); err != nil || len(h.notifier.messages()) != 0 {
+			t.Fatalf("the notification is gone: %v %v", h.notifier.messages(), err)
 		}
 	})
 }

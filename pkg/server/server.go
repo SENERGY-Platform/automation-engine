@@ -248,7 +248,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 
 	io := processio.New(s, processio.Limits{MaxValuesPerUser: config.MaxIoValuesPerUser, MaxValueBytes: config.MaxIoValueBytes})
 	e.RegisterTaskType(processio.TaskType, processio.NewType(io))
-	e.RegisterTaskType(notification.TaskType, notification.NewTask(notifier))
+	e.RegisterTaskType(notification.TaskType, notification.NewTask(s))
 	httpCalls := httpcall.New(registry, config.Mode)
 	if policy, local, _ := config.LocalHttpPolicy(); local {
 		httpCalls.SetLocalPolicy(policy)
