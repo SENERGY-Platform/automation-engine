@@ -73,6 +73,19 @@ func TestOnlyARunningChildCountsAsARunningProcedure(t *testing.T) {
 			if running, err := tx.MaintenanceRunning("other", "running"); err != nil || running {
 				return fmt.Errorf("the run of another instance counts: %v %v", running, err)
 			}
+			// an incident with a restart pending comes back on its own, so it still holds the procedure
+			if err := store.ExecForTest(tx, "UPDATE instances SET restart_at = 1 WHERE parent_id = 'p' AND procedure_name = 'incident'"); err != nil {
+				return err
+			}
+			if running, err := tx.MaintenanceRunning("p", "incident"); err != nil || !running {
+				return fmt.Errorf("an incident with a pending restart does not count: %v %v", running, err)
+			}
+			if err := tx.QueueMaintenanceRerun(rerun("p", "incident", nil, t0)); err != nil {
+				return err
+			}
+			if claimed, err := tx.ClaimMaintenanceReruns(t0.Add(time.Minute), t0.Add(2*time.Minute), 10); err != nil || len(claimed) != 0 {
+				return fmt.Errorf("a rerun is claimed beside an incident with a pending restart: %+v %v", claimed, err)
+			}
 			inst, err := tx.GetInstance("c-1", false)
 			if err != nil || inst.Procedure == "" {
 				return fmt.Errorf("a child reads with its procedure: %+v %v", inst, err)

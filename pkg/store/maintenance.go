@@ -48,10 +48,10 @@ func RerunHash(variables map[string]any) string {
 }
 
 // MaintenanceRunning reports whether a run of the procedure of the instance is running; one that
-// ended, in an incident among them, is not.
+// ended is not, unless it is an incident with a restart pending, which comes back on its own.
 func (this *Tx) MaintenanceRunning(instanceId string, procedure string) (bool, error) {
 	var found int
-	err := this.queryRow("SELECT 1 FROM instances WHERE parent_id = ? AND procedure_name = ? AND state = ? LIMIT 1", instanceId, procedure, string(model.StateRunning)).Scan(&found)
+	err := this.queryRow("SELECT 1 FROM instances WHERE parent_id = ? AND procedure_name = ? AND (state = ? OR restart_at IS NOT NULL) LIMIT 1", instanceId, procedure, string(model.StateRunning)).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -73,7 +73,7 @@ func (this *Tx) QueueMaintenanceRerun(r MaintenanceRerun) error {
 func (this *Tx) ClaimMaintenanceReruns(now time.Time, until time.Time, limit int) (result []MaintenanceRerun, err error) {
 	rows, err := this.query("UPDATE maintenance_reruns SET next_at = ? WHERE (instance_id, procedure_name, variables_hash) IN "+
 		"(SELECT r.instance_id, r.procedure_name, r.variables_hash FROM maintenance_reruns r WHERE r.next_at <= ? AND NOT EXISTS "+
-		"(SELECT 1 FROM instances c WHERE c.parent_id = r.instance_id AND c.procedure_name = r.procedure_name AND c.state = ?) "+
+		"(SELECT 1 FROM instances c WHERE c.parent_id = r.instance_id AND c.procedure_name = r.procedure_name AND (c.state = ? OR c.restart_at IS NOT NULL)) "+
 		"ORDER BY r.next_at, r.requested_at LIMIT ?"+this.skipLocked()+") RETURNING instance_id, procedure_name, variables_hash, variables, requested_at",
 		millis(until), millis(now), string(model.StateRunning), limit)
 	if err != nil {
