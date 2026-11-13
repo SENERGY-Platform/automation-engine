@@ -16,6 +16,30 @@
 
 package store
 
+import "time"
+
+// ClaimNotificationsSkipLockedForTest reads and claims due notifications in one statement, the
+// alternative to DueNotifications and ClaimNotification that BenchmarkClaims measures
+// (SNRGY-5134); Postgres only.
+func ClaimNotificationsSkipLockedForTest(tx *Tx, now time.Time, until time.Time, limit int) ([]string, error) {
+	rows, err := tx.query("UPDATE notifications SET due_at = ? WHERE id IN "+
+		"(SELECT id FROM notifications WHERE due_at <= ? ORDER BY due_at LIMIT ? FOR UPDATE SKIP LOCKED) RETURNING id",
+		millis(until), millis(now), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result = append(result, id)
+	}
+	return result, rows.Err()
+}
+
 // CountForTest counts the rows of a table; for tests only.
 func CountForTest(tx *Tx, table string) (int, error) {
 	return tx.count("SELECT COUNT(*) FROM " + table)
