@@ -19,7 +19,9 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -274,8 +276,9 @@ func seedJobs(tx *store.Tx, items int, perInstance int) error {
 	return nil
 }
 
-// drainJobs is the loop of Engine.runJobs and Engine.claim: read the candidates, then claim each
-// under the lock of its instance, execute it and complete it under that lock again
+// drainJobs is the loop of Engine.runJobs and Engine.claim: read the candidates, shuffle them,
+// then claim each under the lock of its instance, skipping an instance another replica holds,
+// execute it and complete it under that lock again
 func drainJobs(s *store.Store, handled *handledItems, conflicts *atomic.Int64, work time.Duration) error {
 	ctx := context.Background()
 	for {
@@ -286,6 +289,7 @@ func drainJobs(s *store.Store, handled *handledItems, conflicts *atomic.Int64, w
 		}); err != nil || len(candidates) == 0 {
 			return err
 		}
+		rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
 		for _, candidate := range candidates {
 			var claimed *store.Job
 			if err := s.Tx(ctx, func(tx *store.Tx) error {
@@ -293,7 +297,10 @@ func drainJobs(s *store.Store, handled *handledItems, conflicts *atomic.Int64, w
 				if err != nil || job == nil {
 					return err
 				}
-				if _, err = tx.GetInstance(job.InstanceId, true); err != nil {
+				if _, err = tx.GetInstanceUnlessLocked(job.InstanceId); errors.Is(err, model.ErrNotFound) {
+					// held by another replica, which may claim this very job
+					return nil
+				} else if err != nil {
 					return err
 				}
 				job, err = tx.GetJob(candidate.Id)

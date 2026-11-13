@@ -97,6 +97,14 @@ func (this *Tx) GetInstance(id string, lock bool) (Instance, error) {
 	return i, notFound(err, "instance %v not found", id)
 }
 
+// GetInstanceUnlessLocked reads and locks an instance for a job claim. An instance another
+// transaction holds reads as not found, so that the claim skips the job instead of waiting for
+// the lock; the job stays due for the next pass (SNRGY-5139). SQLite transactions are exclusive.
+func (this *Tx) GetInstanceUnlessLocked(id string) (Instance, error) {
+	i, err := scanInstance(this.queryRow("SELECT "+instanceColumns+" FROM instances WHERE id = ?"+this.skipLocked(), id))
+	return i, notFound(err, "instance %v not found or held by another transaction", id)
+}
+
 func (this *Tx) DeleteInstance(id string) error {
 	// maintenance procedures go with their instance (SMS-13)
 	children, err := this.ChildInstances(id)

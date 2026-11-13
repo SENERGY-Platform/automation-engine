@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -164,6 +165,8 @@ func (this *Engine) runJobs(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	// every replica reads the same candidates; in its own order each starts with other instances
+	rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
 	var errs []error
 	var claims []claimed
 	for _, candidate := range candidates {
@@ -200,7 +203,9 @@ func (this *Engine) claim(ctx context.Context, jobId string, now time.Time) (res
 		if err != nil || job == nil {
 			return err
 		}
-		inst, err := tx.GetInstance(job.InstanceId, true)
+		// an instance another replica holds is skipped rather than waited for: that replica
+		// may well be claiming this very job (SNRGY-5139)
+		inst, err := tx.GetInstanceUnlessLocked(job.InstanceId)
 		if err != nil {
 			return ignoreNotFound(err)
 		}
