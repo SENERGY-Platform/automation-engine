@@ -199,8 +199,23 @@ type ModuleRemoval struct {
 	Attempts   int
 }
 
+const moduleRemovalColumns = "module_id, namespace, owner, module_type, delete_info, attempts"
+
+// DueModuleRemovals lists the due removals without claiming them.
 func (this *Tx) DueModuleRemovals(now time.Time, limit int) (result []ModuleRemoval, err error) {
-	rows, err := this.query("SELECT module_id, namespace, owner, module_type, delete_info, attempts FROM module_removals WHERE next_at <= ? ORDER BY next_at LIMIT ?", millis(now), limit)
+	return this.scanModuleRemovals(this.query("SELECT "+moduleRemovalColumns+" FROM module_removals WHERE next_at <= ? ORDER BY next_at LIMIT ?", millis(now), limit))
+}
+
+// ClaimModuleRemovals takes due removals for one replica until until: another replica claiming
+// at the same time skips them, and they are due again at until unless finished or retried before,
+// so that each resource is deleted once even with several replicas (SNRGY-5140).
+func (this *Tx) ClaimModuleRemovals(now time.Time, until time.Time, limit int) (result []ModuleRemoval, err error) {
+	return this.scanModuleRemovals(this.query("UPDATE module_removals SET next_at = ? WHERE module_id IN "+
+		"(SELECT module_id FROM module_removals WHERE next_at <= ? ORDER BY next_at LIMIT ?"+this.skipLocked()+") RETURNING "+moduleRemovalColumns,
+		millis(until), millis(now), limit))
+}
+
+func (this *Tx) scanModuleRemovals(rows *sql.Rows, err error) (result []ModuleRemoval, _ error) {
 	if err != nil {
 		return nil, err
 	}

@@ -1002,7 +1002,7 @@ Today the smart-service-repository (Mongo, 1 replica) stores designs, releases, 
 
 ## 19. Operations
 
-- **OPS-01 (S)** Several replicas are possible without anything being executed twice: timers, schedules, watchers and answer processing. There are no concrete load targets (decided). Several replicas serve mainly availability during updates.
+- **OPS-01 (S)** Several replicas are possible without anything being executed twice: timers, schedules, watchers and answer processing. There are no concrete load targets (decided). Several replicas serve mainly availability during updates. The removal of the resources of deleted modules is claimed per batch as well, so that each resource is deleted once: a second delete of a resource already gone fails at some services, e.g. analytics pipelines answer 403 instead of 404 (SNRGY-5140). `BenchmarkClaims` in `pkg/store` measures how the replicas share notifications, jobs, watches and these removals.
 - **OPS-02 (M)** Persistence in the central Postgres with backup (decided). The four Camunda Postgres instances (11.2, without backup) and the Mongo databases of process-io, incidents, process-deployment, process-model-repository, smart-service-repository, event-deployment, scheduler and watcher merge into it.
 - **OPS-03 (M)** The engine brings its schema migrations itself, versioned and forward compatible, for Postgres and SQLite.
 - **OPS-04 (M)** Resource requests and limits, liveness and readiness probe.

@@ -101,16 +101,33 @@ func (this *Remover) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
+// removalBatch is how many removals one claim takes. The claim lasts until every one of them
+// could have run into the timeout of its delete call, so that no other replica takes one again
+// while this one still works on it: a second delete of a resource already gone fails at some
+// services, e.g. analytics pipelines answer 403 instead of 404 (SNRGY-5140).
+const removalBatch = 10
+
 // Process works off the due removals; failed ones are retried later.
 func (this *Remover) Process(ctx context.Context) error {
-	var due []store.ModuleRemoval
-	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
-		due, err = tx.DueModuleRemovals(this.now(), 50)
-		return err
-	})
-	if err != nil {
-		return err
+	for ctx.Err() == nil {
+		var due []store.ModuleRemoval
+		err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+			now := this.now()
+			due, err = tx.ClaimModuleRemovals(now, now.Add(removalBatch*this.http.Timeout+time.Minute), removalBatch)
+			return err
+		})
+		if err != nil || len(due) == 0 {
+			return err
+		}
+		if err = this.processClaimed(ctx, due); err != nil {
+			return err
+		}
 	}
+	return ctx.Err()
+}
+
+// processClaimed removes the claimed resources; a failed one is due again after its backoff
+func (this *Remover) processClaimed(ctx context.Context, due []store.ModuleRemoval) (err error) {
 	for _, r := range due {
 		removeErr := this.remove(ctx, r)
 		err = this.store.Tx(ctx, func(tx *store.Tx) error {

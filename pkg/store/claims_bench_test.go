@@ -67,6 +67,9 @@ func BenchmarkClaims(b *testing.B) {
 		{"watches", 500, seedDueWatches, func(s *store.Store, h *handledItems, c *atomic.Int64) error {
 			return drainWatches(s, h, workDelay)
 		}},
+		{"module-removals", 500, seedRemovals, func(s *store.Store, h *handledItems, c *atomic.Int64) error {
+			return drainRemovals(s, h, workDelay)
+		}},
 	}
 	for _, scenario := range scenarios {
 		for _, replicas := range []int{1, 2, 4} {
@@ -97,7 +100,7 @@ func BenchmarkClaims(b *testing.B) {
 				for range b.N {
 					b.StopTimer()
 					if err := first.Tx(context.Background(), func(tx *store.Tx) error {
-						for _, table := range []string{"notifications", "jobs", "watches", "instances", "deployments"} {
+						for _, table := range []string{"notifications", "jobs", "watches", "module_removals", "instances", "deployments"} {
 							if err := store.ExecForTest(tx, "DELETE FROM "+table); err != nil {
 								return err
 							}
@@ -385,6 +388,35 @@ func drainWatches(s *store.Store, handled *handledItems, work time.Duration) err
 			time.Sleep(work)
 			handled.add(w.Id)
 			if err := s.Tx(ctx, func(tx *store.Tx) error { return tx.UpdateWatch(w.Id, "hash", "") }); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func seedRemovals(tx *store.Tx, items int) error {
+	var ids []string
+	for i := range items {
+		ids = append(ids, fmt.Sprint("m-", i))
+	}
+	return queueRemovals(tx, ids...)
+}
+
+// drainRemovals is the loop of Remover.Process: claim a batch, delete each resource, finish it
+func drainRemovals(s *store.Store, handled *handledItems, work time.Duration) error {
+	ctx := context.Background()
+	for {
+		var due []store.ModuleRemoval
+		if err := s.Tx(ctx, func(tx *store.Tx) (err error) {
+			due, err = tx.ClaimModuleRemovals(claimNow, claimNow.Add(6*time.Minute), 10)
+			return err
+		}); err != nil || len(due) == 0 {
+			return err
+		}
+		for _, r := range due {
+			time.Sleep(work)
+			handled.add(r.ModuleId)
+			if err := s.Tx(ctx, func(tx *store.Tx) error { return tx.FinishModuleRemoval(r.ModuleId) }); err != nil {
 				return err
 			}
 		}

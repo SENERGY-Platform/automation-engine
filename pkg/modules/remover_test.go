@@ -18,6 +18,7 @@ package modules
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -165,6 +166,72 @@ func TestRemoverDeletesImportsOfTheModuleWorkerAtImportDeploy(t *testing.T) {
 		})
 		if len(due) != 0 {
 			t.Fatalf("both removals are done: %v", due)
+		}
+	})
+}
+
+// SNRGY-5140: two replicas working off the removals at the same time delete each resource once.
+// A second delete of an analytics pipeline already gone is answered 403 by the pipeline registry,
+// which the flow engine reports as error; every night the cleanup of a test account raised an
+// alarm that way.
+func TestTwoReplicasDeleteEachResourceOnce(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		var mux sync.Mutex
+		calls := map[string]int{}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// slow enough for the other replica to read the same removals meanwhile
+			time.Sleep(20 * time.Millisecond)
+			mux.Lock()
+			defer mux.Unlock()
+			calls[r.URL.Path]++
+			if calls[r.URL.Path] > 1 {
+				w.WriteHeader(http.StatusForbidden)
+			}
+		}))
+		defer server.Close()
+		var modules []model.Module
+		for i := range 15 {
+			modules = append(modules, model.Module{Id: fmt.Sprint("pipeline-", i), ModuleType: "analytics",
+				DeleteInfo: &model.ModuleDeleteInfo{Url: fmt.Sprint(server.URL, "/pipeline/", i), UserId: "alice"}})
+		}
+		instance := instanceWith(t, s, "smart-services", modules...)
+		if err := s.Tx(context.Background(), func(tx *store.Tx) error { return tx.DeleteInstance(instance) }); err != nil {
+			t.Fatal(err)
+		}
+		token := func(user string) (string, error) { return "Bearer token-of-" + user, nil }
+		var wg sync.WaitGroup
+		errs := make([]error, 2)
+		for i := range errs {
+			remover := NewRemover(s, token, logger)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs[i] = remover.Process(context.Background())
+			}()
+		}
+		wg.Wait()
+		for _, err := range errs {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		mux.Lock()
+		defer mux.Unlock()
+		if len(calls) != len(modules) {
+			t.Fatalf("every resource is deleted: %v", calls)
+		}
+		for path, n := range calls {
+			if n != 1 {
+				t.Errorf("%v deleted %v times", path, n)
+			}
+		}
+		var pending []store.ModuleRemoval
+		_ = s.Tx(context.Background(), func(tx *store.Tx) (err error) {
+			pending, err = tx.DueModuleRemovals(time.Now().Add(24*time.Hour), 100)
+			return err
+		})
+		if len(pending) != 0 {
+			t.Errorf("nothing stays queued: %+v", pending)
 		}
 	})
 }

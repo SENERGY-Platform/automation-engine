@@ -325,6 +325,15 @@ func (this *Tx) forUpdate(lock bool) string {
 	return ""
 }
 
+// skipLocked locks the selected rows and leaves those another transaction holds to it, for a
+// claim; SQLite transactions are exclusive and need neither.
+func (this *Tx) skipLocked() string {
+	if this.dialect == Postgres {
+		return " FOR UPDATE SKIP LOCKED"
+	}
+	return ""
+}
+
 func (this *Tx) count(query string, args ...any) (result int, err error) {
 	err = this.queryRow(query, args...).Scan(&result)
 	return result, err
