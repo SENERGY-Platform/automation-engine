@@ -271,22 +271,38 @@ func (this *Runtime) CheckWatches(ctx context.Context) error {
 		if err != nil || len(due) == 0 {
 			return err
 		}
-		for _, w := range due {
-			var hash, message string
-			var members []string
-			gone := false
+		results := make([]watchResult, len(due))
+		fired := map[string][]int{}
+		var order []string
+		for i, w := range due {
+			r := &results[i]
 			if w.DeviceGroupId != "" {
-				hash, members, message, gone = this.watcher.checkDeviceGroup(ctx, w)
+				r.hash, r.members, r.message, r.gone = this.watcher.checkDeviceGroup(ctx, w)
 			} else {
-				hash, message = this.watcher.check(ctx, w)
+				r.hash, r.message = this.watcher.check(ctx, w)
 			}
-			if message == "" && hash != w.LastHash && w.LastHash != "" {
+			if r.message == "" && r.hash != w.LastHash && w.LastHash != "" {
 				// a change starts the procedure; the first check only sets the baseline
-				if _, err := this.watcher.maintenance.StartMaintenanceInternal(ctx, w.InstanceId, w.Procedure, w.Parameters); err != nil {
-					// the hash stays, the next check triggers again instead of losing the change
-					hash, message = w.LastHash, "trigger: "+err.Error()
+				key := triggerKey(w)
+				if _, ok := fired[key]; !ok {
+					order = append(order, key)
+				}
+				fired[key] = append(fired[key], i)
+			}
+		}
+		// watches of an instance that fired for the same procedure and inputs start it once, since
+		// a run reads the whole current state (SNRGY-5143)
+		for _, key := range order {
+			w := due[fired[key][0]]
+			if _, err := this.watcher.maintenance.StartMaintenanceInternal(ctx, w.InstanceId, w.Procedure, w.Parameters); err != nil {
+				// the hashes stay, the next checks trigger again instead of losing the change
+				for _, i := range fired[key] {
+					results[i].hash, results[i].message = due[i].LastHash, "trigger: "+err.Error()
 				}
 			}
+		}
+		for i, w := range due {
+			hash, members, message, gone := results[i].hash, results[i].members, results[i].message, results[i].gone
 			if message != "" {
 				hash = w.LastHash
 			}
@@ -314,6 +330,25 @@ func (this *Runtime) CheckWatches(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// watchResult is the outcome of the check of a claimed watch
+type watchResult struct {
+	hash    string
+	members []string
+	message string
+	gone    bool
+}
+
+// triggerKey identifies the start a fired watch asks for: instance, procedure and its inputs
+// as JSON with sorted keys, no inputs the same as empty ones
+func triggerKey(w store.Watch) string {
+	inputs := "{}"
+	if len(w.Parameters) > 0 {
+		raw, _ := json.Marshal(w.Parameters)
+		inputs = string(raw)
+	}
+	return w.InstanceId + "\x00" + w.Procedure + "\x00" + inputs
 }
 
 // check requests the watched resource and hashes its answer; message reports a failure
