@@ -25,37 +25,39 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/store/storetest"
 )
 
-// A notification is claimed once at the due time it was read with, and a postponement after a
-// notifier without answer leaves one that another replica claimed as it is.
+// A notification is claimed by one replica until the end of its claim (SNRGY-5140), and a
+// postponement after a notifier without answer moves only what this replica still holds.
 func TestANotificationIsClaimedOnceAndKeepsItsClaim(t *testing.T) {
 	storetest.Run(t, func(t *testing.T, s *store.Store) {
 		tx(t, s, func(tx *store.Tx) error {
-			for _, id := range []string{"n1", "n2"} {
-				if err := tx.InsertNotification(store.Notification{Id: id, UserId: "alice", Title: id, CreatedAt: t0}); err != nil {
+			for i, id := range []string{"n1", "n2", "n3"} {
+				if err := tx.InsertNotification(store.Notification{Id: id, UserId: "alice", Title: id, CreatedAt: t0.Add(time.Duration(i) * time.Millisecond)}); err != nil {
 					return err
 				}
-			}
-			due, err := tx.DueNotifications(t0, 10)
-			if err != nil || len(due) != 2 || !due[0].DueAt.Equal(t0) {
-				return fmt.Errorf("due with their due time: %+v %v", due, err)
 			}
 			claimUntil := t0.Add(2 * time.Minute)
-			if claimed, err := tx.ClaimNotification("n2", t0, claimUntil); err != nil || !claimed {
-				return fmt.Errorf("claim: %v %v", claimed, err)
+			first, err := tx.ClaimNotifications(t0.Add(time.Second), claimUntil, 2)
+			if err != nil || len(first) != 2 || first[0].Id != "n1" || first[1].Id != "n2" || !first[0].DueAt.Equal(claimUntil) {
+				return fmt.Errorf("the oldest two, in the order they were created, with the claim as due time: %+v %v", first, err)
 			}
-			if claimed, err := tx.ClaimNotification("n2", t0, claimUntil); err != nil || claimed {
-				return fmt.Errorf("a second replica does not claim it: %v %v", claimed, err)
+			second, err := tx.ClaimNotifications(t0.Add(time.Second), claimUntil, 2)
+			if err != nil || len(second) != 1 || second[0].Id != "n3" {
+				return fmt.Errorf("a second replica gets only the one left: %+v %v", second, err)
 			}
-			for _, id := range []string{"n1", "n2"} {
-				if err := tx.PostponeNotification(id, t0.Add(time.Second), t0); err != nil {
+			// n2 waits for the next attempt; n3 was claimed by the other replica and keeps its claim
+			for _, id := range []string{"n2", "n3"} {
+				if err := tx.PostponeNotification(id, t0.Add(time.Minute), t0.Add(3*time.Minute)); err != nil {
 					return err
 				}
 			}
-			if due, err = tx.DueNotifications(t0.Add(time.Second), 10); err != nil || len(due) != 1 || due[0].Id != "n1" {
-				return fmt.Errorf("only the unclaimed one is postponed, the claimed one keeps its claim: %+v %v", due, err)
+			if err := tx.PostponeNotification("n2", t0.Add(time.Minute), claimUntil); err != nil {
+				return err
 			}
-			if due, err = tx.DueNotifications(claimUntil, 10); err != nil || len(due) != 2 {
-				return fmt.Errorf("both are due once the claim runs out: %+v %v", due, err)
+			if due, err := tx.DueNotifications(t0.Add(time.Minute), 10); err != nil || len(due) != 1 || due[0].Id != "n2" {
+				return fmt.Errorf("only the notification held with that claim is postponed: %+v %v", due, err)
+			}
+			if again, err := tx.ClaimNotifications(claimUntil, claimUntil.Add(2*time.Minute), 10); err != nil || len(again) != 3 {
+				return fmt.Errorf("all are due again once the claim runs out: %+v %v", again, err)
 			}
 			return nil
 		})

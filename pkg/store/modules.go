@@ -454,7 +454,8 @@ func (this *Tx) SaveWatch(w Watch) error {
 // now, so that each is checked once per interval by one replica. NextAt of the result is that
 // next check, which ParkWatch expects.
 func (this *Tx) ClaimDueWatches(now time.Time, limit int) (result []Watch, err error) {
-	rows, err := this.query("SELECT "+watchColumns+" FROM watches WHERE next_at <= ? ORDER BY next_at LIMIT ?"+this.forUpdate(true), millis(now), limit)
+	// a replica claiming at the same time skips these instead of waiting for them (SNRGY-5140)
+	rows, err := this.query("SELECT "+watchColumns+" FROM watches WHERE next_at <= ? ORDER BY next_at LIMIT ?"+this.skipLocked(), millis(now), limit)
 	if err != nil {
 		return nil, err
 	}

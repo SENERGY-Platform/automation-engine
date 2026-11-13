@@ -179,9 +179,14 @@ func (this *Engine) ResetRestarts(tx *store.Tx, deploymentId string) error {
 	return tx.ResumeEventDescriptions(deploymentId)
 }
 
-// notificationClaim is how long a replica holds a notification it sends, well above the timeout of
-// the notifier (10 s); a replica that ends while sending leaves it due again after this time
-const notificationClaim = 2 * time.Minute
+// notificationBatch is how many notifications one claim takes (SNRGY-5140)
+const notificationBatch = 10
+
+// notificationClaim is how long a replica holds the notifications it claimed: each of a batch may
+// take the timeout of the notifier and that of the copy to developer-notifications (10 s each),
+// with a minute to spare, so that no other replica sends one again while this one still works on
+// the batch; a replica that ends while sending leaves them due again after this time
+const notificationClaim = notificationBatch*20*time.Second + time.Minute
 
 // notificationMaxAge is how long a notification is retried; a failed attempt after it discards
 // the notification with an error log
@@ -192,26 +197,35 @@ const notificationMaxAge = 24 * time.Hour
 // the notifier, the notifications due after the failed one wait as long as it does, instead of
 // each running into the same timeout (SNRGY-5064).
 func (this *Engine) ProcessNotifications(ctx context.Context) error {
-	now := this.now()
-	var due []store.Notification
-	err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
-		due, err = tx.DueNotifications(now, this.config.BatchSize)
-		return err
-	})
-	if err != nil {
-		return err
-	}
 	var errs []error
-	for i, n := range due {
-		var claimed bool
-		if err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
-			claimed, err = tx.ClaimNotification(n.Id, n.DueAt, now.Add(notificationClaim))
+	// at most BatchSize per call, as before the batches were claimed
+	for handled := 0; handled < this.config.BatchSize && ctx.Err() == nil; {
+		now := this.now()
+		claimed := now.Add(notificationClaim)
+		var due []store.Notification
+		err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+			due, err = tx.ClaimNotifications(now, claimed, notificationBatch)
 			return err
-		}); err != nil || !claimed {
-			// another replica sends it
-			errs = append(errs, err)
-			continue
+		})
+		if err != nil {
+			return errors.Join(append(errs, err)...)
 		}
+		if len(due) == 0 {
+			break
+		}
+		handled += len(due)
+		var postponed bool
+		if errs, postponed = this.sendClaimed(ctx, now, claimed, due, errs); postponed {
+			break
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// sendClaimed sends the notifications of a batch this replica claimed until claimed; postponed
+// reports that the notifier did not answer and the rest of the batch waits
+func (this *Engine) sendClaimed(ctx context.Context, now time.Time, claimed time.Time, due []store.Notification, errs []error) (_ []error, postponed bool) {
+	for i, n := range due {
 		var sendErr error
 		if this.notifier != nil {
 			sendErr = this.notifier.Notify(ctx, n)
@@ -229,7 +243,7 @@ func (this *Engine) ProcessNotifications(ctx context.Context) error {
 			}
 			// not attempted, so without counting an attempt
 			for _, rest := range due[i+1:] {
-				if err := tx.PostponeNotification(rest.Id, retryAt, now); err != nil {
+				if err := tx.PostponeNotification(rest.Id, retryAt, claimed); err != nil {
 					return err
 				}
 			}
@@ -245,8 +259,8 @@ func (this *Engine) ProcessNotifications(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("notification %v (attempt %v, discarded after %v): %w", n.Id, n.Attempts+1, n.CreatedAt.Add(notificationMaxAge).Format(time.RFC3339), sendErr))
 		}
 		if postpone {
-			break
+			return errs, true
 		}
 	}
-	return errors.Join(errs...)
+	return errs, false
 }

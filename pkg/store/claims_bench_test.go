@@ -53,10 +53,7 @@ func BenchmarkClaims(b *testing.B) {
 		drain func(s *store.Store, handled *handledItems, conflicts *atomic.Int64) error
 	}{
 		{"notifications", 1000, seedNotifications, func(s *store.Store, h *handledItems, c *atomic.Int64) error {
-			return drainNotifications(s, h, c, workDelay)
-		}},
-		{"notifications-skip-locked", 1000, seedNotifications, func(s *store.Store, h *handledItems, c *atomic.Int64) error {
-			return drainNotificationsSkipLocked(s, h, workDelay)
+			return drainNotifications(s, h, workDelay)
 		}},
 		{"jobs", 1000, func(tx *store.Tx, items int) error { return seedJobs(tx, items, 1) }, func(s *store.Store, h *handledItems, c *atomic.Int64) error {
 			return drainJobs(s, h, c, workDelay)
@@ -229,54 +226,22 @@ func seedNotifications(tx *store.Tx, items int) error {
 	return nil
 }
 
-// drainNotifications is the loop of Engine.ProcessNotifications: read a batch, then claim, send
-// and delete each in transactions of their own
-func drainNotifications(s *store.Store, handled *handledItems, conflicts *atomic.Int64, work time.Duration) error {
+// drainNotifications is the loop of Engine.ProcessNotifications: claim a batch, send and delete
+// each in a transaction of its own
+func drainNotifications(s *store.Store, handled *handledItems, work time.Duration) error {
 	ctx := context.Background()
 	for {
 		var due []store.Notification
 		if err := s.Tx(ctx, func(tx *store.Tx) (err error) {
-			due, err = tx.DueNotifications(claimNow, 100)
+			due, err = tx.ClaimNotifications(claimNow, claimNow.Add(260*time.Second), 10)
 			return err
 		}); err != nil || len(due) == 0 {
 			return err
 		}
 		for _, n := range due {
-			var claimed bool
-			if err := s.Tx(ctx, func(tx *store.Tx) (err error) {
-				claimed, err = tx.ClaimNotification(n.Id, n.DueAt, claimNow.Add(2*time.Minute))
-				return err
-			}); err != nil {
-				return err
-			}
-			if !claimed {
-				conflicts.Add(1)
-				continue
-			}
 			time.Sleep(work)
 			handled.add(n.Id)
 			if err := s.Tx(ctx, func(tx *store.Tx) error { return tx.DeleteNotification(n.Id) }); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-// drainNotificationsSkipLocked reads and claims a batch in one statement instead
-func drainNotificationsSkipLocked(s *store.Store, handled *handledItems, work time.Duration) error {
-	ctx := context.Background()
-	for {
-		var ids []string
-		if err := s.Tx(ctx, func(tx *store.Tx) (err error) {
-			ids, err = store.ClaimNotificationsSkipLockedForTest(tx, claimNow, claimNow.Add(2*time.Minute), 100)
-			return err
-		}); err != nil || len(ids) == 0 {
-			return err
-		}
-		for _, id := range ids {
-			time.Sleep(work)
-			handled.add(id)
-			if err := s.Tx(ctx, func(tx *store.Tx) error { return tx.DeleteNotification(id) }); err != nil {
 				return err
 			}
 		}

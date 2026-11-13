@@ -17,8 +17,11 @@
 package store
 
 import (
+	"cmp"
 	"database/sql"
 	"encoding/json"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -246,8 +249,29 @@ func (this *Tx) InsertNotification(n Notification) error {
 	return err
 }
 
+const notificationColumns = "id, user_id, title, message, topic, namespace, duplicate_window, attempts, due_at, created_at"
+
+// DueNotifications lists the due notifications without claiming them.
 func (this *Tx) DueNotifications(now time.Time, limit int) (result []Notification, err error) {
-	rows, err := this.query("SELECT id, user_id, title, message, topic, namespace, duplicate_window, attempts, due_at, created_at FROM notifications WHERE due_at <= ? ORDER BY due_at LIMIT ?", millis(now), limit)
+	return this.scanNotifications(this.query("SELECT "+notificationColumns+" FROM notifications WHERE due_at <= ? ORDER BY due_at LIMIT ?", millis(now), limit))
+}
+
+// ClaimNotifications takes due notifications for sending until until: another replica claiming
+// at the same time skips them, so that each is sent once (SNRGY-5140). DueAt of the result is
+// the claim. Sending ends it by deleting the notification, setting its retry or postponing it; a
+// replica that ends while sending leaves it to be sent again once the claim runs out. The
+// result is in the order the notifications were created.
+func (this *Tx) ClaimNotifications(now time.Time, until time.Time, limit int) ([]Notification, error) {
+	result, err := this.scanNotifications(this.query("UPDATE notifications SET due_at = ? WHERE id IN "+
+		"(SELECT id FROM notifications WHERE due_at <= ? ORDER BY due_at LIMIT ?"+this.skipLocked()+") RETURNING "+notificationColumns,
+		millis(until), millis(now), limit))
+	slices.SortStableFunc(result, func(a, b Notification) int {
+		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.Id, b.Id))
+	})
+	return result, err
+}
+
+func (this *Tx) scanNotifications(rows *sql.Rows, err error) (result []Notification, _ error) {
 	if err != nil {
 		return nil, err
 	}
@@ -274,23 +298,11 @@ func (this *Tx) RetryNotification(id string, due time.Time, message string) erro
 	return err
 }
 
-// ClaimNotification takes a due notification for sending until the given time, if it is still due
-// at dueAt as read: another replica that read it as well finds it claimed and leaves it, so that
-// it is sent once. Sending ends the claim by deleting the notification or setting its retry; a
-// replica that ends while sending leaves it to be sent again once the claim runs out.
-func (this *Tx) ClaimNotification(id string, dueAt time.Time, until time.Time) (bool, error) {
-	result, err := this.exec("UPDATE notifications SET due_at = ? WHERE id = ? AND due_at = ?", millis(until), id, millis(dueAt))
-	if err != nil {
-		return false, err
-	}
-	n, err := result.RowsAffected()
-	return n > 0, err
-}
-
-// PostponeNotification moves a notification that was not attempted, without counting an attempt.
-// One that another replica claimed is not due at now and keeps its claim.
-func (this *Tx) PostponeNotification(id string, due time.Time, now time.Time) error {
-	_, err := this.exec("UPDATE notifications SET due_at = ? WHERE id = ? AND due_at <= ?", millis(due), id, millis(now))
+// PostponeNotification moves a notification this replica claimed until claimed and did not
+// attempt, without counting an attempt. One whose claim ran out and that another replica claimed
+// since keeps that claim.
+func (this *Tx) PostponeNotification(id string, due time.Time, claimed time.Time) error {
+	_, err := this.exec("UPDATE notifications SET due_at = ? WHERE id = ? AND due_at = ?", millis(due), id, millis(claimed))
 	return err
 }
 

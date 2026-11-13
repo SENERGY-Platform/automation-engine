@@ -253,15 +253,12 @@ func TestANotificationClaimedByAnEndedReplicaIsSentAfterTheClaim(t *testing.T) {
 	run(t, func(t *testing.T, h *harness) {
 		h.queueNotifications(1)
 		err := h.s.Tx(ctx, func(tx *store.Tx) error {
-			due, err := tx.DueNotifications(h.now(), 10)
-			if err != nil || len(due) != 1 {
-				return fmt.Errorf("due: %v %v", due, err)
-			}
-			if claimed, err := tx.ClaimNotification(due[0].Id, due[0].DueAt, h.now().Add(notificationClaim)); err != nil || !claimed {
+			claimed, err := tx.ClaimNotifications(h.now(), h.now().Add(notificationClaim), notificationBatch)
+			if err != nil || len(claimed) != 1 {
 				return fmt.Errorf("claim: %v %v", claimed, err)
 			}
-			if claimed, err := tx.ClaimNotification(due[0].Id, due[0].DueAt, h.now().Add(notificationClaim)); err != nil || claimed {
-				return fmt.Errorf("a claimed notification is claimed once: %v %v", claimed, err)
+			if again, err := tx.ClaimNotifications(h.now(), h.now().Add(notificationClaim), notificationBatch); err != nil || len(again) != 0 {
+				return fmt.Errorf("a claimed notification is claimed once: %v %v", again, err)
 			}
 			return nil
 		})
