@@ -55,6 +55,9 @@ type StartRequest struct {
 	Locals map[string]any
 	// the instance a maintenance procedure belongs to (SMS-13)
 	ParentId string
+	// the maintenance procedure, by its message name, so that a running one can be found
+	// (SNRGY-5143)
+	Procedure string
 	// set by users, e.g. for smart-service instances
 	Name, Description string
 }
@@ -80,6 +83,14 @@ func (this *Engine) StartInstance(ctx context.Context, request StartRequest) (re
 		err = start()
 	}
 	return result, created, err
+}
+
+// StartInstanceIn starts an instance in the transaction of the caller, e.g. one that holds the
+// lock of the parent of a maintenance procedure across the start. A given id that exists
+// returns that instance, as with StartInstance, without the retry after a concurrent start.
+func (this *Engine) StartInstanceIn(tx *store.Tx, request StartRequest) (model.Instance, error) {
+	result, _, err := this.startInstance(tx, request, model.CauseStart)
+	return result, err
 }
 
 func (this *Engine) startInstance(tx *store.Tx, request StartRequest, cause model.RunCause) (model.Instance, bool, error) {
@@ -137,6 +148,7 @@ func (this *Engine) startInstance(tx *store.Tx, request StartRequest, cause mode
 			Name: request.Name, Description: request.Description,
 		},
 		ActivityMinSeq: 1,
+		Procedure:      request.Procedure,
 	}
 	if err = tx.InsertInstance(*inst); err != nil {
 		return model.Instance{}, false, err

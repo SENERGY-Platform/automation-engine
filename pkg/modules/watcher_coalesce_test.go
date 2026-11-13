@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/model"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 )
 
@@ -118,5 +119,63 @@ func TestWatchesThatFireTogetherStartTheProcedureOncePerInputs(t *testing.T) {
 		if w.LastHash == before[w.Id] || w.LastError != "" {
 			t.Errorf("the start advances the hash of every watch it stood for: %+v", w)
 		}
+	}
+}
+
+// rerunStarter fails the start of a rerun with err and counts the attempts
+type rerunStarter struct {
+	maintenanceRecorder
+	err      error
+	attempts int
+}
+
+func (this *rerunStarter) StartMaintenanceRerun(_ context.Context, _ store.MaintenanceRerun) (model.Instance, error) {
+	this.attempts++
+	return model.Instance{}, this.err
+}
+
+// A rerun that cannot start is retried once its claim ran out, unless a retry cannot help.
+func TestARerunThatCannotStartIsRetriedUnlessItCannotWork(t *testing.T) {
+	for name, c := range map[string]struct {
+		err  error
+		kept bool
+	}{
+		"unavailable":      {model.Unavailable("token of alice: timeout"), true},
+		"not ready":        {model.Conflict("instance is error"), true},
+		"procedure gone":   {model.NotFound("instance has no maintenance procedure refresh"), false},
+		"invalid variable": {model.BadRequest("variable level: too large"), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newGroupWatchFixture(t, true)
+			starter := &rerunStarter{err: c.err}
+			f.runtime.watcher.maintenance = starter
+			err := f.store.Tx(context.Background(), func(tx *store.Tx) error {
+				return tx.QueueMaintenanceRerun(store.MaintenanceRerun{InstanceId: f.instance, Procedure: "refresh", VariablesHash: store.RerunHash(nil), RequestedAt: f.now})
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, step := range []time.Duration{0, rerunClaim - time.Second, time.Second} {
+				f.now = f.now.Add(step)
+				if err = f.runtime.StartReruns(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var queued bool
+			err = f.store.Tx(context.Background(), func(tx *store.Tx) (err error) {
+				queued, err = tx.MaintenanceRerunQueued(f.instance, "refresh", store.RerunHash(nil))
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected := 1
+			if c.kept {
+				expected = 2
+			}
+			if queued != c.kept || starter.attempts != expected {
+				t.Errorf("kept %v after %v attempts", queued, starter.attempts)
+			}
+		})
 	}
 }

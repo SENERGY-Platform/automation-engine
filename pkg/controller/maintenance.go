@@ -56,7 +56,8 @@ func (this *Controller) ListMaintenanceProcedures(ctx context.Context, token str
 }
 
 // StartMaintenance starts a procedure of an instance as an instance of its own that refers to
-// it; administrate on the instance is needed, as before (SMS-13).
+// it; administrate on the instance is needed, as before (SMS-13). It starts also while a run of
+// the procedure is running, since a user asked for it.
 func (this *Controller) StartMaintenance(ctx context.Context, token string, namespace string, id string, procedure string, input model.MaintenanceStartInput) (model.Instance, error) {
 	err := this.store.Tx(ctx, func(tx *store.Tx) error {
 		inst, err := this.readInstance(ctx, tx, token, namespace, id, Administrate)
@@ -68,56 +69,65 @@ func (this *Controller) StartMaintenance(ctx context.Context, token string, name
 	if err != nil {
 		return model.Instance{}, err
 	}
-	return this.startMaintenance(ctx, token, id, procedure, input.Variables)
+	return this.startMaintenance(ctx, token, id, procedure, input.Variables, startAlways, "")
 }
 
 // StartMaintenanceInternal starts a procedure without a caller, e.g. for the watcher (TASK-27);
-// the procedure runs as the owner of the instance.
+// the procedure runs as the owner of the instance. While a run of the procedure is running, it
+// queues a rerun with the variables instead and returns no instance (SNRGY-5143).
 func (this *Controller) StartMaintenanceInternal(ctx context.Context, id string, procedure string, variables map[string]any) (model.Instance, error) {
-	return this.startMaintenance(ctx, "", id, procedure, variables)
+	return this.startMaintenance(ctx, "", id, procedure, variables, startOrQueue, store.RerunHash(variables))
 }
 
+// StartMaintenanceRerun starts a rerun queued by StartMaintenanceInternal and removes it. It
+// starts nothing and returns no instance while a run of the procedure is running or once
+// another replica started the rerun.
+func (this *Controller) StartMaintenanceRerun(ctx context.Context, rerun store.MaintenanceRerun) (model.Instance, error) {
+	return this.startMaintenance(ctx, "", rerun.InstanceId, rerun.Procedure, rerun.Variables, startQueued, rerun.VariablesHash)
+}
+
+// startMode is how a start of a procedure treats a running run of it (SNRGY-5143)
+type startMode int
+
+const (
+	// start anyway
+	startAlways startMode = iota
+	// queue a rerun instead
+	startOrQueue
+	// start a queued rerun once nothing runs
+	startQueued
+)
+
 // startMaintenance starts a procedure; auto_select_all fields use the token, or the owner's
-// without caller
-func (this *Controller) startMaintenance(ctx context.Context, token string, id string, procedure string, variables map[string]any) (model.Instance, error) {
+// without caller. Except for startAlways, it locks the instance while it decides whether to
+// start and while it starts, so that replicas start one run of a procedure at a time.
+func (this *Controller) startMaintenance(ctx context.Context, token string, id string, procedure string, variables map[string]any, mode startMode, hash string) (model.Instance, error) {
 	var request engine.StartRequest
+	var run int
+	held := false
 	err := this.store.Tx(ctx, func(tx *store.Tx) error {
-		inst, err := tx.GetInstance(id, false)
+		inst, err := tx.GetInstance(id, mode != startAlways)
 		if err != nil {
 			return err
 		}
-		if inst.ParentId != "" {
-			return model.BadRequest("instance %v is itself a maintenance procedure", id)
-		}
-		items := []model.Instance{inst.Instance}
-		if err = withStatus(tx, items); err != nil {
-			return err
-		}
-		if items[0].Status != model.StatusReady {
-			return model.Conflict("instance %v is %v, a maintenance procedure needs it ready without errors", id, items[0].Status)
-		}
-		proc, err := this.engine.Process(tx, inst.DeploymentId, inst.DeploymentVersion)
+		elementId, err := this.maintenanceStart(tx, inst, procedure)
 		if err != nil {
 			return err
 		}
-		elementId := ""
-		for _, p := range procedures(proc) {
-			if p.Id == procedure {
-				elementId = p.ElementId
-			}
-		}
-		if elementId == "" {
-			return model.NotFound("instance %v has no maintenance procedure %v", id, procedure)
+		run = inst.Run
+		// decided here already, so that a held start reads no options
+		if held, err = this.holdBack(tx, mode, id, procedure, variables, hash); err != nil || held {
+			return err
 		}
 		start := maps.Clone(inst.StartVariables)
 		if start == nil {
 			start = map[string]any{}
 		}
 		maps.Copy(start, variables)
-		request = engine.StartRequest{DeploymentId: inst.DeploymentId, DeploymentVersion: inst.DeploymentVersion, Owner: inst.Owner, Variables: start, StartElementId: elementId, ParentId: inst.Id}
+		request = engine.StartRequest{DeploymentId: inst.DeploymentId, DeploymentVersion: inst.DeploymentVersion, Owner: inst.Owner, Variables: start, StartElementId: elementId, ParentId: inst.Id, Procedure: procedure}
 		return nil
 	})
-	if err != nil {
+	if err != nil || held {
 		return model.Instance{}, err
 	}
 	if token == "" && this.parameters != nil && this.parametersUserToken != nil {
@@ -130,8 +140,81 @@ func (this *Controller) startMaintenance(ctx context.Context, token string, id s
 			return model.Instance{}, err
 		}
 	}
-	result, _, err := this.engine.StartInstance(ctx, request)
+	if mode == startAlways {
+		result, _, err := this.engine.StartInstance(ctx, request)
+		return result, err
+	}
+	var result model.Instance
+	err = this.store.Tx(ctx, func(tx *store.Tx) error {
+		// checked again, since the options were read without the lock
+		inst, err := tx.GetInstance(id, true)
+		if err != nil {
+			return err
+		}
+		if inst.Run != run {
+			return model.Conflict("instance %v started a new run meanwhile", id)
+		}
+		if _, err = this.maintenanceStart(tx, inst, procedure); err != nil {
+			return err
+		}
+		if held, err := this.holdBack(tx, mode, id, procedure, variables, hash); err != nil || held {
+			return err
+		}
+		if result, err = this.engine.StartInstanceIn(tx, request); err != nil {
+			return err
+		}
+		// the run reads the current state, which serves a rerun queued with these variables
+		return tx.DeleteMaintenanceRerun(id, procedure, hash)
+	})
 	return result, err
+}
+
+// maintenanceStart checks that the procedure can start on the instance and returns its start
+// event
+func (this *Controller) maintenanceStart(tx *store.Tx, inst store.Instance, procedure string) (string, error) {
+	if inst.ParentId != "" {
+		return "", model.BadRequest("instance %v is itself a maintenance procedure", inst.Id)
+	}
+	items := []model.Instance{inst.Instance}
+	if err := withStatus(tx, items); err != nil {
+		return "", err
+	}
+	if items[0].Status != model.StatusReady {
+		return "", model.Conflict("instance %v is %v, a maintenance procedure needs it ready without errors", inst.Id, items[0].Status)
+	}
+	proc, err := this.engine.Process(tx, inst.DeploymentId, inst.DeploymentVersion)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range procedures(proc) {
+		if p.Id == procedure {
+			return p.ElementId, nil
+		}
+	}
+	return "", model.NotFound("instance %v has no maintenance procedure %v", inst.Id, procedure)
+}
+
+// holdBack decides, with the instance locked, whether a start waits: a watch queues a rerun while
+// a run of the procedure is running, a rerun waits for that run and is dropped once started
+func (this *Controller) holdBack(tx *store.Tx, mode startMode, id string, procedure string, variables map[string]any, hash string) (bool, error) {
+	if mode == startAlways {
+		return false, nil
+	}
+	running, err := tx.MaintenanceRunning(id, procedure)
+	if err != nil {
+		return false, err
+	}
+	if mode == startOrQueue {
+		if !running {
+			return false, nil
+		}
+		return true, tx.QueueMaintenanceRerun(store.MaintenanceRerun{InstanceId: id, Procedure: procedure, Variables: variables, VariablesHash: hash, RequestedAt: this.engine.Now()})
+	}
+	if running {
+		return true, nil
+	}
+	queued, err := tx.MaintenanceRerunQueued(id, procedure, hash)
+	return !queued, err
 }
 
 // UpdateParameters restarts an instance with new start parameters; the new run removes the

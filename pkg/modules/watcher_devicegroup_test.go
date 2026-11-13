@@ -97,6 +97,10 @@ func (this *maintenanceRecorder) StartMaintenanceInternal(_ context.Context, id 
 	return model.Instance{}, nil
 }
 
+func (this *maintenanceRecorder) StartMaintenanceRerun(ctx context.Context, rerun store.MaintenanceRerun) (model.Instance, error) {
+	return this.StartMaintenanceInternal(ctx, rerun.InstanceId, rerun.Procedure, rerun.Variables)
+}
+
 func (this *maintenanceRecorder) count() int {
 	this.mux.Lock()
 	defer this.mux.Unlock()

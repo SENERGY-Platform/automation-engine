@@ -316,7 +316,7 @@ func (this *Tx) UpsertReplicatedInstance(networkId string, i model.Instance) err
 	if err != nil {
 		return err
 	}
-	_, err = this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, 0, 0, ?, ?, ?, ?, ?) "+
+	_, err = this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, 0, 0, ?, ?, ?, ?, ?, '') "+
 		"ON CONFLICT (id) DO UPDATE SET deployment_version = excluded.deployment_version, deployment_name = excluded.deployment_name, run = excluded.run, state = excluded.state, "+
 		"end_reason = excluded.end_reason, start_variables = excluded.start_variables, started_at = excluded.started_at, ended_at = excluded.ended_at, "+
 		"last_activity_at = excluded.last_activity_at, restart_at = excluded.restart_at, owner = excluded.owner, "+

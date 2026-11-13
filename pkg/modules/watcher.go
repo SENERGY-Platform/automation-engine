@@ -39,9 +39,12 @@ import (
 
 const TypeWatcher = "watcher"
 
-// Maintenance starts maintenance procedures without a caller (SMS-13).
+// Maintenance starts maintenance procedures without a caller (SMS-13). While a run of the
+// procedure is running, StartMaintenanceInternal queues a rerun instead, which
+// StartMaintenanceRerun starts once that run ended (SNRGY-5143).
 type Maintenance interface {
 	StartMaintenanceInternal(ctx context.Context, id string, procedure string, variables map[string]any) (model.Instance, error)
+	StartMaintenanceRerun(ctx context.Context, rerun store.MaintenanceRerun) (model.Instance, error)
 }
 
 // GenericHttp sends requests from models under the HTTP policy of a namespace (NS-04).
@@ -250,6 +253,9 @@ func (this *Runtime) RunWatches(ctx context.Context, tick time.Duration) {
 		if err := this.CheckWatches(ctx); err != nil && ctx.Err() == nil {
 			this.logger.WarnContext(ctx, "watches incomplete", "error", err)
 		}
+		if err := this.StartReruns(ctx); err != nil && ctx.Err() == nil {
+			this.logger.WarnContext(ctx, "reruns of maintenance procedures incomplete", "error", err)
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -349,6 +355,50 @@ func triggerKey(w store.Watch) string {
 		inputs = string(raw)
 	}
 	return w.InstanceId + "\x00" + w.Procedure + "\x00" + inputs
+}
+
+// rerunClaim is how long a replica holds a claimed rerun; a rerun whose start failed is
+// retried when its claim ran out
+const rerunClaim = time.Minute
+
+// StartReruns starts the reruns of maintenance procedures whose run ended (SNRGY-5143). A rerun
+// that cannot start is retried, unless the instance or its procedure is gone or the start is
+// invalid, which a retry would not change.
+func (this *Runtime) StartReruns(ctx context.Context) error {
+	if this.watcher == nil || this.watcher.maintenance == nil {
+		return nil
+	}
+	start := this.now()
+	for {
+		var due []store.MaintenanceRerun
+		err := this.store.Tx(ctx, func(tx *store.Tx) (err error) {
+			due, err = tx.ClaimMaintenanceReruns(start, start.Add(rerunClaim), 20)
+			return err
+		})
+		if err != nil || len(due) == 0 {
+			return err
+		}
+		for _, r := range due {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			_, err := this.watcher.maintenance.StartMaintenanceRerun(ctx, r)
+			if err == nil {
+				continue
+			}
+			if !errors.Is(err, model.ErrNotFound) && !errors.Is(err, model.ErrBadRequest) {
+				this.logger.WarnContext(ctx, "rerun of a maintenance procedure failed, retried", "instance_id", r.InstanceId, "procedure", r.Procedure, "error", err)
+				continue
+			}
+			this.logger.WarnContext(ctx, "rerun of a maintenance procedure dropped", "instance_id", r.InstanceId, "procedure", r.Procedure, "error", err)
+			err = this.store.Tx(ctx, func(tx *store.Tx) error {
+				return tx.DeleteMaintenanceRerun(r.InstanceId, r.Procedure, r.VariablesHash)
+			})
+			if err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // check requests the watched resource and hashes its answer; message reports a failure

@@ -32,15 +32,17 @@ type Instance struct {
 	// activity sequence and time of the latest history snapshot (DBG-14)
 	SnapshotSeq int64
 	SnapshotAt  time.Time
+	// the maintenance procedure a child instance runs, by its message name (SNRGY-5143)
+	Procedure string
 }
 
-const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at, parent_id, network_id, name, description, start_value_labels"
+const instanceColumns = "id, namespace, owner, deployment_id, deployment_name, deployment_version, model_id, model_version, run, state, end_reason, start_variables, created_at, started_at, ended_at, last_activity_at, activity_seq, activity_min_seq, restart_at, snapshot_seq, snapshot_at, parent_id, network_id, name, description, start_value_labels, procedure_name"
 
 func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 	var state, startVariables, startValueLabels string
 	var created, started, lastActivity, snapshotAt int64
 	var ended, restartAt sql.NullInt64
-	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt, &i.ParentId, &i.NetworkId, &i.Name, &i.Description, &startValueLabels)
+	err = row.Scan(&i.Id, &i.Namespace, &i.Owner, &i.DeploymentId, &i.DeploymentName, &i.DeploymentVersion, &i.ModelId, &i.ModelVersion, &i.Run, &state, &i.EndReason, &startVariables, &created, &started, &ended, &lastActivity, &i.ActivitySeq, &i.ActivityMinSeq, &restartAt, &i.SnapshotSeq, &snapshotAt, &i.ParentId, &i.NetworkId, &i.Name, &i.Description, &startValueLabels, &i.Procedure)
 	if snapshotAt > 0 {
 		i.SnapshotAt = fromMillis(snapshotAt)
 	}
@@ -56,10 +58,10 @@ func scanInstance(row interface{ Scan(...any) error }) (i Instance, err error) {
 }
 
 func (this *Tx) InsertInstance(i Instance) error {
-	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err := this.exec("INSERT INTO instances ("+instanceColumns+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		i.Id, i.Namespace, i.Owner, i.DeploymentId, i.DeploymentName, i.DeploymentVersion, i.ModelId, i.ModelVersion, i.Run, string(i.State), i.EndReason, toJson(i.StartVariables),
 		millis(i.CreatedAt), millis(i.StartedAt), nullMillis(i.EndedAt), millis(i.LastActivityAt), i.ActivitySeq, i.ActivityMinSeq, nullMillis(i.RestartAt), i.SnapshotSeq, snapshotMillis(i.SnapshotAt), i.ParentId, i.NetworkId,
-		i.Name, i.Description, toJson(i.StartValueLabels))
+		i.Name, i.Description, toJson(i.StartValueLabels), i.Procedure)
 	if err != nil {
 		return err
 	}

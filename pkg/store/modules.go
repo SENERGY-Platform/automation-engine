@@ -368,6 +368,10 @@ func (this *Tx) RemoveModulesOfInstance(instanceId string) (int, error) {
 			return 0, err
 		}
 	}
+	// reruns of procedures were owed to the previous run, as were its procedures (SNRGY-5143)
+	if _, err = this.exec("DELETE FROM maintenance_reruns WHERE instance_id = ?", instanceId); err != nil {
+		return 0, err
+	}
 	if err = this.queueModuleRemovals("instance_id = ?", instanceId); err != nil {
 		return 0, err
 	}
