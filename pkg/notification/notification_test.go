@@ -26,6 +26,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -153,5 +154,45 @@ func TestDeveloperCopyNamesTheNamespace(t *testing.T) {
 	}
 	if !slices.Contains(received.Tags, "smart-services") || !strings.Contains(received.Body, "Namespace: smart-services\n") {
 		t.Fatalf("%+v", received)
+	}
+}
+
+// SNRGY-5141: a developer-notifications without answer holds the sending of a notification only
+// for the timeout, not beyond the claim of the notification, after which another replica would
+// send it again
+func TestAHangingDeveloperCopyEndsWithTheTimeout(t *testing.T) {
+	var notified atomic.Int32
+	notifier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { notified.Add(1) }))
+	defer notifier.Close()
+	release := make(chan struct{})
+	developers := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer developers.Close()
+	defer close(release)
+	n := New(notifier.URL, developers.URL, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	n.http.Timeout = 100 * time.Millisecond
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		done <- n.Notify(context.Background(), store.Notification{UserId: "u", Title: "Process-Incident in x", Message: "boom", Topic: "incident"})
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("a failed copy is no failure of the notification: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the copy to developer-notifications is still waiting")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("the copy took %v", elapsed)
+	}
+	if notified.Load() != 1 {
+		t.Errorf("the notifier gets the notification once: %v", notified.Load())
 	}
 }
