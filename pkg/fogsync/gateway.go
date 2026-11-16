@@ -86,6 +86,11 @@ type Gateway struct {
 	now        func() time.Time
 	started    time.Time
 
+	// desired state is applied one message at a time: the client hands every message to its own
+	// goroutine, and a start the cloud sends right after its deployment overtook the deployment
+	// still being applied and failed with "deployment not found" (SNRGY-5156)
+	applying sync.Mutex
+
 	mux sync.Mutex
 	// the batch in flight: sent after the acknowledged position up to upto
 	inflightUpto int64
@@ -418,8 +423,11 @@ func (this *Gateway) SendStatus(ctx context.Context) error {
 	return this.publish(ctx, KindStatus, status)
 }
 
-// ApplyAll applies desired resources in their order and returns a result for each.
+// ApplyAll applies desired resources in their order and returns a result for each; calls run
+// one after the other, so a message applies only after the one before it is done.
 func (this *Gateway) ApplyAll(ctx context.Context, resources []Resource) []Result {
+	this.applying.Lock()
+	defer this.applying.Unlock()
 	results := make([]Result, 0, len(resources))
 	for _, r := range resources {
 		results = append(results, this.Apply(ctx, r))
