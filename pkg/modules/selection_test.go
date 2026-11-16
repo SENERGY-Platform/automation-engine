@@ -17,6 +17,7 @@
 package modules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/model"
@@ -54,5 +55,39 @@ func TestSelectionOfAnalyticsOperator(t *testing.T) {
 	}
 	if selection, err = selectionOf(`{"import_selection": {"id": "i1"}}`); err != nil || selection.ImportId != "i1" {
 		t.Errorf("the iot option format stays: %+v %v", selection, err)
+	}
+}
+
+// A smart service selects the connection state of a device with {"connection_device_id": ...}
+// or with the iot option of a form field wrapped as {"device_connection": ...}. The service of
+// the option, its path and its characteristic are ignored: a form field whose user picked a
+// value of a service still names the device (SNRGY-5151).
+func TestSelectionOfDeviceConnection(t *testing.T) {
+	want := model.Selection{ConnectionDeviceId: "d1"}
+	for name, raw := range map[string]string{
+		"flat":                 `{"connection_device_id": "d1"}`,
+		"iot option":           `{"device_connection": {"device_selection": {"device_id": "d1"}}}`,
+		"iot option, service":  `{"device_connection": {"device_selection": {"device_id": "d1", "service_id": "s1", "characteristic_id": "c"}}}`,
+		"iot option, no path":  `{"device_connection": {"device_selection": {"device_id": "d1", "path": ""}}}`,
+		"iot option, null set": `{"device_connection": {"device_selection": {"device_id": "d1", "service_id": null, "path": null}}}`,
+		"iot option, path":     `{"device_connection": {"device_selection": {"device_id": "d1", "service_id": "s1", "path": "root.value", "characteristic_id": "c"}, "label": "Device 1 / root.value"}}`,
+	} {
+		selection, err := selectionOf(raw)
+		if err != nil || selection != want {
+			t.Errorf("%v: %+v %v", name, selection, err)
+		}
+	}
+	for name, raw := range map[string]string{
+		"no device":       `{"device_connection": {"device_selection": {"device_id": ""}}}`,
+		"empty option":    `{"device_connection": {}}`,
+		"group":           `{"device_connection": {"device_group_selection": {"id": "g1"}}}`,
+		"empty selection": `{}`,
+	} {
+		if _, err := selectionOf(raw); err == nil {
+			t.Errorf("%v is rejected", name)
+		}
+	}
+	if _, err := selectionOf(`{}`); err == nil || !strings.Contains(err.Error(), "connection_device_id") {
+		t.Errorf("the error names the new source: %v", err)
 	}
 }

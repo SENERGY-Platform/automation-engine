@@ -84,3 +84,28 @@ func TestAnalyticsOperatorMapsToGenericEventSource(t *testing.T) {
 		}
 	}
 }
+
+// The connection state of a device is the generic event source with filter_type connectionState
+// and the device id as filter_ids; the topic is ignored on input and empty on output (SNRGY-5151).
+func TestConnectionStateMapsToGenericEventSource(t *testing.T) {
+	selection, err := newSelection(models.Selection{SelectedGenericEventSource: &models.GenericEventSource{FilterType: "ConnectionState", FilterIds: "d1", Topic: "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(selection, model.Selection{ConnectionDeviceId: "d1"}) {
+		t.Fatalf("%+v", selection)
+	}
+	back := oldSelection(model.Criteria{}, selection, nil)
+	if back.SelectedGenericEventSource == nil || *back.SelectedGenericEventSource != (models.GenericEventSource{FilterType: "connectionState", FilterIds: "d1"}) {
+		t.Fatalf("%+v", back.SelectedGenericEventSource)
+	}
+	for name, source := range map[string]models.GenericEventSource{
+		"no device":       {FilterType: "connectionState"},
+		"several devices": {FilterType: "connectionState", FilterIds: "d1,d2"},
+		"unknown type":    {FilterType: "connection", FilterIds: "d1"},
+	} {
+		if _, err = newSelection(models.Selection{SelectedGenericEventSource: &source}); err == nil {
+			t.Errorf("%v is rejected", name)
+		}
+	}
+}

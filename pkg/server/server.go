@@ -52,6 +52,7 @@ import (
 	"github.com/SENERGY-Platform/automation-engine/pkg/prepare"
 	"github.com/SENERGY-Platform/automation-engine/pkg/store"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/devicecommand"
+	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/deviceconnection"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/httpcall"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tasks/processio"
 	"github.com/SENERGY-Platform/automation-engine/pkg/tracing"
@@ -82,6 +83,8 @@ type Server struct {
 	// fog: the broker of the gateway and the event worker in the process (FOG-01, FOG-06)
 	Broker mqtt.Broker
 	Events *events.Worker
+	// fog: reports the connection state of devices to Events
+	Connections *events.DeviceManagerSource
 	// fog: the synchronisation with the cloud (SYNC-09)
 	Sync *fogsync.Gateway
 	// cloud: the synchronisation with gateways (SYNC-09)
@@ -294,6 +297,24 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		e.RegisterTaskType(devicecommand.TaskType, commands)
 	}
 
+	// the connection state of a device (SNRGY-5151): device-repository in the cloud, the
+	// device-manager of the gateway on a gateway
+	var deviceManager *events.DeviceManager
+	if config.DeviceManagerUrl != "" && fog {
+		deviceManager = events.NewDeviceManager(config.DeviceManagerUrl)
+	}
+	if repo != nil {
+		if fog {
+			var gateway deviceconnection.Gateway
+			if deviceManager != nil {
+				gateway = deviceManager
+			}
+			e.RegisterTaskType(deviceconnection.TaskType, deviceconnection.NewLocal(repo, userToken, gateway))
+		} else {
+			e.RegisterTaskType(deviceconnection.TaskType, deviceconnection.New(repo, userToken))
+		}
+	}
+
 	var certs *jwt.KeycloakCertProvider
 	if config.KeycloakCertUrl != "" {
 		certs = &jwt.KeycloakCertProvider{CertUrl: config.KeycloakCertUrl}
@@ -332,6 +353,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		if config.AnalyticsPipelineUrl != "" {
 			describer = describer.WithPipelines(events.NewPipelines(config.AnalyticsPipelineUrl))
 		}
+		describer = describer.WithConnectionTopic(config.DeviceLogTopic)
 		if fog {
 			describer = describer.Local()
 		}
@@ -358,6 +380,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		c.SetEventDebugging(series, events.NewEvaluator(unmarshaller).WithCrashBrake(brake).WithBlocklist(e.Blocklist()), userToken)
 	}
 	var worker *events.Worker
+	var connections *events.DeviceManagerSource
 	if fog && repo != nil {
 		eventUnmarshaller := deps.EventUnmarshaller
 		if eventUnmarshaller == nil {
@@ -371,6 +394,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 		// SQLite has one connection, correlations would only wait for it
 		workerConfig.CorrelationWorkers = 1
 		worker = events.NewWorker(workerConfig, s, events.NewEvaluator(eventUnmarshaller).WithCrashBrake(brake).WithBlocklist(e.Blocklist()), e, events.LocalConsumer(broker, 1, logger), logger)
+		connections = events.NewDeviceManagerSource(broker, deviceManager, logger)
 	}
 	var networks *fogsync.Cloud
 	syncBroker := deps.SyncBroker
@@ -441,7 +465,7 @@ func New(ctx context.Context, config configuration.Config, logger *slog.Logger, 
 	started = true
 	return &Server{
 		Store: s, Engine: e, Controller: c, Handler: api.New(c, s, logger, apiSettings), Namespaces: registry, Permissions: service, Metrics: m,
-		Live: hub, ModuleRemover: remover, Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, Sync: agent, Networks: networks, config: config, logger: logger, brake: brake,
+		Live: hub, ModuleRemover: remover, Modules: runtime, DeviceCommands: commands, Broker: broker, Events: worker, Connections: connections, Sync: agent, Networks: networks, config: config, logger: logger, brake: brake,
 	}, nil
 }
 
@@ -679,6 +703,12 @@ func (this *Server) startLocal(ctx context.Context) error {
 	}
 	if this.Events != nil {
 		go this.Events.Run(ctx)
+		// connection states of devices reach the worker from the device-manager topics (SNRGY-5151)
+		if this.Connections != nil {
+			if err := this.Connections.Start(ctx, func(m events.Message) error { return this.Events.Handle(ctx, m) }); err != nil {
+				return err
+			}
+		}
 	}
 	if this.Sync != nil {
 		if err := this.Sync.Start(ctx); err != nil {

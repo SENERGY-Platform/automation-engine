@@ -98,8 +98,10 @@ type Worker struct {
 	importTopics map[string]bool
 	// topics of analytics operators, shared by all pipelines with an operator of the same name
 	analyticsTopics map[string]bool
-	revision        int64
-	lastFull        time.Time
+	// device_log in the cloud, the logical topic of the device-manager source on a gateway
+	connectionTopics map[string]bool
+	revision         int64
+	lastFull         time.Time
 
 	notifyMux sync.Mutex
 	notified  map[string]time.Time
@@ -109,7 +111,7 @@ type Worker struct {
 func NewWorker(config WorkerConfig, s *store.Store, evaluator *Evaluator, correlator Correlator, consume Consumer, logger *slog.Logger) *Worker {
 	return &Worker{
 		config: config, store: s, evaluator: evaluator, correlator: correlator, consume: consume, logger: logger, now: time.Now,
-		byId: map[string]model.EventDescription{}, index: map[string][]string{}, importTopics: map[string]bool{}, analyticsTopics: map[string]bool{},
+		byId: map[string]model.EventDescription{}, index: map[string][]string{}, importTopics: map[string]bool{}, analyticsTopics: map[string]bool{}, connectionTopics: map[string]bool{},
 		notified: map[string]time.Time{}, async: make(chan struct{}, max(config.AsyncWorkers, 1)),
 	}
 }
@@ -130,7 +132,18 @@ func analyticsKey(pipelineId string, operatorId string) string {
 	return "a|" + pipelineId + "|" + operatorId
 }
 
+func connectionKey(deviceId string) string {
+	return "c|" + deviceId
+}
+
 func (this *Worker) keyOf(d model.EventDescription) string {
+	// the gateway source knows the device by its local id only (SNRGY-5151)
+	if d.ConnectionDeviceId != "" {
+		if this.config.Local {
+			return connectionKey(d.LocalDeviceId)
+		}
+		return connectionKey(d.ConnectionDeviceId)
+	}
 	if this.config.Local {
 		return topicKey(d.Topic)
 	}
@@ -179,6 +192,7 @@ func (this *Worker) Sync(ctx context.Context) ([]string, error) {
 	this.index = map[string][]string{}
 	this.importTopics = map[string]bool{}
 	this.analyticsTopics = map[string]bool{}
+	this.connectionTopics = map[string]bool{}
 	topics := map[string]bool{}
 	for id, d := range this.byId {
 		this.index[this.keyOf(d)] = append(this.index[this.keyOf(d)], id)
@@ -188,6 +202,9 @@ func (this *Worker) Sync(ctx context.Context) ([]string, error) {
 		}
 		if d.PipelineId != "" {
 			this.analyticsTopics[d.Topic] = true
+		}
+		if d.ConnectionDeviceId != "" {
+			this.connectionTopics[d.Topic] = true
 		}
 	}
 	result := make([]string, 0, len(topics))
@@ -290,6 +307,15 @@ type OperatorMessage struct {
 	Analytics  map[string]any `json:"analytics" description:"outputs of the operator; the local variable event of the correlation"`
 }
 
+// ConnectionMessage is a message of platform-connector on the device_log topic: the connection
+// state of a device, keyed by its id (SNRGY-5151). The gateway source reports the same, by the
+// local id of the device. Other fields of the message are ignored.
+type ConnectionMessage struct {
+	Id        string    `json:"id" description:"id of the device"`
+	Connected *bool     `json:"connected" description:"true: online, false: offline; the value of the event is online or offline"`
+	Time      time.Time `json:"time" description:"when the state changed"`
+}
+
 // Handle evaluates a message against its descriptions; qos 1 descriptions are evaluated and
 // correlated before the message is acknowledged, qos 0 ones afterwards (EVT-05).
 func (this *Worker) Handle(ctx context.Context, m Message) error {
@@ -300,10 +326,18 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 	this.mux.RLock()
 	isImport := this.importTopics[m.Topic]
 	isAnalytics := this.analyticsTopics[m.Topic]
+	isConnection := this.connectionTopics[m.Topic]
 	this.mux.RUnlock()
 	var key string
 	var payload map[string]any
-	if isImport {
+	if isConnection {
+		var c ConnectionMessage
+		if err := json.Unmarshal(m.Value, &c); err != nil || c.Id == "" || c.Connected == nil {
+			return nil
+		}
+		key = connectionKey(c.Id)
+		payload = map[string]any{"connected": *c.Connected}
+	} else if isImport {
 		if err := json.Unmarshal(m.Value, &payload); err != nil {
 			return nil
 		}
@@ -357,7 +391,7 @@ func (this *Worker) Handle(ctx context.Context, m Message) error {
 		// change, and descriptions are evaluated at the same time, those of qos 0 and those of qos 1
 		// of different deployments
 		payload := copyPayload(payload)
-		if this.config.Local {
+		if this.config.Local && d.ConnectionDeviceId == "" {
 			decoded, err := decodeFor(d, m.Value)
 			if err != nil {
 				this.notifyError(ctx, d, fmt.Errorf("unable to read the device message: %w", err))
@@ -449,6 +483,10 @@ func (this *Worker) process(ctx context.Context, d model.EventDescription, paylo
 		// the member of a device group that triggered, the device itself otherwise (SNRGY-5054)
 		locals["device_id"], locals["service_id"] = d.DeviceId, d.ServiceId
 	}
+	if d.ConnectionDeviceId != "" {
+		// the platform id also on a gateway, where the source reports by the local id (SNRGY-5151)
+		locals["device_id"] = d.ConnectionDeviceId
+	}
 	_, err = this.correlator.Correlate(ctx, engine.CorrelationRequest{
 		MessageInput: model.MessageInput{
 			Name: d.MessageName, All: true, MessageId: messageId + "|" + d.MessageName,
@@ -482,6 +520,9 @@ func (this *Worker) notifyError(ctx context.Context, d model.EventDescription, e
 	}
 	if d.PipelineId != "" {
 		source = "operator " + d.OperatorId + " of pipeline " + d.PipelineId
+	}
+	if d.ConnectionDeviceId != "" {
+		source = "connection of device " + d.ConnectionDeviceId
 	}
 	message := fmt.Sprintf("The event %v of deployment %v could not be evaluated for %v: %v", d.ElementId, d.DeploymentId, strings.TrimSpace(source), err)
 	if notifyErr := this.correlator.QueueNotification(ctx, d.Owner, d.Namespace, "Event evaluation failed", message); notifyErr != nil {

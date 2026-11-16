@@ -192,6 +192,10 @@ func (this *Controller) EventEvaluations(ctx context.Context, token string, name
 			result.Limitations = append(result.Limitations, "events of analytics operators are not reconstructed, their output is not read from timescale")
 			continue
 		}
+		if d.ConnectionDeviceId != "" {
+			result.Limitations = append(result.Limitations, "events of device connections are not reconstructed, the connection state is not stored in timescale")
+			continue
+		}
 		service, err := events.ServiceOf(d)
 		if err != nil {
 			result.Limitations = append(result.Limitations, fmt.Sprintf("%v: %v", d.Id, err))
@@ -321,6 +325,9 @@ func (this *Controller) currentEvaluation(ctx context.Context, inst model.Instan
 	}
 	if source.PipelineId != "" {
 		return &model.EventEvaluation{Error: "the current value of analytics operators is not available"}
+	}
+	if source.ConnectionDeviceId != "" {
+		return &model.EventEvaluation{Error: "the current value of device connections is not available"}
 	}
 	var d model.EventDescription
 	found := false

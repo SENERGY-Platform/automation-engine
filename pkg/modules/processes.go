@@ -343,6 +343,10 @@ func (this *processModules) gatewayFor(ctx context.Context, token string, select
 		if s.DeviceId != "" {
 			selected = append(selected, s.DeviceId)
 		}
+		if s.ConnectionDeviceId != "" {
+			// the gateway must carry the device to see its connection (SNRGY-5151)
+			selected = append(selected, s.ConnectionDeviceId)
+		}
 		if s.DeviceGroupId != "" {
 			group, err, _ := this.runtime.iot.ReadDeviceGroup(ctx, s.DeviceGroupId, token, false)
 			if err != nil {
@@ -465,11 +469,21 @@ func keepsModel(name string, value string, original string) (bool, error) {
 // an analytics operator is given as {"pipeline_id": ..., "operator_id": ...}, as the designer
 // writes it, or as generic_event_source of the iot option with filter_type operatorId and
 // filter_ids "<pipeline id>:<operator id>", as smart-service-module-worker-process read it
-// (SNRGY-5113)
+// (SNRGY-5113). The connection state of a device is given as {"connection_device_id": "<id>"}
+// or as {"device_connection": <iot option>}, the form the designer writes for the connection
+// state of an iot field: the option names the device in device_selection.device_id; its service,
+// path and characteristic are ignored, as the connection belongs to the device, and a form field
+// whose user picked a value of a service still names the device (SNRGY-5151)
 func selectionOf(raw string) (result model.Selection, err error) {
 	var option struct {
-		PipelineId      string `json:"pipeline_id"`
-		OperatorId      string `json:"operator_id"`
+		PipelineId         string `json:"pipeline_id"`
+		OperatorId         string `json:"operator_id"`
+		ConnectionDeviceId string `json:"connection_device_id"`
+		DeviceConnection   *struct {
+			DeviceSelection *struct {
+				DeviceId string `json:"device_id"`
+			} `json:"device_selection"`
+		} `json:"device_connection"`
 		DeviceSelection *struct {
 			DeviceId         string  `json:"device_id"`
 			ServiceId        *string `json:"service_id"`
@@ -520,6 +534,14 @@ func selectionOf(raw string) (result model.Selection, err error) {
 			return result, fmt.Errorf("an analytics operator needs pipeline_id and operator_id")
 		}
 		result.PipelineId, result.OperatorId = option.PipelineId, option.OperatorId
+	case option.ConnectionDeviceId != "":
+		result.ConnectionDeviceId = option.ConnectionDeviceId
+	case option.DeviceConnection != nil:
+		selected := option.DeviceConnection.DeviceSelection
+		if selected == nil || selected.DeviceId == "" {
+			return result, fmt.Errorf("a device connection needs the device of an iot option, device_selection.device_id")
+		}
+		result.ConnectionDeviceId = selected.DeviceId
 	case option.GenericEventSource != nil:
 		source := option.GenericEventSource
 		if !strings.EqualFold(source.FilterType, "operatorId") {
@@ -536,7 +558,7 @@ func selectionOf(raw string) (result model.Selection, err error) {
 		}
 		result.PipelineId, result.OperatorId = pipelineId, operatorId
 	default:
-		return result, fmt.Errorf("no device, device group, import or analytics operator selected")
+		return result, fmt.Errorf("no device, device group, import, analytics operator or device connection selected; a device connection is {\"connection_device_id\": ...} or {\"device_connection\": <iot option>}")
 	}
 	return result, nil
 }

@@ -152,6 +152,7 @@ Not present are: boundary events, subprocesses, call activities, user tasks, mul
 - **BPMN-07 (M)** Intermediate message event (catch), see section 10.
 - **BPMN-08 (M)** Service task with task type. Today it is selected via `camunda:type="external"` and `camunda:topic`. Task types:
   - today in processes: `optimistic`, `pessimistic`, `process_io`;
+  - new in processes: `device_connection`, reads the connection state of a device (SNRGY-5151, since 2026-11-16);
   - today in smart services: `info`, `import`, `process_deployment`, `process_deployment_start`, `analytics`, `device_repository`, `watcher`, `export`.
   - Which types a model may use is set by its namespace (NS-03).
   - The topic `export` in the process designer (`IotProps.js`) is outdated and dropped (decided). It has no worker in the main engine and does not occur in the exports.
@@ -549,7 +550,8 @@ The event-worker stays a role of its own, preferably as a second operating mode 
   - device without service, expanded at deploy;
   - device group, expanded at deploy;
   - import;
-  - output of an operator of an analytics pipeline of the deployment owner (SNRGY-5113, since 2026-11-09).
+  - output of an operator of an analytics pipeline of the deployment owner (SNRGY-5113, since 2026-11-09);
+  - connection state of a device, `online` or `offline`, read from the Kafka device log in the cloud and from the device-manager of the gateway on a gateway (SNRGY-5151, since 2026-11-16), see `docs/device-connection-state.md`.
 
   The old analytics events (`MessageEvent` with flow_id, triggered by `event-operator-all` over HTTP) are dropped. Their replacement reads the output topic of the operator instead of a callback, without a token in the pipeline.
 - **EVT-04 (M)** Condition evaluation in the event-worker:

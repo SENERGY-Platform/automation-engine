@@ -138,14 +138,14 @@ func filter(c model.Criteria, interaction string) devicemodel.FilterCriteria {
 // Prepare lists the elements that need a device selection with their options. Device tasks
 // of one lane share the criteria of all of them, so that one device serves the whole lane.
 func (this *Preparer) Prepare(ctx context.Context, token string, process *bpmn.Process) ([]model.PreparedElement, error) {
-	return this.prepare(ctx, token, process, nil)
+	return this.prepare(ctx, token, process, nil, nil)
 }
 
 // PrepareForHub offers only the devices of the hub, for a deployment to its gateway; the local
 // ids of the hub go to device-selection as process-fog-deployment sent them.
 func (this *Preparer) PrepareForHub(ctx context.Context, token string, process *bpmn.Process, hubId string) ([]model.PreparedElement, error) {
-	if this.client == nil {
-		return this.prepare(ctx, token, process, nil)
+	if this.client == nil && !hasDeviceConnection(process) {
+		return this.prepare(ctx, token, process, nil, nil)
 	}
 	if this.config.DeviceRepository == nil {
 		return nil, model.Unavailable("device-repository is needed to offer the devices of a gateway")
@@ -154,12 +154,13 @@ func (this *Preparer) PrepareForHub(ctx context.Context, token string, process *
 	if err != nil {
 		return nil, model.Unavailable("device-repository: hub %v: %v", hubId, err)
 	}
+	hubDevices := append([]string{}, hub.DeviceIds...)
 	if len(hub.DeviceLocalIds) == 0 {
 		// device-selection would read an empty list as no restriction; a hub without devices
 		// offers none
-		return (&Preparer{config: this.config}).prepare(ctx, token, process, nil)
+		return (&Preparer{config: this.config}).prepare(ctx, token, process, nil, &hubDevices)
 	}
-	return this.prepare(ctx, token, process, hub.DeviceLocalIds)
+	return this.prepare(ctx, token, process, hub.DeviceLocalIds, &hubDevices)
 }
 
 // HubNames reads the names of the hubs with one request to device-repository; hubs the user
@@ -179,10 +180,74 @@ func (this *Preparer) HubNames(ctx context.Context, token string, ids []string) 
 	return result, nil
 }
 
-func (this *Preparer) prepare(ctx context.Context, token string, process *bpmn.Process, localDevices []string) ([]model.PreparedElement, error) {
+// hasDeviceConnection reports a task that reads the connection state of a device; it needs only
+// device-repository to be prepared (SNRGY-5151)
+func hasDeviceConnection(process *bpmn.Process) bool {
+	for _, e := range process.Ordered() {
+		if e.IsDeviceConnection() {
+			return true
+		}
+	}
+	return false
+}
+
+// connectionOptions lists the devices the owner may read, for a task that reads the connection
+// state (SNRGY-5151); on a hub only the devices of the hub (hubDevices, not nil). Such a task
+// takes the device alone, so device-selection with its criteria is not involved. Without
+// device-repository there are no options, as without device-selection for the other elements.
+func (this *Preparer) connectionOptions(ctx context.Context, token string, hubDevices *[]string) ([]model.SelectionOption, error) {
+	result := []model.SelectionOption{}
+	if this.config.DeviceRepository == nil {
+		return result, nil
+	}
+	add := func(devices []models.Device) {
+		for _, d := range devices {
+			result = append(result, model.SelectionOption{Device: &model.NamedRef{Id: d.Id, Name: d.Name}})
+		}
+	}
+	if hubDevices != nil {
+		// a list of ids ignores the paging of device-repository; ask in chunks to keep the url short
+		for chunk := range slices.Chunk(*hubDevices, connectionChunk) {
+			devices, err, _ := this.config.DeviceRepository.ListDevices(ctx, token, devicerepository.DeviceListOptions{Ids: chunk})
+			if err != nil {
+				return nil, model.Unavailable("device-repository: %v", err)
+			}
+			add(devices)
+		}
+	} else {
+		for page := 0; page < connectionPages; page++ {
+			devices, err, _ := this.config.DeviceRepository.ListDevices(ctx, token, devicerepository.DeviceListOptions{Limit: connectionChunk, Offset: int64(page * connectionChunk), SortBy: "name.asc"})
+			if err != nil {
+				return nil, model.Unavailable("device-repository: %v", err)
+			}
+			add(devices)
+			if len(devices) < connectionChunk {
+				break
+			}
+		}
+	}
+	sort.SliceStable(result, func(a, b int) bool { return optionName(result[a]) < optionName(result[b]) })
+	return result, nil
+}
+
+const (
+	// ids go into the url, 50 of them stay well below the 8 KB a proxy accepts
+	connectionChunk = 50
+	// at most connectionChunk*connectionPages devices are offered
+	connectionPages = 200
+)
+
+func (this *Preparer) prepare(ctx context.Context, token string, process *bpmn.Process, localDevices []string, hubDevices *[]string) ([]model.PreparedElement, error) {
 	result := []model.PreparedElement{}
 	laneCriteria := map[string][]devicemodel.FilterCriteria{}
+	connection := map[string]bool{}
 	for _, e := range process.Ordered() {
+		if e.IsDeviceConnection() {
+			// the device alone, without criteria, lane or service (SNRGY-5151)
+			result = append(result, model.PreparedElement{ElementId: e.Id, Name: e.Name, Kind: model.PreparedTask, Options: []model.SelectionOption{}})
+			connection[e.Id] = true
+			continue
+		}
 		criteria, ok := CriteriaOf(e)
 		if !ok {
 			continue
@@ -196,11 +261,25 @@ func (this *Preparer) prepare(ctx context.Context, token string, process *bpmn.P
 			laneCriteria[e.Lane] = append(laneCriteria[e.Lane], filter(criteria, ""))
 		}
 	}
-	if len(result) == 0 || this.client == nil {
+	if len(connection) > 0 {
+		options, err := this.connectionOptions(ctx, token, hubDevices)
+		if err != nil {
+			return nil, err
+		}
+		for i := range result {
+			if connection[result[i].ElementId] {
+				result[i].Options = options
+			}
+		}
+	}
+	if len(result) == len(connection) || this.client == nil {
 		return result, nil
 	}
 	bulk := dsmodel.BulkRequestV2{}
 	for _, element := range result {
+		if connection[element.ElementId] {
+			continue
+		}
 		request := dsmodel.BulkRequestElementV2{Id: element.ElementId, IncludeDevices: true, IncludeIdModifiedDevices: this.config.ModifiedDevices, LocalDevices: localDevices}
 		if element.Kind == model.PreparedTask {
 			request.IncludeGroups = this.config.GroupsForTasks
@@ -224,6 +303,9 @@ func (this *Preparer) prepare(ctx context.Context, token string, process *bpmn.P
 		byId[a.Id] = a.Selectables
 	}
 	for i, element := range result {
+		if connection[element.ElementId] {
+			continue
+		}
 		options := []model.SelectionOption{}
 		for _, s := range byId[element.ElementId] {
 			option, err := toOption(s)
@@ -330,7 +412,7 @@ func ValidateSelections(process *bpmn.Process, selections map[string]model.Selec
 		if _, ok := selections[e.Id]; ok {
 			continue
 		}
-		if e.IsDeviceEvent() || (e.IsDeviceCommand() && !payloadNamesDevice(e)) {
+		if e.IsDeviceEvent() || e.IsDeviceConnection() || (e.IsDeviceCommand() && !payloadNamesDevice(e)) {
 			issues = append(issues, model.Issue{ElementId: e.Id, Message: "needs a device selection"})
 		}
 	}
@@ -342,18 +424,28 @@ func ValidateSelections(process *bpmn.Process, selections map[string]model.Selec
 	for _, id := range ids {
 		s := selections[id]
 		e := process.Element(id)
-		if e == nil || (!e.IsDeviceCommand() && !e.IsDeviceEvent()) {
-			issues = append(issues, model.Issue{ElementId: id, Message: "a selection needs a device task or device event"})
+		if e == nil || (!e.IsDeviceCommand() && !e.IsDeviceEvent() && !e.IsDeviceConnection()) {
+			issues = append(issues, model.Issue{ElementId: id, Message: "a selection needs a device task, a device event or a device connection task"})
 			continue
 		}
 		sources := 0
-		for _, v := range []string{s.DeviceId, s.DeviceGroupId, s.ImportId, s.PipelineId + s.OperatorId} {
+		for _, v := range []string{s.DeviceId, s.DeviceGroupId, s.ImportId, s.PipelineId + s.OperatorId, s.ConnectionDeviceId} {
 			if v != "" {
 				sources++
 			}
 		}
 		if sources != 1 {
-			issues = append(issues, model.Issue{ElementId: id, Message: "select exactly one of device, device group, import or analytics operator"})
+			issues = append(issues, model.Issue{ElementId: id, Message: "select exactly one of device, device group, import, analytics operator or device connection"})
+		}
+		// the connection state of a device (SNRGY-5151): for events and for the task that reads it
+		if s.ConnectionDeviceId != "" && e.IsDeviceCommand() {
+			issues = append(issues, model.Issue{ElementId: id, Message: "a device connection cannot receive commands"})
+		}
+		if s.ConnectionDeviceId != "" && (s.ServiceId != "" || s.Path != nil) {
+			issues = append(issues, model.Issue{ElementId: id, Message: "a device connection takes no service and no path; its value is online or offline"})
+		}
+		if e.IsDeviceConnection() && s.ConnectionDeviceId == "" {
+			issues = append(issues, model.Issue{ElementId: id, Message: "a device connection task needs connection_device_id"})
 		}
 		if s.ImportId != "" && e.IsDeviceCommand() {
 			issues = append(issues, model.Issue{ElementId: id, Message: "an import cannot receive commands"})

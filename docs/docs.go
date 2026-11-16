@@ -12357,6 +12357,10 @@ const docTemplate = `{
                 "characteristic_id": {
                     "type": "string"
                 },
+                "connection_device_id": {
+                    "description": "the device whose connection state the description evaluates (platform id); its value is\n\"online\" or \"offline\" without unmarshalling (SNRGY-5151)",
+                    "type": "string"
+                },
                 "deployment_id": {
                     "type": "string"
                 },
@@ -12376,6 +12380,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "import_id": {
+                    "type": "string"
+                },
+                "local_device_id": {
+                    "description": "on a gateway the id of that device at the device-manager, which the gateway source reports by",
                     "type": "string"
                 },
                 "message_name": {
@@ -12524,6 +12532,9 @@ const docTemplate = `{
         "model.EventSource": {
             "type": "object",
             "properties": {
+                "connection_device_id": {
+                    "type": "string"
+                },
                 "current": {
                     "description": "evaluation of the current value of the source, on request (DBG-18)",
                     "allOf": [
@@ -14229,6 +14240,10 @@ const docTemplate = `{
         "model.Selection": {
             "type": "object",
             "properties": {
+                "connection_device_id": {
+                    "description": "the connection state of a device (platform id) as event source, or the device whose state a\ntask device_connection reads; the only member besides none (SNRGY-5151)",
+                    "type": "string"
+                },
                 "device_group_id": {
                     "type": "string"
                 },

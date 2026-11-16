@@ -105,7 +105,10 @@ type Config struct {
 	// api-docs-provider, e.g. http://api.swagger:5000: the cloud engine uploads docs/asyncapi.json on
 	// start, as the other platform services do, for API Docs of the web-ui; empty uploads nothing
 	ApiDocsProviderBaseUrl string `json:"api_docs_provider_base_url" env_var:"API_DOCS_PROVIDER_BASE_URL"`
-	// services and options of the module task types of smart services (TASK-29)
+	// services and options of the module task types of smart services (TASK-29). On a gateway it is
+	// the device-manager of the gateway instead, e.g. http://device-manager:8080: the connection
+	// state of devices at start and for the task device_connection (SNRGY-5151); empty makes that
+	// task fail. The cloud does not use it for connection states.
 	DeviceManagerUrl string `json:"device_manager_url" env_var:"DEVICE_MANAGER_URL"`
 	FlowEngineUrl    string `json:"flow_engine_url" env_var:"FLOW_ENGINE_URL"`
 	// analytics-flow-repo; flows used by deployments are checked for changes (SMS-15)
@@ -187,6 +190,9 @@ type Config struct {
 	// analytics-pipeline, e.g. http://pipeline.analytics:8000: events can wait for the output of an
 	// operator of a pipeline (SNRGY-5113); empty rejects such events at deploy
 	AnalyticsPipelineUrl string `json:"analytics_pipeline_url" env_var:"ANALYTICS_PIPELINE_URL"`
+	// the topic of platform-connector with the connection state of devices (compacted, keyed by
+	// device id), which events of the kind device connection read in the cloud (SNRGY-5151)
+	DeviceLogTopic string `json:"device_log_topic" env_var:"DEVICE_LOG_TOPIC"`
 	// user deletions published by user-management, the fallback for users deleted outside of it (SEC-14)
 	UserTopic string `json:"user_topic" env_var:"USER_TOPIC"`
 	// permissions-v2 publishes rights changes of the engine topics here; the engine restores
@@ -291,6 +297,7 @@ func Default() Config {
 		CacheInvalidationAllTopics: []string{"device-types", "protocols"},
 		DeviceTopic:                "devices",
 		DeviceGroupTopic:           "device-groups",
+		DeviceLogTopic:             "device_log",
 		GroupScheduler:             "round_robin",
 		GroupConcurrency:           1,
 		DeviceCacheTimeout:         "1m",
@@ -338,7 +345,7 @@ func DefaultNamespaces() []model.Namespace {
 		{
 			Name:             "processes",
 			Description:      "processes",
-			TaskTypes:        model.ListRule{Allow: []string{"device_command", "process_io", "notification", "http"}},
+			TaskTypes:        model.ListRule{Allow: []string{"device_command", "device_connection", "process_io", "notification", "http"}},
 			DeviceSelection:  model.DeviceSelection{AtDeploy: true},
 			Models:           model.LevelSettings{Shareable: true},
 			IncidentHandling: model.IncidentHandling{Restart: false, Notify: true},

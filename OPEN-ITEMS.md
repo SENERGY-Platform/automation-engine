@@ -76,6 +76,14 @@ Feature branches, each forked from the default branch. Since 2026-10-22 all of t
 - [ ] **Task (operations):** Set `ANALYTICS_PIPELINE_URL` in the engine (`processes/automation-engine` in rancher-2-defs, branch `senergy`), the in-cluster URL of analytics-pipeline. Without it every deployment with an analytics event is rejected with "analytics events are not configured". The engine reads `GET /pipeline/{id}` with the token of the owner; the event role reads the topics `analytics-<operator name>` in `EVENT_CONSUMER_GROUP`.
 - [ ] **Task (platform-content):** The designs "Thermostatsteuerung nach Lüftungsverhalten" select `{"pipeline_id": ..., "operator_id": ...}` at their catch event and drop the operator `event-all` with its token (branch `fix/thermostat-event-target`). The Groovy script in `Task_12pf9lz` (see Rollout) is still to be rewritten as well.
 
+### Device connection state (SNRGY-5151)
+
+- [ ] **Task (operations):** Existing databases do not take the new allowlist of `DefaultNamespaces` (`NAMESPACES` creates only missing namespaces): add `device_connection` to the allowed task types of the namespace `processes` through the admin API, per cloud. Without it a model with that task is rejected.
+- [ ] **Task (operations):** `DEVICE_LOG_TOPIC` defaults to `device_log`; rancher-2-defs needs a change only if the topic of platform-connector is named differently.
+- [ ] **Task (mgw-module-repository):** The process module needs the new image and a dependency on `github.com/SENERGY-Platform/device-management-service/mgw-module` with `DEVICE_MANAGER_URL` set to `http://{ref}`. Without it a gateway cannot read the state at start or for the task.
+- [ ] **Task (web-ui):** Branch `feat/device-connection`: the deploy dialog offers the devices of the user for events as the generic event source `connectionState`, the smart-service designer offers the connection state of iot form fields as `{"device_connection": ${field}}`. Release, pin and confirmation of the texts are open.
+- [ ] **Note:** A gateway with an older engine stores the descriptions and never evaluates them; there is no version gate (`docs/device-connection-state.md`).
+
 ### user-management
 
 - [x] **Task:** Before deleting a user, call the dry run of the engine, then the delete call (`/users`), instead of addressing process-scheduler. Kafka `user` remains the fallback (SEC-14, M2).

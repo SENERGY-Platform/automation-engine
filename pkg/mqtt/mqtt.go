@@ -35,10 +35,19 @@ import (
 // the broker delivers it again after a reconnect of a persistent session.
 type Handler func(topic string, payload []byte) error
 
+// RetainHandler is a Handler that is told whether the message was delivered with the retain flag.
+// The flag is set only for a message the broker sends because of a subscription, so for the
+// retained messages it replays at every subscribe and after every reconnect; a live message,
+// even a forward of a retained publish, arrives without it.
+type RetainHandler func(topic string, payload []byte, retained bool) error
+
 // Broker is what the engine needs of a broker; Client is the network one, Memory the one of tests.
 type Broker interface {
 	Publish(ctx context.Context, topic string, qos byte, payload []byte) error
 	Subscribe(topic string, qos byte, handler Handler) error
+	// SubscribeRetain is Subscribe with the retain flag of each message; it is renewed after a
+	// reconnect like any subscription
+	SubscribeRetain(topic string, qos byte, handler RetainHandler) error
 	Unsubscribe(topic string) error
 }
 
@@ -54,7 +63,12 @@ type Config struct {
 
 type subscription struct {
 	qos     byte
-	handler Handler
+	handler RetainHandler
+}
+
+// ignoreRetain is a Handler as a RetainHandler
+func ignoreRetain(handler Handler) RetainHandler {
+	return func(topic string, payload []byte, _ bool) error { return handler(topic, payload) }
 }
 
 type Client struct {
@@ -124,6 +138,10 @@ func (this *Client) Publish(ctx context.Context, topic string, qos byte, payload
 }
 
 func (this *Client) Subscribe(topic string, qos byte, handler Handler) error {
+	return this.SubscribeRetain(topic, qos, ignoreRetain(handler))
+}
+
+func (this *Client) SubscribeRetain(topic string, qos byte, handler RetainHandler) error {
 	this.mux.Lock()
 	this.subscriptions[topic] = subscription{qos: qos, handler: handler}
 	this.mux.Unlock()
@@ -134,9 +152,9 @@ func (this *Client) Subscribe(topic string, qos byte, handler Handler) error {
 	return this.subscribe(topic, qos, handler)
 }
 
-func (this *Client) subscribe(topic string, qos byte, handler Handler) error {
+func (this *Client) subscribe(topic string, qos byte, handler RetainHandler) error {
 	token := this.client.Subscribe(topic, qos, func(_ paho.Client, message paho.Message) {
-		if err := handler(message.Topic(), message.Payload()); err != nil {
+		if err := handler(message.Topic(), message.Payload(), message.Retained()); err != nil {
 			this.logger.Warn("mqtt message not processed", "topic", message.Topic(), "error", err)
 			return
 		}

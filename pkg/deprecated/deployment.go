@@ -213,6 +213,10 @@ func oldSelection(criteria model.Criteria, s model.Selection, options []model.Se
 		// the engine derives the topic from the pipeline; it is not part of the selection
 		result.SelectedGenericEventSource = &models.GenericEventSource{FilterType: operatorFilterType, FilterIds: s.PipelineId + ":" + s.OperatorId}
 	}
+	if s.ConnectionDeviceId != "" {
+		// the topic is empty: the engine derives it from the environment
+		result.SelectedGenericEventSource = &models.GenericEventSource{FilterType: connectionFilterType, FilterIds: s.ConnectionDeviceId}
+	}
 	for _, o := range options {
 		result.SelectionOptions = append(result.SelectionOptions, oldOption(o))
 	}
@@ -223,6 +227,11 @@ func oldSelection(criteria model.Criteria, s model.Selection, options []model.Se
 // operator, with filter_ids "<pipeline id>:<operator id>", as event-deployment and the flow
 // deploy dialog of the web-ui wrote it
 const operatorFilterType = "operatorId"
+
+// connectionFilterType is the filter_type of a generic event source on the connection state of a
+// device, with filter_ids "<device id>" (SNRGY-5151). The old dialog has no such source; the
+// deploy dialog of the web-ui writes it, as it does operatorId.
+const connectionFilterType = "connectionState"
 
 func newSelection(s models.Selection) (model.Selection, error) {
 	value := func(p *string) string {
@@ -236,8 +245,15 @@ func newSelection(s models.Selection) (model.Selection, error) {
 	if source := s.SelectedGenericEventSource; source != nil {
 		// the output of an analytics operator (SNRGY-5113); the topic is ignored, the engine reads
 		// it from the pipeline
+		if strings.EqualFold(source.FilterType, connectionFilterType) {
+			if source.FilterIds == "" || strings.Contains(source.FilterIds, ",") {
+				return model.Selection{}, model.BadRequest("filter_ids of a connection state source must be one device id")
+			}
+			result.ConnectionDeviceId = source.FilterIds
+			return result, nil
+		}
 		if !strings.EqualFold(source.FilterType, operatorFilterType) {
-			return model.Selection{}, model.BadRequest("generic event sources are supported only with filter_type %q", operatorFilterType)
+			return model.Selection{}, model.BadRequest("generic event sources are supported only with filter_type %q or %q", operatorFilterType, connectionFilterType)
 		}
 		pipelineId, operatorId, ok := strings.Cut(source.FilterIds, ":")
 		if !ok || pipelineId == "" || operatorId == "" {
@@ -274,8 +290,14 @@ func elements(process *bpmn.Process, selections map[string]model.Selection, opti
 		element.Order, _ = strconv.ParseInt(e.Attributes["order"], 10, 64)
 		criteria, device := prepare.CriteriaOf(e)
 		switch {
-		case device && e.Type == bpmn.ServiceTask:
-			task := &models.Task{Parameter: map[string]string{}, Selection: oldSelection(criteria, selections[e.Id], options[e.Id])}
+		case (device && e.Type == bpmn.ServiceTask) || e.IsDeviceConnection():
+			selection := selections[e.Id]
+			if e.IsDeviceConnection() {
+				// a task that reads the connection state selects its device as selected_device_id,
+				// without service (SNRGY-5151)
+				selection.DeviceId, selection.ConnectionDeviceId = selection.ConnectionDeviceId, ""
+			}
+			task := &models.Task{Parameter: map[string]string{}, Selection: oldSelection(criteria, selection, options[e.Id])}
 			for _, m := range e.Inputs {
 				if m.Name == "payload" {
 					var payload struct{ Retries int64 }
@@ -542,6 +564,9 @@ func DeploymentInput(ctx context.Context, c Converter, token string, namespace s
 			s, err := newSelection(*selection)
 			if err != nil {
 				return input, conversion, err
+			}
+			if element.Task != nil && e.IsDeviceConnection() {
+				s.ConnectionDeviceId, s.DeviceId = s.DeviceId, ""
 			}
 			if element.Task != nil && element.Task.PreferEvent {
 				prefer := true

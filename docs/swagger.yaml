@@ -1290,6 +1290,11 @@ definitions:
         type: array
       characteristic_id:
         type: string
+      connection_device_id:
+        description: |-
+          the device whose connection state the description evaluates (platform id); its value is
+          "online" or "offline" without unmarshalling (SNRGY-5151)
+        type: string
       deployment_id:
         type: string
       device_group_id:
@@ -1303,6 +1308,10 @@ definitions:
       id:
         type: string
       import_id:
+        type: string
+      local_device_id:
+        description: on a gateway the id of that device at the device-manager, which
+          the gateway source reports by
         type: string
       message_name:
         description: the message name the correlation uses, stable across updates
@@ -1409,6 +1418,8 @@ definitions:
     type: object
   model.EventSource:
     properties:
+      connection_device_id:
+        type: string
       current:
         allOf:
         - $ref: '#/definitions/model.EventEvaluation'
@@ -2599,6 +2610,11 @@ definitions:
     type: object
   model.Selection:
     properties:
+      connection_device_id:
+        description: |-
+          the connection state of a device (platform id) as event source, or the device whose state a
+          task device_connection reads; the only member besides none (SNRGY-5151)
+        type: string
       device_group_id:
         type: string
       device_id:

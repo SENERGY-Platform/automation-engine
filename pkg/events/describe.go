@@ -149,6 +149,9 @@ type Describer struct {
 	imports Imports
 	// nil: analytics events are rejected at deploy
 	pipelines Pipelines
+	// the topic of platform-connector with the connection state of devices; empty: connection
+	// events are rejected at deploy in the cloud (SNRGY-5151)
+	connectionTopic string
 	// descriptions for a gateway read the topics of its broker (FOG-06)
 	local bool
 }
@@ -165,6 +168,14 @@ func (this *Describer) Local() *Describer {
 func (this *Describer) WithPipelines(pipelines Pipelines) *Describer {
 	result := *this
 	result.pipelines = pipelines
+	return &result
+}
+
+// WithConnectionTopic lets deployments wait for the connection state of devices, which the cloud
+// reads from the topic (SNRGY-5151). A gateway needs none.
+func (this *Describer) WithConnectionTopic(topic string) *Describer {
+	result := *this
+	result.connectionTopic = topic
 	return &result
 }
 
@@ -215,6 +226,8 @@ func (this *Describer) Describe(ctx context.Context, deployment model.Deployment
 			descriptions, err = this.importDescription(ctx, token, base, selection)
 		case selection.PipelineId != "":
 			descriptions, err = this.analyticsDescription(token, base, selection)
+		case selection.ConnectionDeviceId != "":
+			descriptions, err = this.connectionDescription(ctx, token, base, selection)
 		}
 		if err != nil {
 			return nil, nil, err
@@ -402,6 +415,37 @@ func (this *Describer) analyticsDescription(token string, base model.EventDescri
 	d.Topic = operator.OutputTopic
 	// the value is the output of the operator as it is; device criteria of the element do not
 	// apply to it
+	d.CharacteristicId, d.FunctionId, d.AspectIds, d.Path = "", "", nil, ""
+	return []model.EventDescription{d}, nil
+}
+
+// connectionDescription describes the connection state of a device the owner may read: the
+// device_log topic in the cloud, where every device has messages and the worker picks those of
+// the device, and the device-manager source of the gateway, which reports by the local id of the
+// device (SNRGY-5151)
+func (this *Describer) connectionDescription(ctx context.Context, token string, base model.EventDescription, selection model.Selection) ([]model.EventDescription, error) {
+	issue := func(format string, args ...any) error {
+		return model.ValidationFailed([]model.Issue{{ElementId: base.ElementId, Message: fmt.Sprintf(format, args...)}})
+	}
+	if !this.local && this.connectionTopic == "" {
+		return nil, issue("connection events are not configured")
+	}
+	device, err, _ := devicerepository.WithCache(this.iot, this.cacheTimeout).ReadDevice(ctx, selection.ConnectionDeviceId, token, devicerepomodel.READ)
+	if err != nil {
+		return nil, fmt.Errorf("device %v: %w", selection.ConnectionDeviceId, err)
+	}
+	d := base
+	d.Id = uuid.NewString()
+	d.ConnectionDeviceId = selection.ConnectionDeviceId
+	d.Topic = this.connectionTopic
+	if this.local {
+		if device.LocalId == "" {
+			return nil, issue("device %v has no local id", selection.ConnectionDeviceId)
+		}
+		d.LocalDeviceId = device.LocalId
+		d.Topic = LocalConnectionTopic
+	}
+	// the value is "online" or "offline"; device criteria of the element do not apply to it
 	d.CharacteristicId, d.FunctionId, d.AspectIds, d.Path = "", "", nil, ""
 	return []model.EventDescription{d}, nil
 }

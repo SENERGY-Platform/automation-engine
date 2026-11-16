@@ -102,6 +102,18 @@ func (this *Evaluator) value(d model.EventDescription, message map[string]any) (
 	if d.PipelineId != "" {
 		return message, nil
 	}
+	// the connection state of a device (SNRGY-5151)
+	if d.ConnectionDeviceId != "" {
+		connected, ok := message["connected"].(bool)
+		switch {
+		case !ok:
+			return nil, fmt.Errorf("the message has no connection state")
+		case connected:
+			return "online", nil
+		default:
+			return "offline", nil
+		}
+	}
 	var service models.Service
 	if len(d.Service) > 0 {
 		if err := json.Unmarshal(d.Service, &service); err != nil {

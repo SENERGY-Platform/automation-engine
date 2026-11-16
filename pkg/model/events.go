@@ -41,6 +41,11 @@ type EventDescription struct {
 	// is the object "analytics" of the operator message, without unmarshalling (SNRGY-5113)
 	PipelineId string `json:"pipeline_id,omitempty"`
 	OperatorId string `json:"operator_id,omitempty"`
+	// the device whose connection state the description evaluates (platform id); its value is
+	// "online" or "offline" without unmarshalling (SNRGY-5151)
+	ConnectionDeviceId string `json:"connection_device_id,omitempty"`
+	// on a gateway the id of that device at the device-manager, which the gateway source reports by
+	LocalDeviceId string `json:"local_device_id,omitempty"`
 	// the Kafka topic with the data
 	Topic string `json:"topic"`
 	// condition: true, "true" or a number >= 1 triggers the event

@@ -264,6 +264,73 @@
                 }
             ]
         },
+        "deviceLog": {
+            "address": "device_log",
+            "messages": {
+                "ConnectionMessage": {
+                    "payload": {
+                        "$ref": "#/components/schemas/EventsConnectionMessage"
+                    },
+                    "name": "ConnectionMessage",
+                    "title": "ConnectionMessage"
+                }
+            },
+            "description": "DEVICE_LOG_TOPIC; the connection state of the devices, written by platform-connector with the device id as key, read in the consumer group EVENT_CONSUMER_GROUP for event descriptions that name the connection of a device (SNRGY-5151). Repeated messages of the same state each trigger an evaluation.",
+            "servers": [
+                {
+                    "$ref": "#/servers/kafka"
+                }
+            ]
+        },
+        "deviceManager": {
+            "address": "device-manager/device/{connector}",
+            "messages": {
+                "DeviceManagerMessage": {
+                    "payload": {
+                        "$ref": "#/components/schemas/DeviceManagerMessage"
+                    },
+                    "name": "DeviceManagerMessage",
+                    "title": "DeviceManagerMessage"
+                }
+            },
+            "parameters": {
+                "connector": {
+                    "description": "module id or ref of the connector"
+                }
+            },
+            "description": "Device connectors report the devices they manage to the device-manager of a gateway; the engine reads the state of the devices from these messages (QoS 1) for event descriptions that name the connection of a device and passes on only a change. The state at start comes from DEVICE_MANAGER_URL (SNRGY-5151).",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
+        "deviceManagerWill": {
+            "address": "device-manager/device/{connector}/lw",
+            "messages": {
+                "DeviceManagerWill": {
+                    "payload": {
+                        "type": [
+                            "null",
+                            "string"
+                        ]
+                    },
+                    "name": "DeviceManagerWill",
+                    "title": "DeviceManagerWill"
+                }
+            },
+            "parameters": {
+                "connector": {
+                    "description": "module id or ref of the connector"
+                }
+            },
+            "description": "Last will of a device connector: the payload \"offline\" marks every device the engine knows of this connector as offline (SNRGY-5151). A connector whose last will is on another topic stays online after it dies.",
+            "servers": [
+                {
+                    "$ref": "#/servers/gateway-mqtt"
+                }
+            ]
+        },
         "deviceTypes": {
             "address": "device-types",
             "messages": {
@@ -764,6 +831,42 @@
             ],
             "summary": "recompute event descriptions"
         },
+        "receiveDeviceLog": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/deviceLog"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/deviceLog/messages/ConnectionMessage"
+                }
+            ],
+            "summary": "evaluate device connection events"
+        },
+        "receiveDeviceManager": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/deviceManager"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/deviceManager/messages/DeviceManagerMessage"
+                }
+            ],
+            "summary": "evaluate device connection events"
+        },
+        "receiveDeviceManagerWill": {
+            "action": "receive",
+            "channel": {
+                "$ref": "#/channels/deviceManagerWill"
+            },
+            "messages": [
+                {
+                    "$ref": "#/channels/deviceManagerWill/messages/DeviceManagerWill"
+                }
+            ],
+            "summary": "evaluate device connection events"
+        },
         "receiveDeviceTypes": {
             "action": "receive",
             "channel": {
@@ -1031,6 +1134,28 @@
     },
     "components": {
         "schemas": {
+            "DeviceManagerMessage": {
+                "properties": {
+                    "data": {
+                        "properties": {
+                            "state": {
+                                "description": "online or offline; any other state counts as unknown",
+                                "type": "string"
+                            }
+                        },
+                        "type": "object"
+                    },
+                    "device_id": {
+                        "description": "local id of the device",
+                        "type": "string"
+                    },
+                    "method": {
+                        "description": "set or delete; delete makes the engine forget the device",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
             "DevicecommandLocalEnvelope": {
                 "properties": {
                     "command_id": {
@@ -1185,6 +1310,27 @@
                     },
                     "timestamp": {
                         "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "EventsConnectionMessage": {
+                "properties": {
+                    "connected": {
+                        "description": "true: online, false: offline; the value of the event is online or offline",
+                        "type": [
+                            "null",
+                            "boolean"
+                        ]
+                    },
+                    "id": {
+                        "description": "id of the device",
+                        "type": "string"
+                    },
+                    "time": {
+                        "description": "when the state changed",
+                        "format": "date-time",
+                        "type": "string"
                     }
                 },
                 "type": "object"
@@ -1871,6 +2017,9 @@
                     "characteristic_id": {
                         "type": "string"
                     },
+                    "connection_device_id": {
+                        "type": "string"
+                    },
                     "deployment_id": {
                         "type": "string"
                     },
@@ -1890,6 +2039,9 @@
                         "type": "string"
                     },
                     "import_id": {
+                        "type": "string"
+                    },
+                    "local_device_id": {
                         "type": "string"
                     },
                     "message_name": {
@@ -2399,6 +2551,9 @@
             },
             "ModelSelection": {
                 "properties": {
+                    "connection_device_id": {
+                        "type": "string"
+                    },
                     "device_group_id": {
                         "type": "string"
                     },

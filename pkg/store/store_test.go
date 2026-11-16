@@ -245,13 +245,17 @@ func TestEventDescriptionsAreReadByRevision(t *testing.T) {
 			descriptions := []model.EventDescription{
 				{Id: "e1", DeploymentId: "d1", Version: 1, ElementId: "a", Namespace: "processes", Owner: "alice", MessageName: "d1_a", DeviceId: "x", ServiceId: "s", Topic: "t1", Script: "true", ValueVariable: "v", Variables: map[string]string{"k": "1"}, AspectIds: []string{"air"}, Service: []byte(`{"id":"s"}`)},
 				{Id: "e2", DeploymentId: "d1", Version: 1, ElementId: "a", Namespace: "processes", Owner: "alice", MessageName: "d1_a", DeviceGroupId: "g", Topic: "t2", Script: "true", ValueVariable: "v"},
+				{Id: "e3", DeploymentId: "d1", Version: 1, ElementId: "b", Namespace: "processes", Owner: "alice", MessageName: "d1_b", ConnectionDeviceId: "dev", LocalDeviceId: "local-dev", Topic: "device_log", Script: "true", ValueVariable: "v"},
 			}
 			if err := tx.ReplaceEventDescriptions("d1", 1, descriptions, []string{"g"}, t0); err != nil {
 				return err
 			}
 			all, removed, latest, err := tx.EventDescriptionsSince(0)
-			if err != nil || len(all) != 2 || len(removed) != 0 || all[0].Variables["k"] != "1" || all[0].AspectIds[0] != "air" || string(all[0].Service) != `{"id":"s"}` {
+			if err != nil || len(all) != 3 || len(removed) != 0 || all[0].Variables["k"] != "1" || all[0].AspectIds[0] != "air" || string(all[0].Service) != `{"id":"s"}` {
 				return fmt.Errorf("unexpected %+v %v %v", all, removed, err)
+			}
+			if all[2].ConnectionDeviceId != "dev" || all[2].LocalDeviceId != "local-dev" || all[0].ConnectionDeviceId != "" {
+				return fmt.Errorf("the connection device is stored with the description (SNRGY-5151): %+v", all)
 			}
 			first = latest
 			deployments, err := tx.DeploymentsOfDeviceGroup("g")
@@ -262,7 +266,7 @@ func TestEventDescriptionsAreReadByRevision(t *testing.T) {
 		})
 		tx(t, s, func(tx *store.Tx) error {
 			changed, removed, latest, err := tx.EventDescriptionsSince(first)
-			if err != nil || latest <= first || len(changed) != 1 || len(removed) != 2 {
+			if err != nil || latest <= first || len(changed) != 1 || len(removed) != 3 {
 				return fmt.Errorf("a replacement removes all and adds the new ones: %+v %v %v %v", changed, removed, latest, err)
 			}
 			if err = tx.DeleteDeployment("d1"); err != nil {

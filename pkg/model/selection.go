@@ -27,6 +27,9 @@ type Selection struct {
 	// events; both are set or neither (SNRGY-5113)
 	PipelineId string `json:"pipeline_id,omitempty"`
 	OperatorId string `json:"operator_id,omitempty"`
+	// the connection state of a device (platform id) as event source, or the device whose state a
+	// task device_connection reads; the only member besides none (SNRGY-5151)
+	ConnectionDeviceId string `json:"connection_device_id,omitempty"`
 	// the value of the function in the service and the values of its configurables
 	Path *SelectedPath `json:"path,omitempty"`
 	// read the last event value instead of sending a command, for services with event and request (TASK-08)
@@ -50,5 +53,5 @@ type Configurable struct {
 }
 
 func (this Selection) Empty() bool {
-	return this.DeviceId == "" && this.DeviceGroupId == "" && this.ImportId == "" && this.PipelineId == "" && this.OperatorId == ""
+	return this.DeviceId == "" && this.DeviceGroupId == "" && this.ImportId == "" && this.PipelineId == "" && this.OperatorId == "" && this.ConnectionDeviceId == ""
 }

@@ -46,7 +46,7 @@ func NewAccess(permissions permclient.Client, importDeployUrl string) *Access {
 }
 
 func (this *Access) Check(ctx context.Context, token string, selections map[string]model.Selection) error {
-	var devices, groups, imports []string
+	var devices, groups, imports, connected []string
 	for _, s := range selections {
 		if s.DeviceId != "" && !slices.Contains(devices, s.DeviceId) {
 			devices = append(devices, s.DeviceId)
@@ -56,6 +56,19 @@ func (this *Access) Check(ctx context.Context, token string, selections map[stri
 		}
 		if s.ImportId != "" && !slices.Contains(imports, s.ImportId) {
 			imports = append(imports, s.ImportId)
+		}
+		if s.ConnectionDeviceId != "" && !slices.Contains(connected, s.ConnectionDeviceId) {
+			connected = append(connected, s.ConnectionDeviceId)
+		}
+	}
+	// the connection state of a device is read, not commanded (SNRGY-5151)
+	if this.permissions != nil && len(connected) > 0 {
+		access, err, code := this.permissions.CheckMultiplePermissionsContext(ctx, token, "devices", connected, permmodel.Read)
+		if err != nil {
+			return model.Unavailable("permissions-v2 (%v): %v", code, err)
+		}
+		if denied := deniedIds(access, connected); len(denied) > 0 {
+			return model.Forbidden("missing read right on devices %v", denied)
 		}
 	}
 	if this.permissions != nil {

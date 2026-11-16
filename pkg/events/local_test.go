@@ -89,12 +89,17 @@ func (temperatureUnmarshaller) Unmarshal(desc events.MessageDesc) (any, error) {
 }
 
 func newFogServer(t *testing.T) (*server.Server, *mqtt.Memory) {
+	return newFogServerWith(t, func(*configuration.Config) {})
+}
+
+func newFogServerWith(t *testing.T, configure func(*configuration.Config)) (*server.Server, *mqtt.Memory) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
 	config := configuration.Default()
 	config.SqlitePath = storetest.MemoryDsn()
 	config.Mode, config.MqttBroker = "fog", "memory"
+	configure(&config)
 	broker := mqtt.NewMemory()
 	srv, err := server.New(ctx, config, slog.New(slog.NewTextHandler(io.Discard, nil)), server.Dependencies{
 		DeviceRepository: &localRepo{}, EventUnmarshaller: temperatureUnmarshaller{}, Broker: broker,

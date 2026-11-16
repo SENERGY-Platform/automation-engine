@@ -46,6 +46,16 @@ type ImportMessage struct {
 	ImportId string `json:"import_id" description:"id of the import instance; the further fields are the output of its import type"`
 }
 
+// DeviceManagerMessage is a message of a device connector at device-manager/device/{connector}
+// on a gateway. The engine reads only the state of the device; the connector sends more.
+type DeviceManagerMessage struct {
+	Method   string `json:"method" description:"set or delete; delete makes the engine forget the device"`
+	DeviceId string `json:"device_id" description:"local id of the device"`
+	Data     struct {
+		State string `json:"state" description:"online or offline; any other state counts as unknown"`
+	} `json:"data"`
+}
+
 const (
 	kafka       = "kafka"
 	gatewayMqtt = "gateway-mqtt"
@@ -146,6 +156,12 @@ func main() {
 		"operatorTopic", "outputTopic of the operator in analytics-pipeline, analytics-<operator name>"),
 		new(events.OperatorMessage), "OperatorMessage", "evaluate analytics events")
 
+	g.operation(receive, g.channel("deviceLog", config.DeviceLogTopic,
+		"DEVICE_LOG_TOPIC; the connection state of the devices, written by platform-connector with the device id as key, read in the "+
+			"consumer group EVENT_CONSUMER_GROUP for event descriptions that name the connection of a device (SNRGY-5151). "+
+			"Repeated messages of the same state each trigger an evaluation.", kafka),
+		new(events.ConnectionMessage), "ConnectionMessage", "evaluate device connection events")
+
 	// platform signals
 	g.operation(receive, g.channel("deviceGroups", config.DeviceGroupTopic,
 		"DEVICE_GROUP_TOPIC; a changed device group changes the event descriptions of deployments that select it (DEP-08), "+
@@ -187,6 +203,19 @@ func main() {
 		"Device data on a gateway; the payload is the data segment as the service describes it.", gatewayMqtt,
 		"localDeviceId", "local id of the device", "localServiceId", "local id of the service"),
 		new(string), "LocalEvent", "evaluate device events")
+
+	// the connection state of devices on a gateway (SNRGY-5151)
+	g.operation(receive, g.channel("deviceManager", "device-manager/device/{connector}",
+		"Device connectors report the devices they manage to the device-manager of a gateway; the engine reads the state of the "+
+			"devices from these messages (QoS 1) for event descriptions that name the connection of a device and passes on only a change. "+
+			"The state at start comes from DEVICE_MANAGER_URL (SNRGY-5151).", gatewayMqtt,
+		"connector", "module id or ref of the connector"),
+		new(DeviceManagerMessage), "DeviceManagerMessage", "evaluate device connection events")
+	g.operation(receive, g.channel("deviceManagerWill", "device-manager/device/{connector}/lw",
+		"Last will of a device connector: the payload \"offline\" marks every device the engine knows of this connector as offline "+
+			"(SNRGY-5151). A connector whose last will is on another topic stays online after it dies.", gatewayMqtt,
+		"connector", "module id or ref of the connector"),
+		new(string), "DeviceManagerWill", "evaluate device connection events")
 
 	// synchronisation between the cloud and the gateways (section 17), see pkg/fogsync/protocol.go
 	type kind struct {

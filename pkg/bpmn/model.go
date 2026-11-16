@@ -212,6 +212,12 @@ func (this *Element) IsDeviceCommand() bool {
 	return this.Type == ServiceTask && this.TaskType == "device_command"
 }
 
+// IsDeviceConnection reports a service task that reads the connection state of a device
+// (SNRGY-5151).
+func (this *Element) IsDeviceConnection() bool {
+	return this.Type == ServiceTask && this.TaskType == "device_connection"
+}
+
 // IsDeviceEvent reports a message event that waits for device or import data (EVT-03).
 func (this *Element) IsDeviceEvent() bool {
 	return this.Kind == EventMessage && this.Message != nil && this.Message.DeviceEvent

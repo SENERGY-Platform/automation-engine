@@ -176,3 +176,55 @@ func TestValidateAnalyticsSelections(t *testing.T) {
 		})
 	}
 }
+
+// The connection state of a device is an event source and the selection of the task that reads
+// it: the device alone, without service and path (SNRGY-5151).
+func TestValidateDeviceConnectionSelections(t *testing.T) {
+	xml := b.Process(
+		b.Start("start"), b.Service("conn", "device_connection"), command("on", "f-on", "a1"),
+		`<bpmn:intermediateCatchEvent id="ev" senergy:script="x == 'online'" senergy:value_variable_name="x"><bpmn:messageEventDefinition/></bpmn:intermediateCatchEvent>`,
+		b.Script("script", "x", "1"),
+		b.Flow("start", "conn"), b.Flow("conn", "on"), b.Flow("on", "ev"), b.Flow("ev", "script"),
+	)
+	p, issues, err := bpmn.ParseAndValidate(xml, bpmn.Rules{})
+	if err != nil || len(issues) > 0 {
+		t.Fatal(err, issues)
+	}
+	if !p.Element("conn").IsDeviceConnection() || p.Element("on").IsDeviceConnection() {
+		t.Fatal("only the service task of the type device_connection is a device connection task")
+	}
+	cases := map[string]struct {
+		element   string
+		selection model.Selection
+		valid     bool
+	}{
+		"event":               {"ev", model.Selection{ConnectionDeviceId: "d"}, true},
+		"task":                {"conn", model.Selection{ConnectionDeviceId: "d"}, true},
+		"task with a device":  {"conn", model.Selection{DeviceId: "d"}, false},
+		"task with a service": {"conn", model.Selection{ConnectionDeviceId: "d", ServiceId: "s"}, false},
+		"task with a group":   {"conn", model.Selection{DeviceGroupId: "g"}, false},
+		"event with a device": {"ev", model.Selection{ConnectionDeviceId: "d", DeviceId: "d"}, false},
+		"event with a path":   {"ev", model.Selection{ConnectionDeviceId: "d", Path: &model.SelectedPath{Path: "value"}}, false},
+		"on a command":        {"on", model.Selection{ConnectionDeviceId: "d"}, false},
+		"on a script":         {"script", model.Selection{ConnectionDeviceId: "d"}, false},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			selections := map[string]model.Selection{"ev": {ImportId: "i"}, "conn": {ConnectionDeviceId: "d"}, "on": {DeviceId: "d", ServiceId: "s"}}
+			selections[c.element] = c.selection
+			var got []model.Issue
+			for _, issue := range ValidateSelections(p, selections) {
+				if issue.ElementId == c.element {
+					got = append(got, issue)
+				}
+			}
+			if c.valid != (len(got) == 0) {
+				t.Errorf("valid %v, issues %v", c.valid, got)
+			}
+		})
+	}
+	missing := ValidateSelections(p, map[string]model.Selection{"ev": {ImportId: "i"}, "on": {DeviceId: "d", ServiceId: "s"}})
+	if len(missing) != 1 || missing[0].ElementId != "conn" {
+		t.Errorf("a device connection task needs its selection: %v", missing)
+	}
+}

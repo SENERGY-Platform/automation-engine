@@ -95,6 +95,7 @@ type EventSource struct {
 	ImportId           string            `json:"import_id,omitempty"`
 	PipelineId         string            `json:"pipeline_id,omitempty"`
 	OperatorId         string            `json:"operator_id,omitempty"`
+	ConnectionDeviceId string            `json:"connection_device_id,omitempty"`
 	Script             string            `json:"script"`
 	ValueVariable      string            `json:"value_variable"`
 	Variables          map[string]string `json:"variables,omitempty"`

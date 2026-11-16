@@ -20,6 +20,8 @@ For platform operation, add:
 - `RETENTION_DEFAULT_DAYS`, `RETENTION_MAX_DAYS`: retention of the history.
 - `KAFKA_URL`: device commands and their answers (`RESPONSE_TOPIC`, `ERROR_TOPIC`), changes to devices and device groups (`DEVICE_TOPIC`, `DEVICE_GROUP_TOPIC`), user deletions (`USER_TOPIC`) and optionally the rights signal of permissions-v2 (`PERMISSIONS_KAFKA_TOPIC`).
 - `DEVICE_REPOSITORY_URL`, `MARSHALLER_URL`, `TIMESCALE_WRAPPER_URL`, `DEVICE_SELECTION_URL`, `IMPORT_DEPLOY_URL`, `IMPORT_REPOSITORY_URL`: services for device commands, device selection and device events. Device commands additionally need `AUTH_ENDPOINT` for the token exchange.
+- `DEVICE_LOG_TOPIC` (default `device_log`): the Kafka topic of platform-connector with the connection state of devices, compacted, keyed by the device id. The cloud reads it for events that wait for the connection of a device, see `docs/device-connection-state.md`.
+- `DEVICE_MANAGER_URL`: in the cloud the device-manager of the smart-service modules. On a gateway (`MODE=fog`) the device-manager of the gateway instead, e.g. `http://device-manager:8080`, as `DEVICE_REPOSITORY_URL` is the platform in the cloud and the mirror on a gateway: it gives the connection state of devices at start and for the task `device_connection`. Without it on a gateway that task fails and the first message of a device counts as a change.
 - `MODE` (`cloud` or `fog`, default `cloud`): selects the policy for HTTP calls from processes.
 - `MAX_IO_VALUES_PER_USER`, `MAX_IO_VALUE_BYTES`: limits for process-io.
 - `MAX_LIVE_CONNECTIONS_PER_USER` (default 5): live debug connections per user and replica.
@@ -178,7 +180,7 @@ The engine runs on a copy of goja with patches of its own: `go.mod` replaces `gi
 
 With `MODE=fog`, the same binary runs on a gateway, as the only container of the process module and with SQLite:
 - Device commands go to `command/{local device id}/{local service id}` of the gateway broker (`MQTT_BROKER`, e.g. `tcp://broker:1881`); answers come through `response/#`, errors through `error/command/#`, recognised by the prefix `LOCAL_COMMAND_PREFIX` (default `automation-engine-`).
-- Device events come from `event/#`; the event role runs in the same process.
+- Device events come from `event/#`; the event role runs in the same process. The connection state of devices comes from `device-manager/device/+` and its last will `device-manager/device/+/lw`, the state at start and the task `device_connection` from `DEVICE_MANAGER_URL`, see `docs/device-connection-state.md`.
 - `DEVICE_REPOSITORY_URL` is the device-repository mirror of the gateway, without a token; marshalling happens in the process.
 - `LAST_VALUE_URL` is mgw-last-value, for services that only send events.
 - `NOTIFIER_URL` points to the cloud proxy (`http://{gateway}/notifications-v2`; the engine appends `/notifications`).

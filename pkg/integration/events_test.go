@@ -325,6 +325,63 @@ func TestImportEventContinuesAWaitingInstance(t *testing.T) {
 	})
 }
 
+// connectionEvent waits for the connection of a device to come online
+func connectionEvent(id string) string {
+	return `<bpmn:intermediateCatchEvent id="` + id + `" senergy:script="x == 'online'" senergy:value_variable_name="x" senergy:qos="1">` +
+		b.IO(b.OutScript("state", "event"), b.OutScript("who", "device_id")) + `<bpmn:messageEventDefinition/></bpmn:intermediateCatchEvent>`
+}
+
+// A process waits until a device connects. Messages of device_log of other devices and a
+// disconnect pass by; the connect of the device continues it (SNRGY-5151). The task
+// device_connection reads the state of the device at the moment it runs. Only with stand-ins:
+// the containers of the other scenarios have no device_log topic.
+func TestConnectionChangeContinuesAWaitingInstance(t *testing.T) {
+	e := newFakeEventEnv(t)
+	xml := b.Process(b.Start("start"), connectionEvent("present"), b.End("end"), b.Flow("start", "present"), b.Flow("present", "end"))
+	selection := func(deviceId string) map[string]model.Selection {
+		return map[string]model.Selection{"present": {ConnectionDeviceId: deviceId}}
+	}
+	if _, err := e.c.CreateDeployment(ctx, alice, processes, model.DeploymentInput{Name: "Presence", Xml: xml, Selections: selection(e.foreign)}); err == nil {
+		t.Fatal("a device alice may not read is not selected")
+	}
+	d := must[model.Deployment](t)(e.c.CreateDeployment(ctx, alice, processes, model.DeploymentInput{Name: "Presence", Xml: xml, Selections: selection(e.d1)}))
+	described := must[[]model.EventDescription](t)(e.c.ListEventDescriptions(ctx, alice, processes, d.Id))
+	if len(described) != 1 || described[0].ConnectionDeviceId != e.d1 || described[0].Topic != "device_log" {
+		t.Fatalf("the deployment describes the connection of the selected device: %+v", described)
+	}
+	inst := must[model.Instance](t)(e.c.StartInstance(ctx, alice, processes, model.StartInstanceInput{DeploymentId: d.Id}))
+	probe := map[string]any{"id": "probe", "connected": false}
+	e.bus.ready(t, "device_log", probe)
+	state := func(id string, connected bool) map[string]any {
+		return map[string]any{"id": id, "connected": connected, "time": time.Now().Format(time.RFC3339)}
+	}
+	for _, m := range []map[string]any{state(e.d2, true), state(e.d1, false)} {
+		if err := e.bus.send("device_log", fmt.Sprint(m["id"]), m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if current := must[model.Instance](t)(e.c.GetInstance(ctx, alice, processes, inst.Id)); current.State == model.StateCompleted {
+		t.Fatalf("another device and a disconnect do not continue the instance")
+	}
+	if err := e.bus.send("device_log", e.d1, state(e.d1, true)); err != nil {
+		t.Fatal(err)
+	}
+	e.instance(processes, inst.Id, model.StateCompleted)
+	vars := must[[]model.Variable](t)(e.c.GetVariables(ctx, alice, processes, inst.Id))
+	if variable(vars, "state") != "online" || variable(vars, "who") != e.d1 {
+		t.Fatalf("the event is online, from the device: %+v", vars)
+	}
+
+	read := b.Process(b.Start("start"), b.Service("read", "device_connection", b.OutScript("state", "result")), b.End("end"), b.Flow("start", "read"), b.Flow("read", "end"))
+	d = must[model.Deployment](t)(e.c.CreateDeployment(ctx, alice, processes, model.DeploymentInput{Name: "Read", Xml: read,
+		Selections: map[string]model.Selection{"read": {ConnectionDeviceId: e.d1}}}))
+	inst = must[model.Instance](t)(e.c.StartInstance(ctx, alice, processes, model.StartInstanceInput{DeploymentId: d.Id}))
+	e.instance(processes, inst.Id, model.StateCompleted)
+	if vars = must[[]model.Variable](t)(e.c.GetVariables(ctx, alice, processes, inst.Id)); variable(vars, "state") != "online" {
+		t.Fatalf("the task reads the state at device-repository: %+v", vars)
+	}
+}
+
 // --- fakes -----------------------------------------------------------------------------------
 
 func newFakeEventEnv(t *testing.T) *eventEnv {
@@ -363,6 +420,7 @@ func platformFake(t *testing.T, f fixture) string {
 	instance := models.Import{Id: f.importId, Name: "Weather", ImportTypeId: "weather", KafkaTopic: f.importTopic}
 	resources := map[string]any{
 		"/devices/" + f.d1:                  models.Device{Id: f.d1, LocalId: "l1", Name: "Thermometer 1", DeviceTypeId: "thermometer", OwnerId: "alice"},
+		"/extended-devices/" + f.d1:         models.ExtendedDevice{Device: models.Device{Id: f.d1, LocalId: "l1", Name: "Thermometer 1", DeviceTypeId: "thermometer", OwnerId: "alice"}, ConnectionState: models.ConnectionStateOnline},
 		"/devices/" + f.d2:                  models.Device{Id: f.d2, LocalId: "l2", Name: "Thermometer 2", DeviceTypeId: "thermometer", OwnerId: "alice"},
 		"/device-types/thermometer":         models.DeviceType{Id: "thermometer", Name: "Thermometer", Services: []models.Service{service}},
 		"/device-groups/" + f.group:         models.DeviceGroup{Id: f.group, Name: "Thermometers", DeviceIds: []string{f.d1, f.d2}},
