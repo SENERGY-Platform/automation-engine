@@ -57,6 +57,7 @@ func (this *Controller) resolve(ctx context.Context, tx *store.Tx, user jwt.Toke
 		return result, model.ValidationFailed([]model.Issue{{Message: err.Error()}})
 	}
 	issues := append(checked.Issues, prepare.ValidateSelections(checked.Process, input.Selections)...)
+	issues = append(issues, prepare.ValidatePayloads(checked.Process)...)
 	if len(issues) > 0 {
 		return result, model.ValidationFailed(issues)
 	}

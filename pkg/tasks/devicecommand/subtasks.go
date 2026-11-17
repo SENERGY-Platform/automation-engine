@@ -113,7 +113,12 @@ func (this *Type) filterServices(command Command, services []models.Service) []m
 			contents = service.Outputs
 		}
 		isEvent := isMeasuringFunctionId(command.Function.Id) && service.Interaction == models.EVENT
-		if commons.ContentsMatch(contents, command.Function.Id, aspects) && (this.timescale != nil || !isEvent) {
+		matches := commons.ContentsMatch(contents, command.Function.Id, aspects)
+		if len(command.AdditionalFunctions) > 0 {
+			// the command goes to one service that serves every function of it (SNRGY-5157)
+			matches = len(commons.MissingFunctions(service.Inputs, command.functionCriteria())) == 0
+		}
+		if matches && (this.timescale != nil || !isEvent) {
 			index[service.Id] = service
 		}
 	}

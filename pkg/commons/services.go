@@ -34,6 +34,25 @@ func ContentsMatch(contents []models.Content, functionId string, aspects []model
 	return false
 }
 
+// FunctionCriteria is one function a service has to serve, with every aspect it has to serve it
+// for.
+type FunctionCriteria struct {
+	FunctionId string
+	Aspects    []models.AspectNode
+}
+
+// MissingFunctions lists the indices of the criteria that no content serves, each checked with
+// ContentsMatch; empty if the contents serve all of them. A device command with additional
+// functions goes to one service that serves every one of them (SNRGY-5157).
+func MissingFunctions(contents []models.Content, criteria []FunctionCriteria) (missing []int) {
+	for i, c := range criteria {
+		if !ContentsMatch(contents, c.FunctionId, c.Aspects) {
+			missing = append(missing, i)
+		}
+	}
+	return missing
+}
+
 func variableMatches(variable models.ContentVariable, functionId string, aspects []models.AspectNode) bool {
 	if variable.FunctionId == functionId && marshallermodel.AspectMatchLevel(marshallermodel.ContentVariableAspectIds(variable), aspects) >= 0 {
 		return true

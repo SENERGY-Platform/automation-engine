@@ -174,6 +174,15 @@ func (this *Controller) planSelections(ctx context.Context, user jwt.Token, ns m
 	}
 	// a parameter can replace an input with a blocked script
 	issues = append(issues, bpmn.BlockedScripts(process, this.engine.Blocklist())...)
+	// a device command with additional functions needs a service that serves all of them; the
+	// check is not an access right, so it is made for an admin as well (SNRGY-5157)
+	if this.preparer != nil {
+		fit, err := this.preparer.CheckFunctionFit(ctx, user.Jwt(), process, input.Selections)
+		if err != nil {
+			return plan, err
+		}
+		issues = append(issues, fit...)
+	}
 	if len(issues) > 0 {
 		return plan, model.ValidationFailed(issues)
 	}

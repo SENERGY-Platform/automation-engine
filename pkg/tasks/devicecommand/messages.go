@@ -22,11 +22,14 @@ package devicecommand
 // their JSON names.
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
 	marshallermodel "github.com/SENERGY-Platform/marshaller/lib/marshaller/model"
 	"github.com/SENERGY-Platform/models/go/models"
+
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
 )
 
 type TaskInfo struct {
@@ -108,12 +111,24 @@ type TimescaleResponse struct {
 	Value any     `json:"value"`
 }
 
+// AdditionalFunction is a controlling function that a device command sends in the same message
+// as its primary function (SNRGY-5157). Its value is the input entry of the same name.
+type AdditionalFunction struct {
+	Name             string              `json:"name"`
+	Function         models.Function     `json:"function"`
+	CharacteristicId string              `json:"characteristic_id"`
+	Aspects          []models.AspectNode `json:"aspects,omitempty"`
+	Input            any                 `json:"input,omitempty"`
+}
+
 type Command struct {
 	Version int64 `json:"version"`
 
 	// modeling time
 	Function         models.Function `json:"function"`
 	CharacteristicId string          `json:"characteristic_id"`
+	// version >= 3, controlling functions only, sent in the same message as Function
+	AdditionalFunctions []AdditionalFunction `json:"additional_functions,omitempty"`
 
 	// optional modeling time, limits the device and service selection in the deployment
 	DeviceClass *models.DeviceClass `json:"device_class,omitempty"`
@@ -172,6 +187,31 @@ func (this Command) GetAspects() []models.AspectNode {
 // SetAspects folds the deprecated Aspect into Aspects.
 func (this *Command) SetAspects() {
 	this.Aspects = this.GetAspects()
+}
+
+// functionCriteria lists what a service has to serve for the command: the primary function with
+// the aspects of the command, then every additional function with its own aspects.
+func (this Command) functionCriteria() []commons.FunctionCriteria {
+	criteria := []commons.FunctionCriteria{{FunctionId: this.Function.Id, Aspects: this.GetAspects()}}
+	for _, f := range this.AdditionalFunctions {
+		criteria = append(criteria, commons.FunctionCriteria{FunctionId: f.Function.Id, Aspects: f.Aspects})
+	}
+	return criteria
+}
+
+// functionLabels names the functions at the indices of functionCriteria: the primary one by its
+// id, an additional one by its name and id.
+func (this Command) functionLabels(indices []int) string {
+	labels := []string{}
+	for _, i := range indices {
+		if i == 0 {
+			labels = append(labels, this.Function.Id)
+			continue
+		}
+		f := this.AdditionalFunctions[i-1]
+		labels = append(labels, fmt.Sprintf("%s (%s)", f.Name, f.Function.Id))
+	}
+	return strings.Join(labels, ", ")
 }
 
 // GetOutputAspectNodes returns the aspects of the expected response.

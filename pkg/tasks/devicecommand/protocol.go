@@ -34,6 +34,8 @@ import (
 	devicerepomodel "github.com/SENERGY-Platform/device-repository/v3/lib/model"
 	"github.com/SENERGY-Platform/models/go/models"
 
+	"github.com/SENERGY-Platform/automation-engine/pkg/commons"
+	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
 	marshallermodel "github.com/SENERGY-Platform/marshaller/lib/marshaller/model"
 	"github.com/SENERGY-Platform/marshaller/lib/marshaller/serialization"
 )
@@ -72,6 +74,13 @@ func (this *Type) message(ctx context.Context, command Command, info TaskInfo, t
 		}
 		service = &s
 	}
+	// one service has to serve every function of the command; without one the command can not be
+	// sent, so the incident comes without retry (SNRGY-5157)
+	if len(command.AdditionalFunctions) > 0 {
+		if missing := commons.MissingFunctions(service.Inputs, command.functionCriteria()); len(missing) > 0 {
+			return nil, nil, &engine.PermanentError{Message: fmt.Sprintf("service %v of device %v does not serve %v", service.Id, device.Id, command.functionLabels(missing))}
+		}
+	}
 	if protocol == nil {
 		protocolId := command.ProtocolId
 		if protocolId == "" {
@@ -103,6 +112,12 @@ func (this *Type) message(ctx context.Context, command Command, info TaskInfo, t
 		somethingToSet := command.Function.ConceptId != "" || command.Input != nil
 		if somethingToSet && (len(command.InputPaths) > 0 || isControllingFunction(command.Function)) {
 			data = append(data, MarshallingV2RequestData{Value: command.Input, CharacteristicId: inputCharacteristic, Paths: command.InputPaths, FunctionId: command.Function.Id, AspectNodes: command.GetAspects()})
+		}
+		for _, f := range command.AdditionalFunctions {
+			// as for the primary function: without concept and value there is nothing to set
+			if f.Function.ConceptId != "" || f.Input != nil {
+				data = append(data, MarshallingV2RequestData{Value: f.Input, CharacteristicId: f.CharacteristicId, FunctionId: f.Function.Id, AspectNodes: f.Aspects})
+			}
 		}
 		for _, c := range command.ConfigurablesV2 {
 			paths := []string{}

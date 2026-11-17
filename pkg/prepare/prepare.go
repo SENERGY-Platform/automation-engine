@@ -240,6 +240,9 @@ const (
 func (this *Preparer) prepare(ctx context.Context, token string, process *bpmn.Process, localDevices []string, hubDevices *[]string) ([]model.PreparedElement, error) {
 	result := []model.PreparedElement{}
 	laneCriteria := map[string][]devicemodel.FilterCriteria{}
+	// every criterion of a device task with additional functions, the primary one first
+	// (SNRGY-5157)
+	allCriteria := map[string][]model.Criteria{}
 	connection := map[string]bool{}
 	for _, e := range process.Ordered() {
 		if e.IsDeviceConnection() {
@@ -257,8 +260,15 @@ func (this *Preparer) prepare(ctx context.Context, token string, process *bpmn.P
 			kind = model.PreparedEvent
 		}
 		result = append(result, model.PreparedElement{ElementId: e.Id, Name: e.Name, Kind: kind, Lane: e.Lane, Criteria: criteria})
+		if kind == model.PreparedTask {
+			if extra := additionalCriteria(e); len(extra) > 0 {
+				allCriteria[e.Id] = append([]model.Criteria{criteria}, extra...)
+			}
+		}
 		if kind == model.PreparedTask && e.Lane != "" {
-			laneCriteria[e.Lane] = append(laneCriteria[e.Lane], filter(criteria, ""))
+			for _, c := range criteriaOfElement(criteria, allCriteria[e.Id]) {
+				laneCriteria[e.Lane] = append(laneCriteria[e.Lane], filter(c, ""))
+			}
 		}
 	}
 	if len(connection) > 0 {
@@ -283,7 +293,10 @@ func (this *Preparer) prepare(ctx context.Context, token string, process *bpmn.P
 		request := dsmodel.BulkRequestElementV2{Id: element.ElementId, IncludeDevices: true, IncludeIdModifiedDevices: this.config.ModifiedDevices, LocalDevices: localDevices}
 		if element.Kind == model.PreparedTask {
 			request.IncludeGroups = this.config.GroupsForTasks
-			request.Criteria = dsmodel.FilterCriteriaAndSet{filter(element.Criteria, "")}
+			request.Criteria = dsmodel.FilterCriteriaAndSet{}
+			for _, c := range criteriaOfElement(element.Criteria, allCriteria[element.ElementId]) {
+				request.Criteria = append(request.Criteria, filter(c, ""))
+			}
 			if element.Lane != "" {
 				request.Criteria = laneCriteria[element.Lane]
 			}
@@ -312,8 +325,13 @@ func (this *Preparer) prepare(ctx context.Context, token string, process *bpmn.P
 			if err != nil {
 				return nil, err
 			}
-			if element.Kind == model.PreparedTask && element.Lane != "" {
-				option.Services = ownServices(option.Services, element.Criteria, s.ServicePathOptions)
+			extra := len(allCriteria[element.ElementId]) > 0
+			if element.Kind == model.PreparedTask && (element.Lane != "" || extra) {
+				option.Services = ownServices(option.Services, criteriaOfElement(element.Criteria, allCriteria[element.ElementId]), s.ServicePathOptions)
+				if extra && option.Device != nil && len(option.Services) == 0 {
+					// no service of the device serves every function; it could not be deployed
+					continue
+				}
 			}
 			options = append(options, option)
 		}
@@ -323,16 +341,32 @@ func (this *Preparer) prepare(ctx context.Context, token string, process *bpmn.P
 	return result, nil
 }
 
+// criteriaOfElement is the criteria an element is asked with: the primary one, and with
+// additional functions all of them (all, primary first).
+func criteriaOfElement(primary model.Criteria, all []model.Criteria) []model.Criteria {
+	if len(all) > 0 {
+		return all
+	}
+	return []model.Criteria{primary}
+}
+
 // ownServices keeps the services that serve the criteria of the element itself. device-selection
 // answers a lane task with the services of all criteria of the lane, so a task that switches a
 // lamp off would also be offered the service that switches it on. An element outside a lane is
-// asked with its own criteria alone and keeps the answer as it is.
-func ownServices(services []model.NamedRef, criteria model.Criteria, paths map[string][]dsmodel.PathOption) []model.NamedRef {
+// asked with its own criteria alone and keeps the answer as it is, unless it has additional
+// functions: it is asked with all of them as one set, in which a device may serve each by a
+// different service, while the command goes to one service (SNRGY-5157). So a service is kept
+// only if for every criterion one of its path options matches.
+func ownServices(services []model.NamedRef, criteria []model.Criteria, paths map[string][]dsmodel.PathOption) []model.NamedRef {
 	var result []model.NamedRef
 	for _, service := range services {
-		if slices.ContainsFunc(paths[service.Id], func(p dsmodel.PathOption) bool { return pathMatches(p, criteria) }) {
-			result = append(result, service)
+		serves := func(c model.Criteria) bool {
+			return slices.ContainsFunc(paths[service.Id], func(p dsmodel.PathOption) bool { return pathMatches(p, c) })
 		}
+		if slices.ContainsFunc(criteria, func(c model.Criteria) bool { return !serves(c) }) {
+			continue
+		}
+		result = append(result, service)
 	}
 	return result
 }

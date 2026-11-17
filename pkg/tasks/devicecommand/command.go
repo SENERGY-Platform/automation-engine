@@ -55,6 +55,19 @@ func (this *Type) command(ctx context.Context, task engine.Task, token string) (
 			return command, err
 		}
 	}
+	if len(command.AdditionalFunctions) > 0 {
+		if command.Version < 3 {
+			command.Version = 3
+		}
+		if functionId, ok := nonControlling(command); !ok {
+			return command, &engine.PermanentError{Message: fmt.Sprintf("a device command with additional functions takes only controlling functions, %v is not one", functionId)}
+		}
+		// configurables before version 3 go only through the marshalling of version 2, which
+		// the additional functions leave behind
+		if len(command.Configurables) > 0 {
+			return command, &engine.PermanentError{Message: "a device command with additional functions takes no configurables before version 3"}
+		}
+	}
 	if overwrite, ok := task.Input["overwrite"]; ok {
 		var o Overwrite
 		if err = decodeJson(overwrite, &o); err != nil {
@@ -70,7 +83,29 @@ func (this *Type) command(ctx context.Context, task engine.Task, token string) (
 			return command, err
 		}
 	}
+	for i := range command.AdditionalFunctions {
+		f := &command.AdditionalFunctions[i]
+		if len(f.Aspects) > 0 {
+			f.Aspects, err, _ = commons.CompleteAspectNodes(ctx, devicerepository.WithCache(this.iot, this.config.DeviceCacheTimeout), f.Aspects)
+			if err != nil {
+				return command, err
+			}
+		}
+	}
 	return command, nil
+}
+
+// nonControlling returns the id of the first function of the command that is not controlling
+func nonControlling(command Command) (string, bool) {
+	if !isControllingFunction(command.Function) {
+		return command.Function.Id, false
+	}
+	for _, f := range command.AdditionalFunctions {
+		if !isControllingFunction(f.Function) {
+			return f.Function.Id, false
+		}
+	}
+	return "", true
 }
 
 // decodeJson reads a value that is either a JSON string or already decoded JSON
@@ -132,12 +167,14 @@ func (this *Type) applySelection(ctx context.Context, command *Command, selectio
 	return nil
 }
 
-// setInputs applies the inputs "inputs" and "inputs.<path>" to the command input; string values
-// are read as JSON where possible. A parameter that does not fit is ignored, as before.
+// setInputs applies the inputs "inputs" and "inputs.<path>" to the command input, and
+// "inputs:<name>" and "inputs:<name>.<path>" to the input of the additional function of that name;
+// string values are read as JSON where possible. A parameter that does not fit is ignored, as before.
 func setInputs(command *Command, input map[string]any, logger interface{ Warn(string, ...any) }) {
 	for key, value := range input {
 		path := strings.SplitN(key, ".", 2)
-		if path[0] != "inputs" {
+		name, isAdditional := strings.CutPrefix(path[0], "inputs:")
+		if path[0] != "inputs" && !isAdditional {
 			continue
 		}
 		if s, ok := value.(string); ok {
@@ -146,16 +183,32 @@ func setInputs(command *Command, input map[string]any, logger interface{ Warn(st
 				value = parsed
 			}
 		}
-		var err error
+		var sub []string
 		if len(path) == 2 && path[1] != "" {
-			_, err = setVarOnPath(command.Input, strings.Split(path[1], "."), value)
+			sub = strings.Split(path[1], ".")
+		}
+		var err error
+		if !isAdditional {
+			command.Input, err = setVarOnPath(command.Input, sub, value)
+		} else if f := additionalFunction(command, name); f != nil {
+			f.Input, err = setVarOnPath(f.Input, sub, value)
 		} else {
-			command.Input, err = setVarOnPath(command.Input, nil, value)
+			err = fmt.Errorf("no additional function %q", name)
 		}
 		if err != nil {
 			logger.Warn("ignore device command input", "input", key, "error", err)
 		}
 	}
+}
+
+// additionalFunction returns the additional function of the name, nil if there is none
+func additionalFunction(command *Command, name string) *AdditionalFunction {
+	for i := range command.AdditionalFunctions {
+		if command.AdditionalFunctions[i].Name == name {
+			return &command.AdditionalFunctions[i]
+		}
+	}
+	return nil
 }
 
 // setVarOnPath converts value to the type of the existing element at path and sets it
