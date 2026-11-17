@@ -30,6 +30,7 @@ import (
 	runtimedebug "runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/api"
@@ -92,6 +93,8 @@ type Server struct {
 	config   configuration.Config
 	logger   *slog.Logger
 	brake    *crashbrake.Brake
+	// the Kafka consumers started by Start, waited for by Run
+	consumers sync.WaitGroup
 }
 
 // Dependencies replace connections to other services, e.g. in tests.
@@ -514,6 +517,7 @@ func (this *Server) kafkaConfig(group string, start int64) kafka.Config {
 		OnError: func(err error) {
 			this.logger.Error("kafka consumer failed", "error", err)
 		},
+		Wg: &this.consumers,
 	}
 }
 
@@ -830,9 +834,30 @@ func (this *Server) Run(ctx context.Context) error {
 	this.logger.Info("listening", "port", this.config.ServerPort, "internal_port", this.config.InternalPort)
 	err := srv.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
+		waitForConsumers(&this.consumers, this.logger)
 		return nil
 	}
 	return fmt.Errorf("http server: %w", err)
+}
+
+// consumerLeaveTimeout bounds the wait at shutdown below the grace period of the pod; a consumer
+// still retrying a message (service-commons retries without looking at the context) is left behind.
+const consumerLeaveTimeout = 15 * time.Second
+
+// waitForConsumers waits until the Kafka consumers have closed their readers, which leaves their
+// consumer groups. A process that exits before that keeps its members registered until the session
+// timeout, and the group consumes nothing until the coordinator drops them.
+func waitForConsumers(wg *sync.WaitGroup, logger *slog.Logger) {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(consumerLeaveTimeout):
+		logger.Warn("kafka consumers did not stop in time, exiting without leaving their groups", "timeout", consumerLeaveTimeout.String())
+	}
 }
 
 func (this *Server) Close() error {

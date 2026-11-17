@@ -53,6 +53,26 @@ func newContainerEventEnv(t *testing.T, platform *realPlatform) *eventEnv {
 
 func realFixture(t *testing.T, platform *realPlatform) fixture {
 	t.Helper()
+	f, suffix := realDeviceFixture(t, platform)
+
+	// the weather import of this scenario
+	var importType models.ImportType
+	waitUntil(t, "the import type in import-repository", func() error {
+		return call(alice, http.MethodPost, platform.importRepository+"/import-types", models.ImportType{Name: "Weather " + suffix,
+			Image: "ghcr.io/senergy-platform/import-weather:latest", Configs: []models.ImportTypeConfig{}, Output: weather()}, &importType)
+	})
+	var instance models.Import
+	waitUntil(t, "the import in import-deploy", func() error {
+		return call(alice, http.MethodPost, platform.importDeploy+"/instances", map[string]any{"name": "Weather " + suffix,
+			"import_type_id": importType.Id, "configs": []any{}, "restart": false}, &instance)
+	})
+	f.importId, f.importTopic = instance.Id, instance.KafkaTopic
+	return f
+}
+
+// realDeviceFixture creates the thermometers of a scenario and their topic, without the import
+func realDeviceFixture(t *testing.T, platform *realPlatform) (fixture, string) {
+	t.Helper()
 	admin := auth.UnsignedToken("test-admin", "admin")
 	repo := devicerepository.NewClient(platform.deviceRepository, devicerepository.Options{})
 	check := func(what string, err error, code int) {
@@ -120,19 +140,7 @@ func realFixture(t *testing.T, platform *realPlatform) fixture {
 		t.Fatal(err)
 	}
 
-	// the weather import of this scenario
-	var importType models.ImportType
-	waitUntil(t, "the import type in import-repository", func() error {
-		return call(alice, http.MethodPost, platform.importRepository+"/import-types", models.ImportType{Name: "Weather " + suffix,
-			Image: "ghcr.io/senergy-platform/import-weather:latest", Configs: []models.ImportTypeConfig{}, Output: weather()}, &importType)
-	})
-	var instance models.Import
-	waitUntil(t, "the import in import-deploy", func() error {
-		return call(alice, http.MethodPost, platform.importDeploy+"/instances", map[string]any{"name": "Weather " + suffix,
-			"import_type_id": importType.Id, "configs": []any{}, "restart": false}, &instance)
-	})
-	f.importId, f.importTopic = instance.Id, instance.KafkaTopic
-	return f
+	return f, suffix
 }
 
 // withIds gives the content variables ids of their own, as device-repository expects them

@@ -137,6 +137,7 @@ func (this *EventServer) kafkaConsumer(ctx context.Context, topics []string, han
 	config := kafka.Config{
 		KafkaUrl: this.config.KafkaUrl, ConsumerGroup: this.config.EventConsumerGroup, StartOffset: kafka.LastOffset, PartitionWatchInterval: time.Minute,
 		OnError: func(err error) { this.logger.Error("event consumer failed", "error", err) },
+		Wg:      &this.wg,
 	}
 	return kafka.NewMultiConsumer(ctx, config, topics, func(m kafka.Message) error {
 		return handle(events.Message{Topic: m.Topic, Partition: m.Partition, Offset: m.Offset, Value: m.Value, Time: m.Time})
@@ -159,7 +160,12 @@ func (this *EventServer) Run(ctx context.Context) error {
 			return err
 		}
 	}
-	go this.Worker.Run(ctx)
+	// counted, so that a consumer the worker starts is added while the count is above zero
+	this.wg.Add(1)
+	go func() {
+		defer this.wg.Done()
+		this.Worker.Run(ctx)
+	}()
 	go this.Engine.WatchBlocklist(ctx, blocklistInterval)
 	go servePprof(ctx, this.config.PprofPort, this.config.PprofMutexFraction, this.config.PprofBlockRate, this.logger)
 	mux := http.NewServeMux()
@@ -180,7 +186,7 @@ func (this *EventServer) Run(ctx context.Context) error {
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
-	this.wg.Wait()
+	waitForConsumers(&this.wg, this.logger)
 	return nil
 }
 
