@@ -92,6 +92,36 @@ func duplicateWindow(input map[string]any) (int64, error) {
 	return int64(seconds), nil
 }
 
+// TagInput names the optional input with a key that identifies the notification of the owner: the
+// notifier replaces the notification it has with that tag instead of adding another one, so that a
+// process keeps one notification up to date, e.g. the remaining time of a dryer.
+const TagInput = "tag"
+
+// SilentInput names the optional input that delivers the notification without sound or vibration.
+const SilentInput = "silent"
+
+// silent reads the input as boolean, from a script as bool or from the model as text; empty is false
+func silent(input map[string]any) (bool, error) {
+	switch v := input[SilentInput].(type) {
+	case nil:
+		return false, nil
+	case bool:
+		return v, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "":
+			return false, nil
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+		return false, fmt.Errorf("%v needs true or false: %q", SilentInput, v)
+	default:
+		return false, fmt.Errorf("%v needs true or false: %v", SilentInput, v)
+	}
+}
+
 // Execute queues title and message. The id follows from the job, so that executing the job again,
 // after a completion that did not reach the database, queues nothing a second time.
 func (this *Task) Execute(ctx context.Context, task engine.Task) (engine.TaskResult, error) {
@@ -104,6 +134,10 @@ func (this *Task) Execute(ctx context.Context, task engine.Task) (engine.TaskRes
 		return engine.TaskResult{}, &engine.PermanentError{Message: err.Error()}
 	}
 	n.DuplicateWindow = window
+	if n.Silent, err = silent(task.Input); err != nil {
+		return engine.TaskResult{}, &engine.PermanentError{Message: err.Error()}
+	}
+	n.Tag = text(task.Input, TagInput)
 	if err := this.store.Tx(ctx, func(tx *store.Tx) error { return tx.InsertNotification(n) }); err != nil {
 		return engine.TaskResult{}, err
 	}

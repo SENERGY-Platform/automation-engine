@@ -196,3 +196,30 @@ func TestAHangingDeveloperCopyEndsWithTheTimeout(t *testing.T) {
 		t.Errorf("the notifier gets the notification once: %v", notified.Load())
 	}
 }
+
+// the notifier replaces by tag and plays no sound when silent; without both the body is as before
+func TestNotifySendsTagAndSilentOnlyWhenSet(t *testing.T) {
+	var raw string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		raw = string(b)
+	}))
+	defer server.Close()
+	n := New(server.URL, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := n.Notify(context.Background(), store.Notification{UserId: "u", Title: "Trockner läuft", Message: "2h", Topic: Topic, Tag: "dryer", Silent: true}); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["tag"] != "dryer" || got["silent"] != true || got["userId"] != "u" {
+		t.Errorf("tag and silent are sent: %v", raw)
+	}
+	if err := n.Notify(context.Background(), store.Notification{UserId: "u", Title: "t", Topic: Topic}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(raw, "tag") || strings.Contains(raw, "silent") {
+		t.Errorf("a notification without both is sent as before: %v", raw)
+	}
+}

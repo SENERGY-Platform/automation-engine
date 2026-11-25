@@ -56,6 +56,10 @@ type message struct {
 	Title   string `json:"title"`
 	Message string `json:"message"`
 	Topic   string `json:"topic"`
+	// the notifier replaces the notification of the user with the same tag; Silent delivers
+	// without sound
+	Tag    string `json:"tag,omitempty"`
+	Silent bool   `json:"silent,omitempty"`
 }
 
 // Notify returns an error if the notifier did not accept the message, so that it is retried.
@@ -74,7 +78,7 @@ func (this *Notifier) Notify(ctx context.Context, n store.Notification) error {
 // Send delivers to the notifier only.
 func (this *Notifier) Send(ctx context.Context, n store.Notification) error {
 	if this.notifierUrl != "" {
-		body, err := json.Marshal(message{UserId: n.UserId, Title: n.Title, Message: n.Message, Topic: n.Topic})
+		body, err := json.Marshal(message{UserId: n.UserId, Title: n.Title, Message: n.Message, Topic: n.Topic, Tag: n.Tag, Silent: n.Silent})
 		if err != nil {
 			return err
 		}

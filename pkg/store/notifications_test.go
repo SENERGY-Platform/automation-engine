@@ -91,3 +91,91 @@ func TestANotificationQueuedWithoutTheWindowColumnKeepsAnHour(t *testing.T) {
 		})
 	})
 }
+
+// A tagged notification replaces the queued ones of the same user and tag that are not being sent;
+// a claimed one is left alone, and so are other users, other tags and untagged ones.
+func TestATaggedNotificationReplacesTheQueuedOnesOfItsTag(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		tx(t, s, func(tx *store.Tx) error {
+			queue := func(id, user, tag string, silent bool, at time.Time) error {
+				return tx.InsertNotification(store.Notification{Id: id, UserId: user, Title: id, Tag: tag, Silent: silent, CreatedAt: at})
+			}
+			for i, n := range []struct{ id, user, tag string }{
+				{"old", "alice", "dryer"}, {"other-tag", "alice", "washer"}, {"other-user", "bob", "dryer"}, {"untagged", "alice", ""},
+			} {
+				if err := queue(n.id, n.user, n.tag, true, t0.Add(time.Duration(i)*time.Millisecond)); err != nil {
+					return err
+				}
+			}
+			// the claim of old: a notification being sent is not deleted
+			claimUntil := t0.Add(5 * time.Minute)
+			if claimed, err := tx.ClaimNotifications(t0.Add(time.Second), claimUntil, 1); err != nil || len(claimed) != 1 || claimed[0].Id != "old" {
+				return fmt.Errorf("old is claimed first: %+v %v", claimed, err)
+			}
+			if err := queue("newer", "alice", "dryer", false, t0.Add(time.Minute)); err != nil {
+				return err
+			}
+			if err := queue("newest", "alice", "dryer", false, t0.Add(2*time.Minute)); err != nil {
+				return err
+			}
+			due, err := tx.DueNotifications(t0.Add(2*time.Minute), 10)
+			if err != nil {
+				return err
+			}
+			got := map[string]store.Notification{}
+			for _, n := range due {
+				got[n.Id] = n
+			}
+			if len(got) != 4 || got["newest"].Id == "" || got["newer"].Id != "" || got["old"].Id != "" {
+				return fmt.Errorf("newest replaces newer; old is claimed, so not due and not deleted: %+v", due)
+			}
+			if err := tx.PostponeNotification("old", t0.Add(time.Hour), claimUntil); err != nil {
+				return err
+			}
+			if err := queue("last", "alice", "dryer", false, t0.Add(3*time.Minute)); err != nil {
+				return err
+			}
+			all, err := tx.DueNotifications(t0.Add(2*time.Hour), 10)
+			if err != nil {
+				return err
+			}
+			ids := map[string]bool{}
+			for _, n := range all {
+				ids[n.Id] = true
+			}
+			for _, id := range []string{"old", "other-tag", "other-user", "untagged", "last"} {
+				if !ids[id] {
+					return fmt.Errorf("%v stays: %+v", id, all)
+				}
+			}
+			if len(ids) != 5 {
+				return fmt.Errorf("newest was replaced by last: %+v", all)
+			}
+			return nil
+		})
+	})
+}
+
+// Tag and silent survive the queue.
+func TestANotificationKeepsItsTagAndSilent(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		tx(t, s, func(tx *store.Tx) error {
+			if err := tx.InsertNotification(store.Notification{Id: "a", UserId: "alice", Title: "a", Tag: "dryer", Silent: true, CreatedAt: t0}); err != nil {
+				return err
+			}
+			if err := tx.InsertNotification(store.Notification{Id: "b", UserId: "alice", Title: "b", CreatedAt: t0}); err != nil {
+				return err
+			}
+			claimed, err := tx.ClaimNotifications(t0, t0.Add(time.Minute), 10)
+			if err != nil || len(claimed) != 2 {
+				return fmt.Errorf("both: %+v %v", claimed, err)
+			}
+			for _, n := range claimed {
+				if (n.Id == "a") != (n.Tag == "dryer" && n.Silent) || (n.Id == "b" && (n.Tag != "" || n.Silent)) {
+					return fmt.Errorf("tag and silent as queued: %+v", n)
+				}
+			}
+			return nil
+		})
+	})
+}

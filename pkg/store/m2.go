@@ -232,7 +232,12 @@ type Notification struct {
 	// seconds within which the notifier drops it if the user already has one with the same title,
 	// message and topic; 0 for none (SNRGY-3911)
 	DuplicateWindow int64
-	Attempts        int
+	// key of the notification for its owner, empty for none: the notifier replaces the owner's
+	// notification with the same tag, and the queue keeps only the newest of a tag
+	Tag string
+	// delivered without sound
+	Silent   bool
+	Attempts int
 	// when it is due; ClaimNotification takes it only at this value
 	DueAt     time.Time
 	CreatedAt time.Time
@@ -243,13 +248,31 @@ type Notification struct {
 const DefaultDuplicateWindow = 3600
 
 // InsertNotification queues a notification; a queued one with the same id stays as it is.
+//
+// With a tag, the notifications of the same user and tag that are queued and not sent right now
+// are deleted first. On a gateway the notifier can be out of reach for a while, and only the
+// newest state of a tag matters: sending the old ones later would be wasted, and would show them
+// after the newer one if they ended up in a different batch. A notification is being sent when a
+// replica claimed it, which sets due_at to the end of the claim in the future (ClaimNotifications);
+// only the ones due now are deleted. One waiting for a retry has a due_at in the future as well
+// and is not told from a claimed one, so it stays and is sent in the order it was created.
 func (this *Tx) InsertNotification(n Notification) error {
-	_, err := this.exec("INSERT INTO notifications (id, user_id, title, message, topic, namespace, duplicate_window, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
-		n.Id, n.UserId, n.Title, n.Message, n.Topic, n.Namespace, n.DuplicateWindow, millis(n.CreatedAt), millis(n.CreatedAt))
+	if n.Tag != "" {
+		if _, err := this.exec("DELETE FROM notifications WHERE user_id = ? AND tag = ? AND due_at <= ? AND id <> ?",
+			n.UserId, n.Tag, millis(n.CreatedAt), n.Id); err != nil {
+			return err
+		}
+	}
+	silent := 0
+	if n.Silent {
+		silent = 1
+	}
+	_, err := this.exec("INSERT INTO notifications (id, user_id, title, message, topic, namespace, duplicate_window, tag, silent, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
+		n.Id, n.UserId, n.Title, n.Message, n.Topic, n.Namespace, n.DuplicateWindow, n.Tag, silent, millis(n.CreatedAt), millis(n.CreatedAt))
 	return err
 }
 
-const notificationColumns = "id, user_id, title, message, topic, namespace, duplicate_window, attempts, due_at, created_at"
+const notificationColumns = "id, user_id, title, message, topic, namespace, duplicate_window, tag, silent, attempts, due_at, created_at"
 
 // DueNotifications lists the due notifications without claiming them.
 func (this *Tx) DueNotifications(now time.Time, limit int) (result []Notification, err error) {
@@ -279,9 +302,11 @@ func (this *Tx) scanNotifications(rows *sql.Rows, err error) (result []Notificat
 	for rows.Next() {
 		var n Notification
 		var due, created int64
-		if err = rows.Scan(&n.Id, &n.UserId, &n.Title, &n.Message, &n.Topic, &n.Namespace, &n.DuplicateWindow, &n.Attempts, &due, &created); err != nil {
+		var silent int
+		if err = rows.Scan(&n.Id, &n.UserId, &n.Title, &n.Message, &n.Topic, &n.Namespace, &n.DuplicateWindow, &n.Tag, &silent, &n.Attempts, &due, &created); err != nil {
 			return nil, err
 		}
+		n.Silent = silent == 1
 		n.DueAt, n.CreatedAt = fromMillis(due), fromMillis(created)
 		result = append(result, n)
 	}

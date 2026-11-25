@@ -257,3 +257,60 @@ func TestANotificationTaskTakesTheDuplicateWindow(t *testing.T) {
 		}
 	})
 }
+
+// BPMN-09: tag and silent are queued with the notification; silent is a boolean from a script or
+// true and false as text from the model, anything else is a permanent error
+func TestANotificationTaskTakesTagAndSilent(t *testing.T) {
+	storetest.Run(t, func(t *testing.T, s *store.Store) {
+		ctx := context.Background()
+		task := notification.NewTask(s)
+		for i, silent := range []any{true, "true", " TRUE ", false, "false", "", nil} {
+			job := engine.Task{JobId: fmt.Sprint("job-", i), Owner: "alice", Input: map[string]any{"title": "dryer", notification.TagInput: fmt.Sprint("tag-", i), notification.SilentInput: silent}}
+			if _, err := task.Execute(ctx, job); err != nil {
+				t.Fatalf("%#v: %v", silent, err)
+			}
+		}
+		var due []store.Notification
+		if err := s.Tx(ctx, func(tx *store.Tx) (err error) {
+			due, err = tx.DueNotifications(time.Now().Add(time.Hour), 10)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		silent := map[string]bool{}
+		for _, n := range due {
+			if n.Tag != "tag-"+strings.TrimPrefix(n.Id, "task-job-") {
+				t.Errorf("tag as given: %+v", n)
+			}
+			silent[n.Id] = n.Silent
+		}
+		want := map[string]bool{"task-job-0": true, "task-job-1": true, "task-job-2": true, "task-job-3": false, "task-job-4": false, "task-job-5": false, "task-job-6": false}
+		if !maps.Equal(silent, want) {
+			t.Errorf("silent as given, false without: %v", silent)
+		}
+
+		for _, bad := range []any{"yes", "1", 1.0, 1, []any{true}} {
+			_, err := task.Execute(ctx, engine.Task{JobId: "bad", Owner: "alice", Input: map[string]any{"title": "dryer", notification.SilentInput: bad}})
+			var permanent *engine.PermanentError
+			if !errors.As(err, &permanent) || !strings.Contains(err.Error(), notification.SilentInput) {
+				t.Errorf("%#v is a permanent error naming the input: %v", bad, err)
+			}
+		}
+
+		// without both, the notification is as before
+		if _, err := task.Execute(ctx, engine.Task{JobId: "plain", Owner: "alice", Input: map[string]any{"title": "plain"}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Tx(ctx, func(tx *store.Tx) (err error) {
+			due, err = tx.DueNotifications(time.Now().Add(time.Hour), 20)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range due {
+			if n.Id == "task-plain" && (n.Tag != "" || n.Silent) {
+				t.Errorf("no tag, not silent: %+v", n)
+			}
+		}
+	})
+}
