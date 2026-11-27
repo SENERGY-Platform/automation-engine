@@ -226,11 +226,12 @@ func (this *Controller) describe(ctx context.Context, token string, start *bpmn.
 	return this.parameters.Describe(ctx, token, start)
 }
 
-// withAutoSelected adds the values of auto_select_all fields of a start event: every option
-// the token may select; given values stay
-func (this *Controller) withAutoSelected(ctx context.Context, token string, deploymentId string, version int, elementId string, variables map[string]any) (map[string]any, error) {
+// withAutoSelected fills the auto_select_all fields of a start event with every option the
+// token may select. The selection is made anew and replaces a stored value, such as the start
+// variables a maintenance procedure takes over from its parent; given values stay (SNRGY-5179).
+func (this *Controller) withAutoSelected(ctx context.Context, token string, deploymentId string, version int, elementId string, stored map[string]any, given map[string]any) (map[string]any, error) {
 	if this.parameters == nil {
-		return variables, nil
+		return overlay(stored, given), nil
 	}
 	var start *bpmn.Element
 	err := this.store.Tx(ctx, func(tx *store.Tx) error {
@@ -256,10 +257,17 @@ func (this *Controller) withAutoSelected(ctx context.Context, token string, depl
 		return nil, err
 	}
 	auto, err := this.parameters.AutoSelected(ctx, token, start)
-	if err != nil || len(auto) == 0 {
-		return variables, err
+	if err != nil {
+		return nil, err
 	}
-	result := maps.Clone(auto)
-	maps.Copy(result, variables)
-	return result, nil
+	return overlay(stored, auto, given), nil
+}
+
+// overlay merges the maps into a new one, a later map wins
+func overlay(layers ...map[string]any) map[string]any {
+	result := map[string]any{}
+	for _, layer := range layers {
+		maps.Copy(result, layer)
+	}
+	return result
 }

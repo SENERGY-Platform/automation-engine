@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"maps"
 
 	"github.com/SENERGY-Platform/automation-engine/pkg/bpmn"
 	"github.com/SENERGY-Platform/automation-engine/pkg/engine"
@@ -103,6 +102,7 @@ const (
 // start and while it starts, so that replicas start one run of a procedure at a time.
 func (this *Controller) startMaintenance(ctx context.Context, token string, id string, procedure string, variables map[string]any, mode startMode, hash string) (model.Instance, error) {
 	var request engine.StartRequest
+	var stored map[string]any
 	var run int
 	held := false
 	err := this.store.Tx(ctx, func(tx *store.Tx) error {
@@ -119,12 +119,9 @@ func (this *Controller) startMaintenance(ctx context.Context, token string, id s
 		if held, err = this.holdBack(tx, mode, id, procedure, variables, hash); err != nil || held {
 			return err
 		}
-		start := maps.Clone(inst.StartVariables)
-		if start == nil {
-			start = map[string]any{}
-		}
-		maps.Copy(start, variables)
-		request = engine.StartRequest{DeploymentId: inst.DeploymentId, DeploymentVersion: inst.DeploymentVersion, Owner: inst.Owner, Variables: start, StartElementId: elementId, ParentId: inst.Id, Procedure: procedure}
+		// kept apart from the given variables, so that a new selection replaces stored values
+		stored = inst.StartVariables
+		request = engine.StartRequest{DeploymentId: inst.DeploymentId, DeploymentVersion: inst.DeploymentVersion, Owner: inst.Owner, Variables: overlay(stored, variables), StartElementId: elementId, ParentId: inst.Id, Procedure: procedure}
 		return nil
 	})
 	if err != nil || held {
@@ -136,7 +133,7 @@ func (this *Controller) startMaintenance(ctx context.Context, token string, id s
 		}
 	}
 	if token != "" {
-		if request.Variables, err = this.withAutoSelected(ctx, token, request.DeploymentId, request.DeploymentVersion, request.StartElementId, request.Variables); err != nil {
+		if request.Variables, err = this.withAutoSelected(ctx, token, request.DeploymentId, request.DeploymentVersion, request.StartElementId, stored, variables); err != nil {
 			return model.Instance{}, err
 		}
 	}
@@ -251,7 +248,7 @@ func (this *Controller) UpdateParameters(ctx context.Context, token string, name
 	if err != nil {
 		return model.Instance{}, err
 	}
-	if variables, err = this.withAutoSelected(ctx, token, deploymentId, input.DeploymentVersion, "", variables); err != nil {
+	if variables, err = this.withAutoSelected(ctx, token, deploymentId, input.DeploymentVersion, "", nil, variables); err != nil {
 		return model.Instance{}, err
 	}
 	return this.engine.RestartWith(ctx, id, input.DeploymentVersion, variables, input.ValueLabels, model.CauseParameters)

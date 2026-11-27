@@ -644,6 +644,58 @@ func TestStartParametersOfSmartServicesWithOptionsAndAutoSelection(t *testing.T)
 	}
 }
 
+// SNRGY-5179: a maintenance procedure selects the options of its auto_select_all fields anew;
+// the selection the parent stored at its start would still hold a deleted device.
+func TestMaintenanceProceduresSelectAutoSelectedFieldsAnew(t *testing.T) {
+	deleted := atomic.Bool{}
+	selection := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if deleted.Load() {
+			_, _ = w.Write([]byte(`[{"device_group":{"id":"g2","name":"heaters"}}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[{"device_group":{"id":"g1","name":"lamps"}},{"device_group":{"id":"g2","name":"heaters"}}]`))
+	}))
+	t.Cleanup(selection.Close)
+	srv := newServer(t, func(c *configuration.Config) { c.DeviceSelectionUrl = selection.URL })
+	c := srv.Controller
+	field := `<camunda:formField id="everything" type="string"><camunda:properties><camunda:property id="iot" value="group"/><camunda:property id="multiple" value="true"/><camunda:property id="auto_select_all" value="true"/></camunda:properties></camunda:formField>`
+	d, err := c.CreateDeployment(ctx, alice, "smart-services", model.DeploymentInput{Xml: b.Process(
+		b.Message("m", "refresh"),
+		`<bpmn:startEvent id="start"><bpmn:extensionElements><camunda:formData>`+field+`</camunda:formData></bpmn:extensionElements></bpmn:startEvent>`,
+		`<bpmn:startEvent id="refreshStart"><bpmn:extensionElements><camunda:formData>`+field+`</camunda:formData></bpmn:extensionElements><bpmn:messageEventDefinition messageRef="m"/></bpmn:startEvent>`,
+		b.Script("count", "selected", "'' + JSON.parse(everything).length"),
+		b.End("end"), b.End("refreshed"),
+		b.Flow("start", "end"), b.Flow("refreshStart", "count"), b.Flow("count", "refreshed"),
+	)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := c.StartInstance(ctx, alice, "smart-services", model.StartInstanceInput{DeploymentId: d.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the smart service", func() bool {
+		current, _ := c.GetInstance(ctx, alice, "smart-services", inst.Id)
+		return current.Status == model.StatusReady
+	})
+	deleted.Store(true)
+	run, err := c.StartMaintenance(ctx, alice, "smart-services", inst.Id, "refresh", model.MaintenanceStartInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]any{}
+	waitFor(t, "the procedure", func() bool {
+		vars, _ := c.GetVariables(ctx, alice, "smart-services", run.Id)
+		for _, v := range vars {
+			values[v.Name] = v.Value
+		}
+		return values["selected"] != nil
+	})
+	if values["selected"] != "1" {
+		t.Fatalf("the procedure selects anew instead of taking over the stored selection: %v", values)
+	}
+}
+
 // The worker library fetched tasks without naming variables, so Camunda handed every variable
 // of the instance to the scripts as inputs; published designs read their start parameters with
 // inputs.get, e.g. the selection a label is taken from. The inputs of the task win.

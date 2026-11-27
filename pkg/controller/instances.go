@@ -83,7 +83,7 @@ func (this *Controller) startInstance(ctx context.Context, token string, namespa
 	if err != nil {
 		return model.Instance{}, err
 	}
-	variables, err := this.withAutoSelected(ctx, token, input.DeploymentId, input.DeploymentVersion, "", input.Variables)
+	variables, err := this.withAutoSelected(ctx, token, input.DeploymentId, input.DeploymentVersion, "", nil, input.Variables)
 	if err != nil {
 		return model.Instance{}, err
 	}
